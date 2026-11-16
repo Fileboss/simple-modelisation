@@ -2,7 +2,7 @@
 title: '03: System design diagram with Components, Connections and Skins'
 tags: [ticket, v1-core]
 date: 2026-11-16
-status: ready-for-agent
+status: done
 blocked_by: [2]
 ---
 
@@ -14,12 +14,12 @@ Part of [v1-core](../spec.md).
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The palette offers the seven Component types, each with its own generic look.
-- [ ] Components move, rename by double-click and delete with the Delete key.
-- [ ] Connections are drawn by dragging between Components, show an arrow and an editable label.
-- [ ] The properties panel edits the selected Component (label, Skin) or Connection (label).
-- [ ] The catalog has about three Skins per Component type with Simple Icons logos (CC0); a skinned Component keeps its own label and shows the product.
-- [ ] An unknown Skin id (e.g. from an imported file) renders as Generic.
-- [ ] Tests: applying and clearing a Skin; deleting a Component deletes its Connections.
+- [x] The palette offers the seven Component types, each with its own generic look.
+- [x] Components move, rename by double-click and delete with the Delete key.
+- [x] Connections are drawn by dragging between Components, show an arrow and an editable label.
+- [x] The properties panel edits the selected Component (label, Skin) or Connection (label).
+- [x] The catalog has about three Skins per Component type with Simple Icons logos (CC0); a skinned Component keeps its own label and shows the product.
+- [x] An unknown Skin id (e.g. from an imported file) renders as Generic.
+- [x] Tests: applying and clearing a Skin; deleting a Component deletes its Connections.

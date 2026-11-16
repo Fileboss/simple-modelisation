@@ -1,0 +1,21 @@
+import type { CanvasKind } from '../canvas/DiagramCanvas';
+import type { ComponentType } from '../document/project';
+import { componentTypeInfo } from './catalog';
+import { ComponentNode } from './ComponentNode';
+import { ConnectionEdge } from './ConnectionEdge';
+import { SystemPalette } from './SystemPalette';
+import { SystemPanel } from './SystemPanel';
+
+export const systemKind: CanvasKind = {
+	nodeTypes: { component: ComponentNode },
+	edgeTypes: { connection: ConnectionEdge },
+	Palette: SystemPalette,
+	Panel: SystemPanel,
+	drop: (project, diagramId, item, x, y) => {
+		const type = item as ComponentType;
+		project.addComponent(diagramId, type, componentTypeInfo(type).label, x, y);
+	},
+	connect: (project, diagramId, source, target) => {
+		project.addConnection(diagramId, source, target);
+	}
+};

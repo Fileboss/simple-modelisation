@@ -2,7 +2,7 @@
 title: '02: Diagram tabs, canvas, undo/redo and JSON export/import'
 tags: [ticket, v1-core]
 date: 2026-11-16
-status: ready-for-agent
+status: done
 blocked_by: [1]
 ---
 
@@ -14,10 +14,10 @@ Part of [v1-core](../spec.md).
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Add, rename and delete a Diagram of either kind; tabs switch between them; reloading reopens the same tab.
-- [ ] The canvas zooms, pans and shows a background grid.
-- [ ] Undo and redo work on Diagram operations, through the Project document module (Yjs UndoManager).
-- [ ] Export downloads a JSON file with a format version; import creates a new Project from it and rejects an invalid file with a message.
-- [ ] Tests: creating each Diagram kind, undo/redo of one operation, export → import round trip.
+- [x] Add, rename and delete a Diagram of either kind; tabs switch between them; reloading reopens the same tab.
+- [x] The canvas zooms, pans and shows a background grid.
+- [x] Undo and redo work on Diagram operations, through the Project document module (Yjs UndoManager).
+- [x] Export downloads a JSON file with a format version; import creates a new Project from it and rejects an invalid file with a message.
+- [x] Tests: creating each Diagram kind, undo/redo of one operation, export → import round trip.
