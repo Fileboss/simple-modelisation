@@ -12,7 +12,10 @@ export const strings = {
 		cancel: 'Cancel',
 		updated: 'Updated',
 		importProject: 'Import…',
-		importFailed: 'Import failed:'
+		importFailed: 'Import failed:',
+		shared: 'Shared',
+		confirmRemove: 'Remove from my list? Others keep it.',
+		remove: 'Remove'
 	},
 	project: {
 		backHome: 'All projects',
@@ -23,7 +26,22 @@ export const strings = {
 		deleteDiagram: 'Delete diagram',
 		export: 'Export',
 		undo: 'Undo',
-		redo: 'Redo'
+		redo: 'Redo',
+		share: 'Share',
+		copyLink: 'Copy link',
+		linkCopied: 'Link copied',
+		status: {
+			local: 'Local',
+			synced: 'Synced',
+			offline: 'Offline',
+			full: 'Too large: changes stay on this device'
+		},
+		copyFailed: 'Copy this link:'
+	},
+	join: {
+		joining: 'Opening the shared project…',
+		notFound: 'This shared project does not exist.',
+		unreachable: 'The server cannot be reached. Try again later.'
 	},
 	panel: {
 		name: 'Name',

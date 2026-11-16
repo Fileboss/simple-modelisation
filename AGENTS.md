@@ -89,3 +89,5 @@ Lightweight, collaborative web app for developers: System design diagrams (Compo
 - TypeScript stays on 6: typescript-eslint does not support 7 yet. The Vite template's oxlint was dropped for sdlc's ESLint config; React rules live in its last block.
 - `.sdlc/` is in .prettierignore: sdlc rewrites state.json in its own format.
 - UI strings are English and kept together, ready for a French translation.
+- pnpm workspace: the app at the root, the sync server in `server/` (Hocuspocus, SQLite through `node:sqlite`, ADR 0003). The server runs TypeScript directly with Node 26 (`node src/main.ts`, imports with `.ts`); configured by `PORT`, `DATA_DIR`, `STATIC_DIR` and `TRUST_PROXY` (true only behind a proxy that sets X-Forwarded-For). `server/src/protocol.ts` is shared with the app. `make dev` runs Vite and the server together; Vite proxies `/sync`.
+- One Docker image serves the app and the sync; `docker-compose.yml` is the example deployment.

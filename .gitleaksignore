@@ -1,0 +1,2 @@
+# False positive: the RFC 6455 sample WebSocket nonce in a test, replaced since by a random key.
+650c1778ca567911360b4842438785657966cc1a:server/src/sync-server.test.ts:generic-api-key:120

@@ -1,0 +1,12 @@
+# Example deployment: one container, Shared Projects kept in a named volume.
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  data:

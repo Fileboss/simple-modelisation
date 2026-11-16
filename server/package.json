@@ -1,0 +1,22 @@
+{
+	"name": "@simple-modelisation/server",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"engines": {
+		"node": ">=26"
+	},
+	"scripts": {
+		"start": "node src/main.ts",
+		"dev": "node --watch src/main.ts"
+	},
+	"dependencies": {
+		"@hocuspocus/extension-database": "^4.8.0",
+		"@hocuspocus/server": "^4.8.0",
+		"yjs": "^13.6.33"
+	},
+	"devDependencies": {
+		"@hocuspocus/provider": "^4.8.0",
+		"@types/node": "^26.6.6"
+	}
+}

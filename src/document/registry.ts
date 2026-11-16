@@ -5,6 +5,8 @@ export type ProjectSummary = {
 	name: string;
 	createdAt: number;
 	updatedAt: number;
+	/** A Shared Project syncs with the server; a Local Project stays in this browser. */
+	shared: boolean;
 };
 
 export const DEFAULT_PROJECT_NAME = 'Untitled project';
@@ -24,11 +26,12 @@ export class ProjectRegistry {
 
 	/** Most recently updated first. */
 	list(): ProjectSummary[] {
-		return [...this.projects.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+		return [...this.projects.values()].map(withDefaults).sort((a, b) => b.updatedAt - a.updatedAt);
 	}
 
 	get(id: string): ProjectSummary | undefined {
-		return this.projects.get(id);
+		const project = this.projects.get(id);
+		return project && withDefaults(project);
 	}
 
 	create(
@@ -40,7 +43,8 @@ export class ProjectRegistry {
 			id,
 			name: cleanName(name),
 			createdAt: now,
-			updatedAt: now
+			updatedAt: now,
+			shared: false
 		};
 		this.projects.set(project.id, project);
 		return project;
@@ -48,7 +52,12 @@ export class ProjectRegistry {
 
 	rename(id: string, name: string, now: number = Date.now()): void {
 		const project = this.require(id);
+		if (project.name === cleanName(name)) return;
 		this.projects.set(id, { ...project, name: cleanName(name), updatedAt: now });
+	}
+
+	setShared(id: string, shared: boolean): void {
+		this.projects.set(id, { ...this.require(id), shared });
 	}
 
 	/** Marks a Project as just edited, so it moves to the top of the list. */
@@ -71,6 +80,11 @@ export class ProjectRegistry {
 		if (!project) throw new Error(`Unknown project ${id}`);
 		return project;
 	}
+}
+
+/** Entries written before a field existed get its default. */
+function withDefaults(project: ProjectSummary): ProjectSummary {
+	return { ...project, shared: project.shared ?? false };
 }
 
 function cleanName(name: string): string {

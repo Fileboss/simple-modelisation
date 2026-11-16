@@ -3,7 +3,7 @@
 .PHONY: dev test lint build
 
 dev:
-	pnpm run dev
+	pnpm --parallel -r --include-workspace-root run dev
 
 test:
 	pnpm run --if-present test

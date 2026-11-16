@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router';
 import { EditableText } from '../canvas/EditableText';
 import { ProjectDocument } from '../document/project';
 import type { ProjectSummary } from '../document/registry';
-import { deleteProjectDoc, saveProjectDoc } from '../storage/persistence';
+import { deleteProjectDoc, renameStoredProject, saveProjectDoc } from '../storage/persistence';
 import { strings } from '../ui/strings';
 import { useProjects, useRegistry } from './registry-context';
 
@@ -22,11 +22,11 @@ export function HomePage() {
 	const importFile = async (file: File) => {
 		setImportError(null);
 		try {
-			const { project, name } = ProjectDocument.fromFile(JSON.parse(await file.text()));
+			const project = ProjectDocument.fromFile(JSON.parse(await file.text()));
 			// Store the content first, so a failed save leaves no empty Project behind.
 			const id = crypto.randomUUID();
 			await saveProjectDoc(id, project.doc);
-			registry.create(name, Date.now(), id);
+			registry.create(project.name(), Date.now(), id);
 			void navigate(`/p/${id}`);
 		} catch (error) {
 			setImportError(error instanceof Error ? error.message : String(error));
@@ -88,7 +88,10 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
 				<EditableText
 					className="project-name-input"
 					value={project.name}
-					onChange={(name) => registry.rename(project.id, name)}
+					onChange={(name) => {
+						registry.rename(project.id, name);
+						void renameStoredProject(project.id, name);
+					}}
 					isEditing
 					onEditingChange={(editing) => !editing && setMode('view')}
 				/>
@@ -97,21 +100,27 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
 					{project.name}
 				</Link>
 			)}
+			{project.shared && <span className="shared-badge">{strings.home.shared}</span>}
 			<span className="project-date">
 				{strings.home.updated} {new Date(project.updatedAt).toLocaleString()}
 			</span>
 			{mode === 'delete' ? (
 				<>
-					<span>{strings.home.confirmDelete}</span>
+					<span>{project.shared ? strings.home.confirmRemove : strings.home.confirmDelete}</span>
 					<button className="danger" onClick={remove}>
-						{strings.home.delete}
+						{project.shared ? strings.home.remove : strings.home.delete}
 					</button>
 					<button onClick={() => setMode('view')}>{strings.home.cancel}</button>
 				</>
 			) : (
 				<>
-					<button onClick={() => setMode('rename')}>{strings.home.rename}</button>
-					<button onClick={() => setMode('delete')}>{strings.home.delete}</button>
+					{/* A Shared Project is renamed inside it, where the rename syncs. */}
+					{!project.shared && (
+						<button onClick={() => setMode('rename')}>{strings.home.rename}</button>
+					)}
+					<button onClick={() => setMode('delete')}>
+						{project.shared ? strings.home.remove : strings.home.delete}
+					</button>
 				</>
 			)}
 		</li>
