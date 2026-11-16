@@ -68,6 +68,8 @@ export type ProjectFile = {
 };
 
 const FILE_FORMAT = 'simple-modelisation';
+/** Transaction origin of migrations, which undo does not track. */
+const MIGRATION = Symbol('migration');
 const FILE_VERSION = 1;
 const DIAGRAM_KINDS: readonly DiagramKind[] = ['system', 'mcd'];
 
@@ -85,13 +87,34 @@ type Fields = Y.Map<unknown>;
  */
 export class ProjectDocument {
 	readonly doc: Y.Doc;
+	private readonly meta: Y.Map<unknown>;
 	private readonly diagramMap: Y.Map<Fields>;
 	private readonly undoManager: Y.UndoManager;
 
 	constructor(doc: Y.Doc = new Y.Doc()) {
 		this.doc = doc;
+		this.meta = doc.getMap('meta');
 		this.diagramMap = doc.getMap('diagrams');
-		this.undoManager = new Y.UndoManager(this.diagramMap);
+		this.undoManager = new Y.UndoManager([this.meta, this.diagramMap]);
+	}
+
+	// Project
+
+	/** The Project's name; empty only in a document created before names lived in it. */
+	name(): string {
+		return (this.meta.get('name') as string | undefined) ?? '';
+	}
+
+	rename(name: string): void {
+		if (name.trim()) this.meta.set('name', name.trim());
+	}
+
+	/**
+	 * Gives a name to a document that has none (created before names lived in
+	 * documents). It is a migration, not an edit: undo does not revert it.
+	 */
+	adoptName(name: string): void {
+		if (!this.name()) this.doc.transact(() => this.meta.set('name', name), MIGRATION);
 	}
 
 	// Diagrams
@@ -358,13 +381,25 @@ export class ProjectDocument {
 		return () => this.doc.off('update', listener);
 	}
 
+	/**
+	 * Calls `listener` on changes made here (an operation, undo or redo), not on
+	 * changes loaded from storage, received from collaborators or migrations.
+	 */
+	subscribeLocalEdits(listener: () => void): () => void {
+		const onUpdate = (_update: Uint8Array, origin: unknown) => {
+			if (origin === null || origin === this.undoManager) listener();
+		};
+		this.doc.on('update', onUpdate);
+		return () => this.doc.off('update', onUpdate);
+	}
+
 	// JSON file
 
-	toFile(name: string): ProjectFile {
+	toFile(): ProjectFile {
 		return {
 			format: FILE_FORMAT,
 			version: FILE_VERSION,
-			name,
+			name: this.name(),
 			diagrams: this.diagrams().map((d) => ({
 				...d,
 				nodes: this.nodes(d.id),
@@ -374,10 +409,11 @@ export class ProjectDocument {
 	}
 
 	/** Builds a Project from an exported file; throws on a file this app did not write. */
-	static fromFile(data: unknown): { project: ProjectDocument; name: string } {
+	static fromFile(data: unknown): ProjectDocument {
 		const file = parseFile(data);
 		const project = new ProjectDocument();
 		project.doc.transact(() => {
+			project.meta.set('name', file.name.trim() || 'Imported project');
 			for (const d of file.diagrams) {
 				const diagram = new Y.Map<unknown>();
 				diagram.set('id', d.id);
@@ -390,7 +426,7 @@ export class ProjectDocument {
 			}
 		});
 		project.undoManager.clear();
-		return { project, name: file.name };
+		return project;
 	}
 
 	// Helpers for the kind-specific operations

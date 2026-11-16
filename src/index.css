@@ -510,3 +510,44 @@ input {
 .hidden-handle {
 	visibility: hidden;
 }
+
+.shared-badge,
+.sync-status {
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.shared-badge,
+.sync-synced {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.sync-local {
+	background: var(--border);
+	color: var(--muted);
+}
+
+.sync-offline {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+.sync-full {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.share-link {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.8rem;
+	color: var(--muted);
+}
+
+.share-link input {
+	width: 260px;
+}

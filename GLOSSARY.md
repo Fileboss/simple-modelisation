@@ -14,6 +14,18 @@ A lightweight, collaborative web app where developers draw system architectures 
 The unit people open, share and collaborate on; it holds any number of Diagrams.
 _Avoid_: Workspace, file, document
 
+**Shared Project**:
+A Project its owner chose to share: it syncs with the server and anyone holding its Share link can edit it.
+_Avoid_: Public project, online project
+
+**Local Project**:
+A Project that exists only in this browser; nothing of it leaves the device.
+_Avoid_: Private project, offline project
+
+**Share link**:
+The URL that opens a Shared Project; holding it is what grants edit access.
+_Avoid_: Invite, public URL
+
 **Diagram**:
 One canvas inside a Project, of exactly one kind: System design diagram or MCD.
 _Avoid_: View, board, page, sheet

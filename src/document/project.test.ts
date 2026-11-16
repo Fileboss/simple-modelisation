@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
 import { ProjectDocument } from './project';
 
 describe('ProjectDocument', () => {
+	it('keeps its name in the document, renames it and undoes the rename', () => {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		project.stopCapturing();
+		project.rename('  Webshop ');
+		expect(project.name()).toBe('Webshop');
+		project.undo();
+		expect(project.name()).toBe('Shop');
+	});
+
+	it('adopts a name once, without making it undoable', () => {
+		const project = new ProjectDocument();
+		project.adoptName('Legacy');
+		project.adoptName('Other');
+		expect(project.name()).toBe('Legacy');
+		project.undo();
+		expect(project.name()).toBe('Legacy');
+	});
+
 	it('adds a Diagram of each kind with a default name, in creation order', () => {
 		const project = new ProjectDocument();
 		project.addDiagram('system');
@@ -38,12 +58,14 @@ describe('ProjectDocument', () => {
 		const id = project.addDiagram('system', 'Checkout');
 		project.addDiagram('mcd');
 
-		const file = JSON.parse(JSON.stringify(project.toFile('Shop')));
+		project.rename('Shop');
+
+		const file = JSON.parse(JSON.stringify(project.toFile()));
 		const imported = ProjectDocument.fromFile(file);
 
-		expect(imported.name).toBe('Shop');
-		expect(imported.project.toFile('Shop')).toEqual(file);
-		expect(imported.project.diagram(id)?.name).toBe('Checkout');
+		expect(imported.name()).toBe('Shop');
+		expect(imported.toFile()).toEqual(file);
+		expect(imported.diagram(id)?.name).toBe('Checkout');
 	});
 
 	it('rejects a file it did not write', () => {
@@ -173,7 +195,7 @@ describe('Import validation', () => {
 		const a = project.addEntity(diagram, 0, 0);
 		const b = project.addEntity(diagram, 300, 0);
 		project.addAssociation(diagram, a, b);
-		const file = JSON.parse(JSON.stringify(project.toFile('x')));
+		const file = JSON.parse(JSON.stringify(project.toFile()));
 
 		const noAttributes = structuredClone(file);
 		delete noAttributes.diagrams[0].nodes[0].attributes;
@@ -184,5 +206,22 @@ describe('Import validation', () => {
 		expect(() => ProjectDocument.fromFile(danglingLeg)).toThrow();
 
 		expect(() => ProjectDocument.fromFile(file)).not.toThrow();
+	});
+});
+
+describe('Local edits', () => {
+	it("reports this user's operations and undo, not changes received from a collaborator", () => {
+		const mine = new ProjectDocument();
+		const theirs = new ProjectDocument();
+		let edits = 0;
+		mine.subscribeLocalEdits(() => edits++);
+
+		mine.addDiagram('system');
+		mine.undo();
+		expect(edits).toBe(2);
+
+		theirs.addDiagram('mcd');
+		Y.applyUpdate(mine.doc, Y.encodeStateAsUpdate(theirs.doc), 'provider');
+		expect(edits).toBe(2);
 	});
 });

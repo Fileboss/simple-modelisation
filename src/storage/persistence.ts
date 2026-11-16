@@ -1,5 +1,6 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
+import { ProjectDocument } from '../document/project';
 import { ProjectRegistry } from '../document/registry';
 
 const PREFIX = 'simple-modelisation';
@@ -35,6 +36,13 @@ export async function openProjectDoc(id: string): Promise<{ doc: Y.Doc; close: (
 
 export async function deleteProjectDoc(id: string): Promise<void> {
 	await new IndexeddbPersistence(projectDbName(id), new Y.Doc()).clearData();
+}
+
+/** Renames a Project that is not open, in its stored document. */
+export async function renameStoredProject(id: string, name: string): Promise<void> {
+	const { doc, close } = await openProjectDoc(id);
+	new ProjectDocument(doc).rename(name);
+	close();
 }
 
 /** Stores a Project document built in memory (an import) under a new Project id. */

@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useState } from 'react';
 import { ProjectDocument } from '../document/project';
 import { openProjectDoc } from '../storage/persistence';
+import { connectSync, type SyncStatus } from '../storage/sync';
 import { useRegistry } from './registry-context';
 
 /** The open Project, loaded from the browser and saved while the page is open. */
@@ -17,7 +18,16 @@ export function useProjectDocument(projectId: string | null): ProjectDocument | 
 			if (cancelled) return opened.close();
 			close = opened.close;
 			const doc = new ProjectDocument(opened.doc);
-			unsubscribe = touchOnLocalEdits(doc, () => registry.touch(projectId));
+			doc.adoptName(registry.get(projectId)?.name ?? '');
+			const stopTouching = touchOnLocalEdits(doc, () => registry.touch(projectId));
+			// The list shows a copy of the name; the document holds the real one.
+			const stopNaming = doc.subscribe(() => {
+				if (doc.name()) registry.rename(projectId, doc.name());
+			});
+			unsubscribe = () => {
+				stopTouching();
+				stopNaming();
+			};
 			setProject(doc);
 		});
 		return () => {
@@ -38,13 +48,12 @@ export function useProjectVersion(project: ProjectDocument): void {
 }
 
 /**
- * Keeps the Project's "last updated" date current: one touch shortly after a
- * burst of edits, and a final one on close. It subscribes once the stored
- * content is loaded, so every update is an edit.
+ * Keeps the Project's "last updated" date current with this user's own edits:
+ * one touch shortly after a burst of edits, and a final one on close.
  */
 function touchOnLocalEdits(project: ProjectDocument, touch: () => void): () => void {
 	let pending: ReturnType<typeof setTimeout> | undefined;
-	const unsubscribe = project.subscribe(() => {
+	const unsubscribe = project.subscribeLocalEdits(() => {
 		if (pending) return;
 		pending = setTimeout(() => {
 			pending = undefined;
@@ -57,4 +66,22 @@ function touchOnLocalEdits(project: ProjectDocument, touch: () => void): () => v
 		clearTimeout(pending);
 		touch();
 	};
+}
+
+/** Syncs the open Project with the server while it is shared; Local otherwise. */
+export function useSync(
+	projectId: string,
+	project: ProjectDocument | null,
+	shared: boolean
+): SyncStatus {
+	const [status, setStatus] = useState<SyncStatus>('offline');
+	const isSyncing = project !== null && shared;
+
+	useEffect(() => {
+		if (!isSyncing) return;
+		// This device holds the Project's content already: it may recreate it on the server.
+		return connectSync(projectId, project.doc, 'share', { onStatus: setStatus });
+	}, [projectId, project, isSyncing]);
+
+	return isSyncing ? status : 'local';
 }

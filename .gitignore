@@ -29,3 +29,6 @@ dist-ssr
 
 # Claude Code personal settings
 .claude/settings.local.json
+
+# Sync server data in development
+server/data/

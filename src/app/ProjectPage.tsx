@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { Diagram, DiagramKind, ProjectDocument } from '../document/project';
 import { DiagramCanvas, type CanvasKind } from '../canvas/DiagramCanvas';
@@ -6,8 +6,9 @@ import { EditableText } from '../canvas/EditableText';
 import { mcdKind } from '../mcd/mcd-kind';
 import { systemKind } from '../system/system-kind';
 import { strings } from '../ui/strings';
-import { useProjectDocument, useProjectVersion } from './project-hooks';
-import { useProjects } from './registry-context';
+import { shareLink, type SyncStatus } from '../storage/sync';
+import { useProjectDocument, useProjectVersion, useSync } from './project-hooks';
+import { useProjects, useRegistry } from './registry-context';
 
 const KINDS: Record<DiagramKind, CanvasKind> = {
 	system: systemKind,
@@ -18,6 +19,7 @@ export function ProjectPage() {
 	const { projectId = '' } = useParams();
 	const summary = useProjects().find((p) => p.id === projectId);
 	const project = useProjectDocument(summary ? projectId : null);
+	const status = useSync(projectId, project, summary?.shared ?? false);
 
 	if (!summary) {
 		return (
@@ -32,8 +34,15 @@ export function ProjectPage() {
 		<div className="project">
 			<header className="project-header">
 				<Link to="/">← {strings.project.backHome}</Link>
-				<h1>{summary.name}</h1>
-				{project && <ProjectActions project={project} name={summary.name} />}
+				<h1>
+					{project ? (
+						<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
+					) : (
+						summary.name
+					)}
+				</h1>
+				<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
+				{project && <ProjectActions project={project} projectId={projectId} status={status} />}
 			</header>
 			{project ? (
 				<ProjectWorkspace project={project} />
@@ -44,13 +53,48 @@ export function ProjectPage() {
 	);
 }
 
-function ProjectActions({ project, name }: { project: ProjectDocument; name: string }) {
+type ActionsProps = { project: ProjectDocument; projectId: string; status: SyncStatus };
+
+function ProjectActions({ project, projectId, status }: ActionsProps) {
 	useUndoShortcuts(project);
+	const registry = useRegistry();
+	const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+	const share = async () => {
+		if (status === 'local') registry.setShared(projectId, true);
+		try {
+			// navigator.clipboard is missing outside secure origins (http on a LAN address).
+			await navigator.clipboard.writeText(shareLink(projectId));
+			setCopy('copied');
+			setTimeout(() => setCopy('idle'), 2000);
+		} catch {
+			setCopy('failed');
+		}
+	};
+
 	return (
 		<div className="project-actions">
+			{copy === 'failed' && (
+				<label className="share-link">
+					{strings.project.copyFailed}
+					<input
+						readOnly
+						autoFocus
+						value={shareLink(projectId)}
+						onFocus={(e) => e.currentTarget.select()}
+					/>
+				</label>
+			)}
+			<button className="primary" onClick={() => void share()}>
+				{copy === 'copied'
+					? strings.project.linkCopied
+					: status === 'local'
+						? strings.project.share
+						: strings.project.copyLink}
+			</button>
 			<button onClick={() => project.undo()}>{strings.project.undo}</button>
 			<button onClick={() => project.redo()}>{strings.project.redo}</button>
-			<button onClick={() => downloadJson(`${name}.json`, project.toFile(name))}>
+			<button onClick={() => downloadJson(`${project.name()}.json`, project.toFile())}>
 				{strings.project.export}
 			</button>
 		</div>
