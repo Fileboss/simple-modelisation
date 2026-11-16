@@ -1,0 +1,10 @@
+# sdlc configuration: single source of truth, see AGENTS.md for its effect.
+version: 1
+# Stack profiles, as name or name:subdir for monorepos.
+profiles: [node-ts-pnpm]
+# Optional modules: spec, plan, decisions, tdd, review, commit, release, ci, docker, pr, handoff, retro
+modules: [spec, plan, decisions, review, commit, release, ci, docker, pr, handoff]
+# Where the AI stops for approval: commit (before committing, the default), all (every phase), none.
+gates: commit
+# Run `make lint test` before the AI ends a turn.
+stop_check: true
