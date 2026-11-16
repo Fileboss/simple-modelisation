@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import * as Y from 'yjs';
 import { DocumentStore } from './document-store.ts';
+import { createMcpHandler, MCP_PATH } from './mcp.ts';
 import { DOCUMENT_TOO_LARGE, SYNC_PATH, type SyncIntent } from './protocol.ts';
 import { serveStatic } from './static-files.ts';
 
@@ -19,6 +20,8 @@ export type SyncServerOptions = {
 	maxNewDocumentsPerIpPerHour?: number;
 	/** Take the client address from X-Forwarded-For: only behind a reverse proxy that sets it. */
 	trustProxy?: boolean;
+	/** Requests one address may make to the MCP endpoint per minute. */
+	maxMcpRequestsPerMinute?: number;
 	log?: (message: string) => void;
 };
 
@@ -66,13 +69,15 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		],
 
 		async onRequest({ request, response }) {
-			if (!staticDir) return;
+			const isMcp = new URL(request.url ?? '/', 'http://local').pathname === MCP_PATH;
+			if (!isMcp && !staticDir) return;
 			try {
-				await serveStatic(staticDir, request, response);
+				if (isMcp) await mcp(request, response);
+				else await serveStatic(staticDir!, request, response);
 			} catch (error) {
 				// Hocuspocus rethrows hook errors from its HTTP handler, which would stop the process.
-				log(`static error: ${request.url} ${String(error)}`);
-				if (!response.headersSent) response.writeHead(400).end();
+				log(`request error: ${request.url} ${String(error)}`);
+				if (!response.headersSent) response.writeHead(isMcp ? 500 : 400).end();
 			}
 			// Tells Hocuspocus the response is sent.
 			throw null;
@@ -130,6 +135,15 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		async afterUnloadDocument({ documentName }) {
 			sizes.delete(documentName);
 		}
+	});
+
+	const mcp = createMcpHandler({
+		instance: server.hocuspocus,
+		store,
+		log,
+		maxRequestsPerMinute: options.maxMcpRequestsPerMinute ?? 120,
+		maxDocumentBytes,
+		clientIp: (request) => clientIp(request, trustProxy)
 	});
 
 	await server.listen();

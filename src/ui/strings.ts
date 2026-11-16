@@ -76,6 +76,9 @@ export const strings = {
 		notFound: 'This shared project does not exist.',
 		unreachable: 'The server cannot be reached. Try again later.'
 	},
+	canvas: {
+		tidyUp: 'Tidy up: arrange along the links'
+	},
 	panel: {
 		name: 'Name',
 		label: 'Label'

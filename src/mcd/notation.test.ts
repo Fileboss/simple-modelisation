@@ -1,6 +1,6 @@
 import type { Edge, Node } from '@xyflow/react';
 import { describe, expect, it } from 'vitest';
-import { dataType } from '../document/data-types';
+import { dataType } from '@simple-modelisation/model/data-types.ts';
 import { umlAttribute, umlLayout, umlMultiplicity } from './notation';
 
 describe('UML notation', () => {

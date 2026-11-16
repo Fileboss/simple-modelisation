@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from 'react';
-import { ProjectDocument } from '../document/project';
+import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { openProjectDoc } from '../storage/persistence';
 import { connectSync, type Awareness, type SyncStatus } from '../storage/sync';
 import { useRegistry } from './registry-context';

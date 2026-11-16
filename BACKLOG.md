@@ -9,8 +9,8 @@ tags: [backlog]
 
 ## To do
 
+- Orthogonal routing with elkjs (right angles, fewer crossings) and label collision avoidance
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
-- MCP server exposing Diagrams to AI agents
 - Grouping zones in System design diagrams (VPC, region)
 - Custom Skins
 - Ternary Associations, inheritance and CIF in MCDs
@@ -22,6 +22,8 @@ tags: [backlog]
 
 ## Done
 
+- [auto-layout](docs/specs/auto-layout/): Tidy up button and layout_diagram tool, routed Connections and Legs
+- [mcp-server](docs/specs/mcp-server/): AI agents read and edit Shared Projects over MCP
 - [uml-notation](docs/specs/uml-notation/): Merise / UML switch per MCD, editable class diagram
 - [postgres-sql](docs/specs/postgres-sql/): Attribute Data types, MLD and PostgreSQL script under every MCD
 - [live-presence](docs/specs/live-presence/): Participants' avatars, cursors and selections on Shared Projects

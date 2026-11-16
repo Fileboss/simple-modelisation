@@ -1,17 +1,49 @@
-import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
+import {
+	BaseEdge,
+	EdgeLabelRenderer,
+	getSmoothStepPath,
+	useInternalNode,
+	type EdgeProps
+} from '@xyflow/react';
 import type { RemoteHighlight } from '../canvas/DiagramCanvas';
-import { borderPoint, center } from '../canvas/geometry';
-import type { ConnectionEdge as ConnectionData } from '../document/project';
+import { borderPoint, facingSides, pointAlong, routedPath } from '../canvas/geometry';
+import type { ConnectionEdge as ConnectionData } from '@simple-modelisation/model/project.ts';
 
-/** A straight arrow between the borders of two Components, with its label in the middle. */
+/**
+ * An arrow between two Components, with its label in the middle: along the
+ * route a Tidy up stored, else with right angles between the sides they face.
+ */
 export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps) {
 	const sourceNode = useInternalNode(source);
 	const targetNode = useInternalNode(target);
 	if (!sourceNode || !targetNode) return null;
 
-	const start = borderPoint(sourceNode, center(targetNode));
-	const end = borderPoint(targetNode, center(sourceNode));
-	const label = (data as ConnectionData).label;
+	const { label, points } = data as ConnectionData;
+	let path: string;
+	let middle: { x: number; y: number };
+	if (points && points.length > 0) {
+		// Stored bends; the ends attach to the boxes as they are drawn now.
+		const route = [
+			borderPoint(sourceNode, points[0]),
+			...points,
+			borderPoint(targetNode, points.at(-1)!)
+		];
+		path = routedPath(route);
+		middle = pointAlong(route, 0.5);
+	} else {
+		const { start, end, sourcePosition, targetPosition } = facingSides(sourceNode, targetNode);
+		const [stepPath, x, y] = getSmoothStepPath({
+			sourceX: start.x,
+			sourceY: start.y,
+			sourcePosition,
+			targetX: end.x,
+			targetY: end.y,
+			targetPosition,
+			borderRadius: 10
+		});
+		path = stepPath;
+		middle = { x, y };
+	}
 	const { remoteColor } = data as RemoteHighlight;
 	const color = selected ? 'var(--accent)' : (remoteColor ?? '#475569');
 	const arrow = `arrow-${id}`;
@@ -33,7 +65,7 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 			</defs>
 			<BaseEdge
 				id={id}
-				path={`M ${start.x},${start.y} L ${end.x},${end.y}`}
+				path={path}
 				markerEnd={`url(#${arrow})`}
 				style={{ stroke: color, strokeWidth: remoteColor && !selected ? 3 : 1.5 }}
 			/>
@@ -42,7 +74,7 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 					<div
 						className="edge-label"
 						style={{
-							transform: `translate(-50%, -50%) translate(${(start.x + end.x) / 2}px, ${(start.y + end.y) / 2}px)`
+							transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)`
 						}}
 					>
 						{label}

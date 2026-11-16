@@ -1,4 +1,4 @@
-import { dataType, type DataType } from '../document/data-types';
+import { dataType, type DataType } from '../data-types.ts';
 import type {
 	AssociationNode,
 	Attribute,
@@ -7,7 +7,7 @@ import type {
 	DiagramNode,
 	EntityNode,
 	LegEdge
-} from '../document/project';
+} from '../project.ts';
 
 export type Column = {
 	name: string;

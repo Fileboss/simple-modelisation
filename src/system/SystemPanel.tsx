@@ -1,7 +1,7 @@
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
 import { PanelField } from '../canvas/PanelField';
-import type { ComponentNode, ConnectionEdge } from '../document/project';
+import type { ComponentNode, ConnectionEdge } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';

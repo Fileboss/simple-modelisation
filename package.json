@@ -21,7 +21,8 @@
 		"react-router": "^8.5.1",
 		"simple-icons": "^16.37.0",
 		"y-indexeddb": "^9.0.12",
-		"yjs": "^13.6.33"
+		"yjs": "^13.6.33",
+		"@simple-modelisation/model": "workspace:*"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

@@ -1,7 +1,7 @@
 import type { Edge, Node } from '@xyflow/react';
 import { useSyncExternalStore } from 'react';
-import type { DataType } from '../document/data-types';
-import type { Attribute, Cardinality, LegEdge } from '../document/project';
+import type { DataType } from '@simple-modelisation/model/data-types.ts';
+import type { Attribute, Cardinality, LegEdge } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 
 /** How an MCD is drawn; the model is the same. */

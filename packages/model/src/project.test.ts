@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import type { DataType } from './data-types';
-import { ProjectDocument, type Attribute } from './project';
+import type { DataType } from './data-types.ts';
+import { ProjectDocument, type Attribute } from './project.ts';
 
 describe('ProjectDocument', () => {
 	it('keeps its name in the document, renames it and undoes the rename', () => {

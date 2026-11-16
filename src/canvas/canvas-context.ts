@@ -1,5 +1,5 @@
 import { createContext, use } from 'react';
-import type { ProjectDocument } from '../document/project';
+import type { ProjectDocument } from '@simple-modelisation/model/project.ts';
 
 export type CanvasContextValue = { project: ProjectDocument; diagramId: string };
 

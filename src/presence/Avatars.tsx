@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { EditableText } from '../canvas/EditableText';
 import { useProjectVersion } from '../app/project-hooks';
-import type { ProjectDocument } from '../document/project';
+import type { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { initials } from './presence';
 import { useParticipants, usePresence } from './presence-context';

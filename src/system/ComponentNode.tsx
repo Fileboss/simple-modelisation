@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
 import { EditableText } from '../canvas/EditableText';
-import type { ComponentNode as ComponentData } from '../document/project';
+import type { ComponentNode as ComponentData } from '@simple-modelisation/model/project.ts';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 

@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { dataType, isDataType, type DataType } from './data-types';
+import { dataType, isDataType, type DataType } from './data-types.ts';
 
 export type DiagramKind = 'system' | 'mcd';
 
@@ -41,7 +41,15 @@ export type ComponentNode = DiagramNode & {
 	skin: string | null;
 };
 
-export type ConnectionEdge = DiagramEdge & { type: 'connection'; label: string };
+export type Point = { x: number; y: number };
+
+/**
+ * The bends a Tidy up routed a Connection or a Leg through, around the boxes;
+ * its ends attach to the boxes as drawn. Cleared when an end moves.
+ */
+export type Route = { points?: Point[] };
+
+export type ConnectionEdge = DiagramEdge & Route & { type: 'connection'; label: string };
 
 export type Attribute = {
 	id: string;
@@ -65,7 +73,7 @@ export const CARDINALITIES = ['0,1', '1,1', '0,n', '1,n'] as const;
 export type Cardinality = (typeof CARDINALITIES)[number];
 
 /** Joins an Association (source) to one of its Entities (target). */
-export type LegEdge = DiagramEdge & { type: 'leg'; cardinality: Cardinality };
+export type LegEdge = DiagramEdge & Route & { type: 'leg'; cardinality: Cardinality };
 
 /** The JSON file a Project exports to and imports from. */
 export type ProjectFile = {
@@ -177,13 +185,66 @@ export class ProjectDocument {
 		return [...this.edgeMap(diagramId).values()].map((e) => e.toJSON() as DiagramEdge);
 	}
 
+	/** Moves a node; the routes of its Connections or Legs no longer fit and are dropped. */
 	moveNode(diagramId: string, nodeId: string, x: number, y: number): void {
-		const node = this.nodeMap(diagramId).get(nodeId);
-		if (!node) return;
+		this.moveNodes(diagramId, [{ id: nodeId, x, y }]);
+	}
+
+	/** Moves several nodes in one transaction, dropping the routes attached to any of them. */
+	moveNodes(diagramId: string, moves: { id: string; x: number; y: number }[]): void {
+		const nodes = this.nodeMap(diagramId);
+		const moved = new Set<string>();
 		this.doc.transact(() => {
-			node.set('x', Math.round(x));
-			node.set('y', Math.round(y));
+			for (const { id, x, y } of moves) {
+				const node = nodes.get(id);
+				if (!node) continue;
+				node.set('x', Math.round(x));
+				node.set('y', Math.round(y));
+				moved.add(id);
+			}
+			if (moved.size === 0) return;
+			for (const edge of this.edgeMap(diagramId).values()) {
+				const attached =
+					moved.has(edge.get('source') as string) || moved.has(edge.get('target') as string);
+				if (attached && edge.has('points')) edge.delete('points');
+			}
 		});
+	}
+
+	/**
+	 * Places many nodes and stores the routes of the edges at once (a Tidy up):
+	 * one undo step. Routes hold the inner bends only; edges without one lose any
+	 * old route.
+	 */
+	arrange(
+		diagramId: string,
+		positions: Map<string, Point>,
+		routes: Map<string, Point[]> = new Map()
+	): void {
+		const nodes = this.nodeMap(diagramId);
+		const edges = this.edgeMap(diagramId);
+		const moves = [...positions].filter(([id, p]) => {
+			const node = nodes.get(id);
+			return node && (node.get('x') !== Math.round(p.x) || node.get('y') !== Math.round(p.y));
+		});
+		const reroutes = [...edges].filter(
+			([id, edge]) => !samePoints(routes.get(id), edge.get('points') as Point[] | undefined)
+		);
+		// Already in place: no update for collaborators, no empty undo step.
+		if (moves.length === 0 && reroutes.length === 0) return;
+		this.undoManager.stopCapturing();
+		this.doc.transact(() => {
+			for (const [id, { x, y }] of moves) {
+				nodes.get(id)!.set('x', Math.round(x));
+				nodes.get(id)!.set('y', Math.round(y));
+			}
+			for (const [id, edge] of reroutes) {
+				const route = routes.get(id);
+				if (route) edge.set('points', route);
+				else edge.delete('points');
+			}
+		});
+		this.undoManager.stopCapturing();
 	}
 
 	/** Renames a Component, Entity or Association; a blank name is ignored. */
@@ -423,6 +484,11 @@ export class ProjectDocument {
 		this.undoManager.stopCapturing();
 	}
 
+	/** Stops tracking undo; for a short-lived wrapper around a document someone else owns. */
+	destroy(): void {
+		this.undoManager.destroy();
+	}
+
 	subscribe(listener: () => void): () => void {
 		this.doc.on('update', listener);
 		return () => this.doc.off('update', listener);
@@ -518,6 +584,11 @@ export class ProjectDocument {
  * race a collaborator's edits: the only Identifier of an Entity reads as
  * Auto-increment, any other Attribute as Text, all required.
  */
+function samePoints(a: Point[] | undefined, b: Point[] | undefined): boolean {
+	if (!a || !b) return a === b;
+	return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
+}
+
 function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 	const loneIdentifier = attributes.filter((a) => a.identifier).length === 1;
 	return attributes.map((a, index) => {
@@ -619,6 +690,14 @@ function isValidEdge(
 	nodeTypes: Map<string, unknown>
 ): boolean {
 	if (!edge || !isString(edge.id) || !isString(edge.source) || !isString(edge.target)) return false;
+	const points = (edge as Route).points;
+	if (points !== undefined) {
+		const valid =
+			Array.isArray(points) &&
+			points.length <= 1000 &&
+			points.every((p) => isNumber(p?.x) && isNumber(p?.y));
+		if (!valid) return false;
+	}
 	if (kind === 'system') {
 		return (
 			edge.type === 'connection' &&
