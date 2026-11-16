@@ -38,6 +38,10 @@ export const strings = {
 		},
 		copyFailed: 'Copy this link:'
 	},
+	presence: {
+		you: 'you',
+		renameHint: 'click to rename'
+	},
 	join: {
 		joining: 'Opening the shared project…',
 		notFound: 'This shared project does not exist.',

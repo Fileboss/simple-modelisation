@@ -9,32 +9,41 @@ import { DOCUMENT_TOO_LARGE, SYNC_PATH, type SyncIntent } from '../../server/src
  */
 export type SyncStatus = 'local' | 'synced' | 'offline' | 'full';
 
+/** Where Participants exchange their Presence. */
+export type Awareness = NonNullable<HocuspocusProvider['awareness']>;
+
+export type SyncConnection = { awareness: Awareness; disconnect: () => void };
+
 type Callbacks = {
-	onStatus: (status: SyncStatus) => void;
+	/** Called at once with the connection's awareness, then on every status change. */
+	onStatus: (status: SyncStatus, awareness: Awareness) => void;
 	/** The server refused: an unknown document on join, or a refused name. */
 	onRefused?: () => void;
 };
 
 /**
  * Syncs a Project document with the server on the page's origin, beside its
- * browser storage; returns a function that disconnects.
+ * browser storage, and exchanges Presence through its awareness.
  */
 export function connectSync(
 	projectId: string,
 	doc: Y.Doc,
 	intent: SyncIntent,
 	{ onStatus, onRefused }: Callbacks
-): () => void {
+): SyncConnection {
 	let connected = false;
 	let synced = false;
 	let unsynced = 0;
 	let full = false;
+	// The provider may report while it is being built: wait for it.
+	let provider: HocuspocusProvider | undefined = undefined;
 	const report = () => {
-		if (full) onStatus('full');
-		else onStatus(connected && synced && unsynced === 0 ? 'synced' : 'offline');
+		if (!provider) return;
+		const status = full ? 'full' : connected && synced && unsynced === 0 ? 'synced' : 'offline';
+		onStatus(status, provider.awareness!);
 	};
 
-	const provider = new HocuspocusProvider({
+	provider = new HocuspocusProvider({
 		url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${SYNC_PATH}`,
 		name: projectId,
 		document: doc,
@@ -60,7 +69,8 @@ export function connectSync(
 		onAuthenticationFailed: () => onRefused?.()
 	});
 	report();
-	return () => provider.destroy();
+	const created = provider;
+	return { awareness: created.awareness!, disconnect: () => created.destroy() };
 }
 
 export function shareLink(projectId: string): string {

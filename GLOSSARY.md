@@ -26,6 +26,14 @@ _Avoid_: Private project, offline project
 The URL that opens a Shared Project; holding it is what grants edit access.
 _Avoid_: Invite, public URL
 
+**Participant**:
+A person currently connected to a Shared Project, known by a display name and a color chosen in their browser.
+_Avoid_: User, member, collaborator, account
+
+**Presence**:
+What a Participant shows others while connected: the Diagram they are on, their cursor and their selection; it is never stored.
+_Avoid_: Status, activity
+
 **Diagram**:
 One canvas inside a Project, of exactly one kind: System design diagram or MCD.
 _Avoid_: View, board, page, sheet

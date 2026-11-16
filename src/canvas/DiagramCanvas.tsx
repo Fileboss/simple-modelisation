@@ -21,9 +21,17 @@ import {
 	useMemo,
 	useState,
 	type ComponentType,
+	type CSSProperties,
 	type DragEvent
 } from 'react';
 import type { Diagram, DiagramEdge, DiagramNode, ProjectDocument } from '../document/project';
+import {
+	reportPresence,
+	useCursorReporter,
+	usePresence,
+	useRemoteSelections
+} from '../presence/presence-context';
+import { RemoteCursors } from '../presence/RemoteCursors';
 import { CanvasContext } from './canvas-context';
 
 /** MIME type of what the palette drags onto the canvas. */
@@ -33,6 +41,9 @@ export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
 
 /** Where an edge sits among the edges joining the same two nodes, for drawing them apart. */
 export type TwinPosition = { twinIndex: number; twinCount: number };
+
+/** Set on an edge another Participant selected: its color. */
+export type RemoteHighlight = { remoteColor?: string };
 
 /** What makes one Diagram kind: its nodes, edges, palette, properties panel and gestures. */
 export type CanvasKind = {
@@ -117,6 +128,36 @@ function Canvas({ project, diagram, kind }: Props) {
 		[]
 	);
 
+	// Presence: share the pointer and the selection; outline what others selected.
+	const { awareness } = usePresence();
+	const cursor = useCursorReporter();
+	const selectionKey = JSON.stringify(
+		[...nodes, ...edges].filter((e) => e.selected).map((e) => e.id)
+	);
+	useEffect(() => {
+		reportPresence(awareness, { selection: JSON.parse(selectionKey) as string[] });
+	}, [awareness, selectionKey]);
+	const remoteSelections = useRemoteSelections(diagram.id);
+	const shownNodes = useMemo(
+		() =>
+			nodes.map((n) => {
+				const color = remoteSelections.get(n.id);
+				if (!color) return n;
+				// The node's own box draws the outline, so it follows its shape (see .remote-selected).
+				const style = { ...n.style, '--remote-color': color } as CSSProperties;
+				return { ...n, className: `${n.className ?? ''} remote-selected`, style };
+			}),
+		[nodes, remoteSelections]
+	);
+	const shownEdges = useMemo(
+		() =>
+			edges.map((e) => {
+				const color = remoteSelections.get(e.id);
+				return color ? { ...e, data: { ...e.data, remoteColor: color } } : e;
+			}),
+		[edges, remoteSelections]
+	);
+
 	const selectedNodes = nodes.filter((n) => n.selected);
 	const selectedEdges = edges.filter((e) => e.selected);
 	const selection: Selection =
@@ -139,10 +180,19 @@ function Canvas({ project, diagram, kind }: Props) {
 	return (
 		<div className="workspace">
 			<kind.Palette />
-			<div className="flow" onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
+			<div
+				className="flow"
+				onDrop={onDrop}
+				onDragOver={(e) => e.preventDefault()}
+				onPointerMove={(e) => {
+					const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+					cursor.move(x, y);
+				}}
+				onPointerLeave={cursor.leave}
+			>
 				<ReactFlow
-					nodes={nodes}
-					edges={edges}
+					nodes={shownNodes}
+					edges={shownEdges}
 					nodeTypes={kind.nodeTypes}
 					edgeTypes={kind.edgeTypes}
 					onNodesChange={onNodesChange}
@@ -173,6 +223,7 @@ function Canvas({ project, diagram, kind }: Props) {
 					proOptions={{ hideAttribution: true }}
 				>
 					<Background gap={16} />
+					<RemoteCursors diagramId={diagram.id} />
 					<Controls showInteractive={false} />
 				</ReactFlow>
 			</div>

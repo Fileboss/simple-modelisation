@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useState } from 'react';
 import { ProjectDocument } from '../document/project';
 import { openProjectDoc } from '../storage/persistence';
-import { connectSync, type SyncStatus } from '../storage/sync';
+import { connectSync, type Awareness, type SyncStatus } from '../storage/sync';
 import { useRegistry } from './registry-context';
 
 /** The open Project, loaded from the browser and saved while the page is open. */
@@ -68,20 +68,31 @@ function touchOnLocalEdits(project: ProjectDocument, touch: () => void): () => v
 	};
 }
 
-/** Syncs the open Project with the server while it is shared; Local otherwise. */
+/**
+ * Syncs the open Project with the server while it is shared, and gives the
+ * awareness its Participants share Presence through; Local otherwise.
+ */
 export function useSync(
 	projectId: string,
 	project: ProjectDocument | null,
 	shared: boolean
-): SyncStatus {
-	const [status, setStatus] = useState<SyncStatus>('offline');
+): SyncState {
+	const [sync, setSync] = useState<SyncState>({ status: 'offline', awareness: null });
 	const isSyncing = project !== null && shared;
 
 	useEffect(() => {
 		if (!isSyncing) return;
 		// This device holds the Project's content already: it may recreate it on the server.
-		return connectSync(projectId, project.doc, 'share', { onStatus: setStatus });
+		const connection = connectSync(projectId, project.doc, 'share', {
+			onStatus: (status, awareness) => setSync({ status, awareness })
+		});
+		return () => {
+			connection.disconnect();
+			setSync({ status: 'offline', awareness: null });
+		};
 	}, [projectId, project, isSyncing]);
 
-	return isSyncing ? status : 'local';
+	return isSyncing ? sync : { status: 'local', awareness: null };
 }
+
+export type SyncState = { status: SyncStatus; awareness: Awareness | null };
