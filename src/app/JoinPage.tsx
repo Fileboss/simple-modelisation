@@ -26,7 +26,7 @@ export function JoinPage() {
 			settled = true;
 			disconnect();
 		};
-		const disconnect = connectSync(projectId, doc, 'join', {
+		const { disconnect } = connectSync(projectId, doc, 'join', {
 			onStatus: (status) => {
 				if (status !== 'synced' || settled) return;
 				settle();

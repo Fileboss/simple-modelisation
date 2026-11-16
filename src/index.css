@@ -551,3 +551,58 @@ input {
 .share-link input {
 	width: 260px;
 }
+
+.avatars {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.avatar {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: 2px solid var(--surface);
+	border-radius: 50%;
+	color: #fff;
+	font-size: 0.7rem;
+	font-weight: 700;
+	cursor: default;
+}
+
+.avatar-me {
+	cursor: pointer;
+	box-shadow: 0 0 0 1px var(--border);
+}
+
+.avatar-rename {
+	width: 140px;
+}
+
+.remote-cursor {
+	position: absolute;
+	top: 0;
+	left: 0;
+	pointer-events: none;
+	transition: transform 60ms linear;
+	z-index: 1000;
+}
+
+.remote-cursor-name {
+	display: inline-block;
+	margin: 14px 0 0 -2px;
+	padding: 1px 6px;
+	border-radius: 4px;
+	color: #fff;
+	font-size: 11px;
+	white-space: nowrap;
+	vertical-align: top;
+}
+
+/* Another Participant selected this node: outline its own box in their color. */
+.react-flow__node.remote-selected > * {
+	box-shadow: 0 0 0 3px var(--remote-color);
+}

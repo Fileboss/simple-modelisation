@@ -140,6 +140,25 @@ describe('sync server', () => {
 		expect(await route.text()).toContain('<title>app</title>');
 	});
 
+	it('relays the Presence of a client to the others and drops it when it leaves', async () => {
+		const { server } = await start();
+		const id = crypto.randomUUID();
+		const owner = await connect(server, id, 'share');
+		const guest = await connect(server, id, 'join');
+
+		owner.provider.setAwarenessField('presence', { name: 'Ada', color: '#2563eb' });
+		const ownerId = owner.provider.awareness!.clientID;
+		await vi.waitFor(() =>
+			expect(guest.provider.awareness!.getStates().get(ownerId)?.presence).toEqual({
+				name: 'Ada',
+				color: '#2563eb'
+			})
+		);
+
+		owner.provider.destroy();
+		await vi.waitFor(() => expect(guest.provider.awareness!.getStates().has(ownerId)).toBe(false));
+	});
+
 	it('keeps documents across a restart', async () => {
 		const first = await start();
 		const id = crypto.randomUUID();

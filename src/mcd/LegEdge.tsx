@@ -1,6 +1,6 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
-import type { TwinPosition } from '../canvas/DiagramCanvas';
+import type { RemoteHighlight, TwinPosition } from '../canvas/DiagramCanvas';
 import { borderPoint, center } from '../canvas/geometry';
 import type { LegEdge as LegData } from '../document/project';
 
@@ -15,7 +15,7 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 	const { project, diagramId } = useCanvas();
 	const sourceNode = useInternalNode(source);
 	const targetNode = useInternalNode(target);
-	const leg = data as LegData & TwinPosition;
+	const leg = data as LegData & TwinPosition & RemoteHighlight;
 	if (!sourceNode || !targetNode) return null;
 
 	// Twin Legs bend apart around the straight line between the two centers.
@@ -40,7 +40,10 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 			<BaseEdge
 				id={id}
 				path={`M ${start.x},${start.y} Q ${control.x},${control.y} ${end.x},${end.y}`}
-				style={{ stroke: selected ? 'var(--accent)' : '#1d1b22', strokeWidth: 1.2 }}
+				style={{
+					stroke: selected ? 'var(--accent)' : (leg.remoteColor ?? '#1d1b22'),
+					strokeWidth: leg.remoteColor && !selected ? 3 : 1.2
+				}}
 			/>
 			<EdgeLabelRenderer>
 				<button

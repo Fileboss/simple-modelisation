@@ -7,6 +7,9 @@ import { mcdKind } from '../mcd/mcd-kind';
 import { systemKind } from '../system/system-kind';
 import { strings } from '../ui/strings';
 import { shareLink, type SyncStatus } from '../storage/sync';
+import { Avatars } from '../presence/Avatars';
+import { reportPresence, usePresence } from '../presence/presence-context';
+import { PresenceProvider } from '../presence/PresenceProvider';
 import { useProjectDocument, useProjectVersion, useSync } from './project-hooks';
 import { useProjects, useRegistry } from './registry-context';
 
@@ -19,7 +22,7 @@ export function ProjectPage() {
 	const { projectId = '' } = useParams();
 	const summary = useProjects().find((p) => p.id === projectId);
 	const project = useProjectDocument(summary ? projectId : null);
-	const status = useSync(projectId, project, summary?.shared ?? false);
+	const { status, awareness } = useSync(projectId, project, summary?.shared ?? false);
 
 	if (!summary) {
 		return (
@@ -31,25 +34,28 @@ export function ProjectPage() {
 	}
 
 	return (
-		<div className="project">
-			<header className="project-header">
-				<Link to="/">← {strings.project.backHome}</Link>
-				<h1>
-					{project ? (
-						<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
-					) : (
-						summary.name
-					)}
-				</h1>
-				<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
-				{project && <ProjectActions project={project} projectId={projectId} status={status} />}
-			</header>
-			{project ? (
-				<ProjectWorkspace project={project} />
-			) : (
-				<main className="status">{strings.loading}</main>
-			)}
-		</div>
+		<PresenceProvider awareness={awareness}>
+			<div className="project">
+				<header className="project-header">
+					<Link to="/">← {strings.project.backHome}</Link>
+					<h1>
+						{project ? (
+							<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
+						) : (
+							summary.name
+						)}
+					</h1>
+					<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
+					{project && <Avatars project={project} />}
+					{project && <ProjectActions project={project} projectId={projectId} status={status} />}
+				</header>
+				{project ? (
+					<ProjectWorkspace project={project} />
+				) : (
+					<main className="status">{strings.loading}</main>
+				)}
+			</div>
+		</PresenceProvider>
 	);
 }
 
@@ -107,6 +113,13 @@ function ProjectWorkspace({ project }: { project: ProjectDocument }) {
 	const diagrams = project.diagrams();
 	const open = diagrams.find((d) => d.id === searchParams.get('d')) ?? diagrams[0];
 	const select = (id: string) => setSearchParams({ d: id }, { replace: true });
+
+	// Others see which Diagram this Participant is on; the canvas reports its own cursor and selection.
+	const { awareness } = usePresence();
+	const openId = open?.id ?? null;
+	useEffect(() => {
+		reportPresence(awareness, { diagramId: openId });
+	}, [awareness, openId]);
 
 	const add = (kind: DiagramKind) => {
 		project.stopCapturing();
