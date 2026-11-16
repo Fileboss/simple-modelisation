@@ -1,6 +1,7 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { anyOverlap, estimatedSize } from '@simple-modelisation/model/layout.ts';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -75,6 +76,7 @@ describe('MCP endpoint', () => {
 			'get_diagram',
 			'get_mcd_sql',
 			'get_project',
+			'layout_diagram',
 			'rename_element',
 			'set_cardinality',
 			'set_skin'
@@ -123,6 +125,42 @@ describe('MCP endpoint', () => {
 		]);
 		const [api, db] = browser.nodes(diagram);
 		expect(api.x === db.x && api.y === db.y).toBe(false);
+	});
+
+	it('arranges a Diagram along its Connections', async () => {
+		const { client, id, browser } = await setup();
+		// No Client here: a Connection into a Client would rank it first.
+		for (const [type, name] of [
+			['service', 'Web'],
+			['gateway', 'API'],
+			['database', 'DB']
+		]) {
+			await call(client, 'add_component', { project: id, diagram: 'Architecture', type, name });
+		}
+		await call(client, 'connect_components', {
+			project: id,
+			diagram: 'Architecture',
+			from: 'DB',
+			to: 'API'
+		});
+		await call(client, 'connect_components', {
+			project: id,
+			diagram: 'Architecture',
+			from: 'API',
+			to: 'Web'
+		});
+		expect(
+			await call(client, 'layout_diagram', { project: id, diagram: 'Architecture' })
+		).toMatchObject({
+			arranged: 3
+		});
+		const diagram = browser.diagrams()[0].id;
+		const x = (name: string) => browser.nodes(diagram).find((n) => n.name === name)!.x;
+		await vi.waitFor(() => expect(x('DB') < x('API') && x('API') < x('Web')).toBe(true));
+		// No two Components overlap at the sizes the server assumed.
+		expect(anyOverlap(browser.nodes(diagram).map((n) => ({ ...n, ...estimatedSize(n) })))).toBe(
+			false
+		);
 	});
 
 	it('models an MCD and returns its SQL', async () => {

@@ -7,6 +7,7 @@ import {
 	type LegEdge,
 	type ProjectDocument
 } from '@simple-modelisation/model/project.ts';
+import { estimatedSize, layoutDiagram } from '@simple-modelisation/model/layout.ts';
 import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
 import { z } from 'zod';
 import type { ProjectAccess, RegisterTool } from './mcp.ts';
@@ -111,7 +112,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'add_component',
-		'Adds a Component to a System design diagram, placed next to the others.',
+		'Adds a Component to a System design diagram, placed next to the others. After adding several, call layout_diagram.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -188,7 +189,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'add_entity',
-		'Adds an Entity to an MCD, placed next to the others. Without an identifier Attribute it gets an auto-increment id.',
+		'Adds an Entity to an MCD, placed next to the others. Without an identifier Attribute it gets an auto-increment id. After adding several, call layout_diagram.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -319,6 +320,19 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const target = pick(nodesOf(p, d.id), element, 'element');
 				p.renameNode(d.id, target.id, name);
 				return { id: target.id };
+			})
+	);
+
+	tool(
+		'layout_diagram',
+		'Arranges a whole Diagram in layers from left to right along its Connections or Legs. Call it after adding several elements.',
+		{ project: projectArgument, diagram: diagramArgument },
+		({ project, diagram }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram);
+				const { positions, routes } = layoutDiagram(p.nodes(d.id), p.edges(d.id), estimatedSize);
+				p.arrange(d.id, positions, routes);
+				return { arranged: positions.size, routed: routes.size };
 			})
 	);
 

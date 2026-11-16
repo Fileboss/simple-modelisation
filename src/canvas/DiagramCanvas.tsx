@@ -3,6 +3,7 @@ import {
 	applyNodeChanges,
 	Background,
 	ConnectionMode,
+	ControlButton,
 	Controls,
 	ReactFlow,
 	ReactFlowProvider,
@@ -37,6 +38,8 @@ import {
 	useRemoteSelections
 } from '../presence/presence-context';
 import { RemoteCursors } from '../presence/RemoteCursors';
+import { estimatedSize, layoutDiagram } from '@simple-modelisation/model/layout.ts';
+import { strings } from '../ui/strings';
 import { CanvasContext } from './canvas-context';
 import type { Layout } from './layout';
 
@@ -90,7 +93,31 @@ export function DiagramCanvas(props: Props) {
  * in local state while dragging; the Project document stays the source of truth.
  */
 function Canvas({ project, diagram, kind }: Props) {
-	const { screenToFlowPosition } = useReactFlow();
+	const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+
+	// Fit once the tidied positions have reached React Flow, not before.
+	const [fitPending, setFitPending] = useState(false);
+
+	// Tidy up: arrange the whole Diagram along its links with the sizes drawn, as one undo step.
+	const tidyUp = () => {
+		const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
+		// The positions are shared by every Notation: never smaller than either draws a box.
+		const sizeOf = (node: DiagramNode) => {
+			const size = measured.get(node.id);
+			const guess = estimatedSize(node);
+			return {
+				width: Math.max(size?.width ?? 0, guess.width),
+				height: Math.max(size?.height ?? 0, guess.height)
+			};
+		};
+		const { positions, routes } = layoutDiagram(
+			project.nodes(diagram.id),
+			project.edges(diagram.id),
+			sizeOf
+		);
+		project.arrange(diagram.id, positions, routes);
+		setFitPending(true);
+	};
 
 	const toNodes = useCallback(
 		(): Node[] =>
@@ -133,13 +160,22 @@ function Canvas({ project, diagram, kind }: Props) {
 		return project.subscribe(sync);
 	}, [project, toNodes, toEdges]);
 
+	useEffect(() => {
+		if (!fitPending) return;
+		const frame = requestAnimationFrame(() => {
+			void fitView({ duration: 300, maxZoom: 1 });
+			setFitPending(false);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [fitPending, nodes, fitView]);
+
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
-		[]
+		[setNodes]
 	);
 	const onEdgesChange = useCallback(
 		(changes: EdgeChange[]) => setEdges((current) => applyEdgeChanges(changes, current)),
-		[]
+		[setEdges]
 	);
 
 	// Presence: share the pointer and the selection; outline what others selected.
@@ -173,7 +209,25 @@ function Canvas({ project, diagram, kind }: Props) {
 	);
 
 	const layout = kind.useLayout();
-	const drawn = useMemo(() => layout(shownNodes, shownEdges), [layout, shownNodes, shownEdges]);
+	const drawn = useMemo(() => {
+		const laid = layout(shownNodes, shownEdges);
+		// A box being dragged leaves its stored routes behind: draw those edges the default way.
+		const moving = new Set(
+			shownNodes
+				.filter((n) => {
+					const stored = n.data as DiagramNode;
+					return n.position.x !== stored.x || n.position.y !== stored.y;
+				})
+				.map((n) => n.id)
+		);
+		if (moving.size === 0) return laid;
+		const edges = laid.edges.map((e) =>
+			moving.has(e.source) || moving.has(e.target)
+				? { ...e, data: { ...e.data, points: undefined } }
+				: e
+		);
+		return { nodes: laid.nodes, edges };
+	}, [layout, shownNodes, shownEdges]);
 
 	const selectedNodes = nodes.filter((n) => n.selected);
 	const selectedEdges = edges.filter((e) => e.selected);
@@ -217,11 +271,10 @@ function Canvas({ project, diagram, kind }: Props) {
 						onEdgesChange={onEdgesChange}
 						onNodeDragStart={() => project.stopCapturing()}
 						onNodeDragStop={(_event, _node, dragged) => {
-							project.doc.transact(() => {
-								for (const n of dragged) {
-									project.moveNode(diagram.id, n.id, n.position.x, n.position.y);
-								}
-							});
+							project.moveNodes(
+								diagram.id,
+								dragged.map((n) => ({ id: n.id, ...n.position }))
+							);
 						}}
 						onConnect={({ source, target }) => {
 							project.stopCapturing();
@@ -242,7 +295,20 @@ function Canvas({ project, diagram, kind }: Props) {
 					>
 						<Background gap={16} />
 						<RemoteCursors diagramId={diagram.id} />
-						<Controls showInteractive={false} />
+						<Controls showInteractive={false}>
+							<ControlButton
+								onClick={tidyUp}
+								title={strings.canvas.tidyUp}
+								aria-label={strings.canvas.tidyUp}
+							>
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+									<rect x="3" y="4" width="6" height="5" rx="1" />
+									<rect x="15" y="4" width="6" height="5" rx="1" />
+									<rect x="15" y="15" width="6" height="5" rx="1" />
+									<path d="M9 6.5h6M18 9v6" />
+								</svg>
+							</ControlButton>
+						</Controls>
 					</ReactFlow>
 				</div>
 				{kind.Footer && <kind.Footer diagram={diagram} />}
