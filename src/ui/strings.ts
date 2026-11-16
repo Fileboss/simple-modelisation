@@ -90,6 +90,8 @@ export const strings = {
 	},
 	mcd: {
 		palette: 'MCD',
+		notation: 'Notation',
+		notations: { merise: 'Merise', uml: 'UML' },
 		entity: 'Entity',
 		association: 'Association',
 		leg: 'Leg',
@@ -105,6 +107,8 @@ export const strings = {
 		addReflexive: '+ Reflexive association',
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
-		legs: 'Legs'
+		legs: 'Legs',
+		multiplicities: 'Multiplicities',
+		end: 'end'
 	}
 };

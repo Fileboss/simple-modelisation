@@ -730,3 +730,115 @@ input {
 		monospace;
 	white-space: pre;
 }
+
+/* Notation switch */
+
+.notation-switch {
+	display: flex;
+	margin-bottom: 16px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.notation-switch button {
+	flex: 1;
+	border: none;
+	border-radius: 0;
+	background: var(--surface);
+	color: var(--muted);
+}
+
+.notation-switch .notation-current {
+	background: var(--accent);
+	color: #fff;
+}
+
+/* MCD in UML */
+
+.uml-class {
+	min-width: 140px;
+	border: 1.5px solid #1d1b22;
+	background: #fff;
+	color: #000;
+	font-size: 13px;
+	line-height: 1.35;
+}
+
+.uml-class .entity-name {
+	display: block;
+	background: none;
+	padding: 4px 10px;
+	border-bottom: 1.5px solid #1d1b22;
+	font-weight: 700;
+	font-size: 14px;
+	text-align: center;
+}
+
+.uml-class .attributes,
+.uml-association-class .attributes {
+	padding: 4px 8px 6px;
+	min-height: 18px;
+}
+
+.uml-class.selected,
+.uml-association.selected {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.uml-association {
+	position: relative;
+	padding: 1px 6px;
+	border-radius: 4px;
+	background: var(--bg);
+	color: #000;
+	font-size: 12px;
+	font-style: italic;
+	white-space: nowrap;
+}
+
+/* An association class floats beside its line, joined by a dashed line. */
+.uml-association-class {
+	position: absolute;
+	min-width: 120px;
+	border: 1.5px solid #1d1b22;
+	background: #fff;
+	font-size: 13px;
+	font-style: normal;
+}
+
+.uml-association-class::after {
+	content: '';
+	position: absolute;
+}
+
+.uml-side-top {
+	bottom: calc(100% + 28px);
+	left: 50%;
+	transform: translateX(-50%);
+}
+
+.uml-side-top::after {
+	top: 100%;
+	left: 50%;
+	height: 28px;
+	border-left: 1.5px dashed #1d1b22;
+}
+
+.uml-side-right {
+	left: calc(100% + 40px);
+	top: 50%;
+	transform: translateY(-50%);
+}
+
+.uml-side-right::after {
+	right: 100%;
+	top: 50%;
+	width: 40px;
+	border-top: 1.5px dashed #1d1b22;
+}
+
+.cardinality.multiplicity {
+	font-weight: 600;
+}

@@ -9,7 +9,6 @@ tags: [backlog]
 
 ## To do
 
-- UML Notation for MCDs
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - MCP server exposing Diagrams to AI agents
 - Grouping zones in System design diagrams (VPC, region)
@@ -23,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [uml-notation](docs/specs/uml-notation/): Merise / UML switch per MCD, editable class diagram
 - [postgres-sql](docs/specs/postgres-sql/): Attribute Data types, MLD and PostgreSQL script under every MCD
 - [live-presence](docs/specs/live-presence/): Participants' avatars, cursors and selections on Shared Projects
 - [realtime-sync](docs/specs/realtime-sync/): Shared Projects synced in real time, Share links
