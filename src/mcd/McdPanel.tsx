@@ -8,6 +8,13 @@ import {
 	type EntityNode,
 	type LegEdge
 } from '../document/project';
+import {
+	DATA_TYPE_KINDS,
+	dataType,
+	isDataType,
+	type DataType,
+	type DataTypeKind
+} from '../document/data-types';
 import { strings } from '../ui/strings';
 
 export function McdPanel({ selection }: { selection: Selection }) {
@@ -66,42 +73,68 @@ function AttributesEditor({ element }: { element: EntityNode | AssociationNode }
 			<ul className="attribute-editor">
 				{element.attributes.map((attribute, index) => (
 					<li key={attribute.id}>
-						<PanelField
-							value={attribute.name}
-							onChange={(name) =>
-								project.renameAttribute(diagramId, element.id, attribute.id, name)
-							}
-						/>
-						{isEntity && (
-							<label title={strings.mcd.identifier}>
+						<div className="attribute-row">
+							<PanelField
+								value={attribute.name}
+								onChange={(name) =>
+									project.renameAttribute(diagramId, element.id, attribute.id, name)
+								}
+							/>
+							<button
+								disabled={index === 0}
+								aria-label={strings.mcd.moveUp}
+								onClick={() => project.moveAttribute(diagramId, element.id, attribute.id, -1)}
+							>
+								↑
+							</button>
+							<button
+								disabled={index === last}
+								aria-label={strings.mcd.moveDown}
+								onClick={() => project.moveAttribute(diagramId, element.id, attribute.id, 1)}
+							>
+								↓
+							</button>
+							<button
+								aria-label={strings.mcd.removeAttribute}
+								onClick={() => project.removeAttribute(diagramId, element.id, attribute.id)}
+							>
+								×
+							</button>
+						</div>
+						<div className="attribute-row attribute-details">
+							<DataTypeField
+								type={attribute.type ?? dataType('text')}
+								onChange={(type) =>
+									project.setAttributeType(diagramId, element.id, attribute.id, type)
+								}
+							/>
+							{isEntity && (
+								<label title={strings.mcd.identifier}>
+									<input
+										type="checkbox"
+										checked={attribute.identifier}
+										onChange={() => project.toggleIdentifier(diagramId, element.id, attribute.id)}
+									/>
+									ID
+								</label>
+							)}
+							<label title={strings.mcd.optionalHint}>
 								<input
 									type="checkbox"
-									checked={attribute.identifier}
-									onChange={() => project.toggleIdentifier(diagramId, element.id, attribute.id)}
+									checked={attribute.optional ?? false}
+									disabled={attribute.identifier}
+									onChange={(e) =>
+										project.setAttributeOptional(
+											diagramId,
+											element.id,
+											attribute.id,
+											e.currentTarget.checked
+										)
+									}
 								/>
-								ID
+								{strings.mcd.optional}
 							</label>
-						)}
-						<button
-							disabled={index === 0}
-							aria-label={strings.mcd.moveUp}
-							onClick={() => project.moveAttribute(diagramId, element.id, attribute.id, -1)}
-						>
-							↑
-						</button>
-						<button
-							disabled={index === last}
-							aria-label={strings.mcd.moveDown}
-							onClick={() => project.moveAttribute(diagramId, element.id, attribute.id, 1)}
-						>
-							↓
-						</button>
-						<button
-							aria-label={strings.mcd.removeAttribute}
-							onClick={() => project.removeAttribute(diagramId, element.id, attribute.id)}
-						>
-							×
-						</button>
+						</div>
 					</li>
 				))}
 			</ul>
@@ -115,6 +148,56 @@ function AttributesEditor({ element }: { element: EntityNode | AssociationNode }
 				{strings.mcd.addAttribute}
 			</button>
 		</>
+	);
+}
+
+/** A Data type picker, with the parameters of Decimal(p,s) and Text(n). */
+function DataTypeField({ type, onChange }: { type: DataType; onChange: (type: DataType) => void }) {
+	const number = (value: number, label: string, change: (value: number) => DataType) => (
+		<input
+			key={`${label}-${value}`}
+			className="type-parameter"
+			type="number"
+			min={label === strings.dataTypes.scale ? 0 : 1}
+			aria-label={label}
+			title={label}
+			defaultValue={value}
+			onBlur={(e) => {
+				const next = change(Number(e.currentTarget.value));
+				// An invalid value (empty, scale above precision…) puts the current one back.
+				if (!isDataType(next)) e.currentTarget.value = String(value);
+				else if (Number(e.currentTarget.value) !== value) onChange(next);
+			}}
+			onKeyDown={(e) => {
+				if (e.key === 'Enter') e.currentTarget.blur();
+			}}
+		/>
+	);
+	return (
+		<span className="data-type">
+			<select
+				aria-label={strings.dataTypes.label}
+				value={type.kind}
+				onChange={(e) => onChange(dataType(e.currentTarget.value as DataTypeKind))}
+			>
+				{DATA_TYPE_KINDS.map((kind) => (
+					<option key={kind} value={kind}>
+						{strings.dataTypes.kinds[kind]}
+					</option>
+				))}
+			</select>
+			{type.kind === 'varchar' &&
+				number(type.length, strings.dataTypes.length, (length) => ({ ...type, length }))}
+			{type.kind === 'decimal' && (
+				<>
+					{number(type.precision, strings.dataTypes.precision, (precision) => ({
+						...type,
+						precision
+					}))}
+					{number(type.scale, strings.dataTypes.scale, (scale) => ({ ...type, scale }))}
+				</>
+			)}
+		</span>
 	);
 }
 

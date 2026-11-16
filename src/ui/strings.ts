@@ -38,6 +38,35 @@ export const strings = {
 		},
 		copyFailed: 'Copy this link:'
 	},
+	sql: {
+		tabs: { mld: 'MLD', sql: 'PostgreSQL' },
+		expand: 'Show the MLD and SQL',
+		collapse: 'Hide the MLD and SQL',
+		copy: 'Copy',
+		copied: 'Copied',
+		copyFailed: 'Copy blocked: select the text',
+		download: 'Download',
+		warnings: 'warnings',
+		empty: 'Add Entities to see the tables they make.'
+	},
+	dataTypes: {
+		label: 'Data type',
+		length: 'Length',
+		precision: 'Precision',
+		scale: 'Scale',
+		kinds: {
+			integer: 'Integer',
+			bigint: 'Big integer',
+			decimal: 'Decimal',
+			text: 'Text',
+			varchar: 'Text(n)',
+			boolean: 'Boolean',
+			date: 'Date',
+			datetime: 'Date time',
+			uuid: 'UUID',
+			serial: 'Auto-increment'
+		}
+	},
 	presence: {
 		you: 'you',
 		renameHint: 'click to rename'
@@ -74,6 +103,8 @@ export const strings = {
 		moveUp: 'Move up',
 		moveDown: 'Move down',
 		addReflexive: '+ Reflexive association',
+		optional: 'Optional',
+		optionalHint: 'The column accepts NULL',
 		legs: 'Legs'
 	}
 };

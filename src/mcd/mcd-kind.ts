@@ -2,6 +2,7 @@ import type { CanvasKind } from '../canvas/DiagramCanvas';
 import { LegEdge } from './LegEdge';
 import { McdPalette } from './McdPalette';
 import { McdPanel } from './McdPanel';
+import { SqlPanel } from './SqlPanel';
 import { AssociationNode, EntityNode } from './McdNodes';
 
 export const mcdKind: CanvasKind = {
@@ -9,6 +10,7 @@ export const mcdKind: CanvasKind = {
 	edgeTypes: { leg: LegEdge },
 	Palette: McdPalette,
 	Panel: McdPanel,
+	Footer: SqlPanel,
 	drop: (project, diagramId, item, x, y) => {
 		if (item === 'entity') project.addEntity(diagramId, x, y);
 	},

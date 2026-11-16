@@ -401,11 +401,45 @@ input {
 }
 
 .attribute-editor li {
+	margin-bottom: 8px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--border);
+	font-size: 0.8rem;
+}
+
+.attribute-row {
 	display: flex;
 	align-items: center;
 	gap: 3px;
-	margin-bottom: 4px;
-	font-size: 0.8rem;
+}
+
+.attribute-details {
+	flex-wrap: wrap;
+	margin-top: 3px;
+	gap: 4px 8px;
+	color: var(--muted);
+}
+
+.attribute-details label {
+	display: flex;
+	align-items: center;
+	white-space: nowrap;
+}
+
+.data-type {
+	display: flex;
+	gap: 2px;
+}
+
+.data-type select {
+	font: inherit;
+	max-width: 110px;
+}
+
+.attribute-editor .type-parameter {
+	flex: none;
+	width: 48px;
+	border-color: var(--border);
 }
 
 .attribute-editor input:not([type='checkbox']) {
@@ -494,6 +528,8 @@ input {
 
 .cardinality {
 	position: absolute;
+	/* Above the Entities, so it stays clickable when one is close to its Association (as in Looping). */
+	z-index: 1001;
 	padding: 0 3px;
 	border: none;
 	border-radius: 3px;
@@ -605,4 +641,92 @@ input {
 /* Another Participant selected this node: outline its own box in their color. */
 .react-flow__node.remote-selected > * {
 	box-shadow: 0 0 0 3px var(--remote-color);
+}
+
+.flow-column {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.flow-column .flow {
+	min-height: 0;
+}
+
+.sql-panel {
+	flex: none;
+	border-top: 1px solid var(--border);
+	background: var(--surface);
+}
+
+.sql-panel-open {
+	height: 38%;
+	display: flex;
+	flex-direction: column;
+}
+
+.sql-panel-bar {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	border-bottom: 1px solid var(--border);
+}
+
+.sql-panel-bar button {
+	padding: 2px 10px;
+}
+
+.sql-panel-toggle {
+	border: none;
+	background: none;
+}
+
+.sql-tab {
+	border-color: transparent;
+	background: none;
+	color: var(--muted);
+}
+
+.sql-tab-open {
+	border-color: var(--border);
+	color: var(--text);
+	font-weight: 600;
+}
+
+.sql-warning-count {
+	color: #92400e;
+	font-size: 0.8rem;
+}
+
+.sql-actions {
+	display: flex;
+	gap: 4px;
+	margin-left: auto;
+}
+
+.sql-panel-body {
+	flex: 1;
+	overflow: auto;
+	padding: 8px 12px;
+}
+
+.sql-warnings {
+	margin: 0 0 8px;
+	padding: 6px 10px 6px 24px;
+	border-radius: 6px;
+	background: #fef3c7;
+	color: #92400e;
+	font-size: 0.85rem;
+}
+
+.sql-output {
+	margin: 0;
+	font:
+		13px/1.5 ui-monospace,
+		Menlo,
+		Consolas,
+		monospace;
+	white-space: pre;
 }

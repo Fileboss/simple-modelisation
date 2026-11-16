@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { dataType, isDataType, type DataType } from './data-types';
 
 export type DiagramKind = 'system' | 'mcd';
 
@@ -42,7 +43,14 @@ export type ComponentNode = DiagramNode & {
 
 export type ConnectionEdge = DiagramEdge & { type: 'connection'; label: string };
 
-export type Attribute = { id: string; name: string; identifier: boolean };
+export type Attribute = {
+	id: string;
+	name: string;
+	identifier: boolean;
+	type: DataType;
+	/** Whether the column accepts NULL; an Identifier is never optional. */
+	optional: boolean;
+};
 
 export type EntityNode = DiagramNode & { type: 'entity'; name: string; attributes: Attribute[] };
 
@@ -162,7 +170,7 @@ export class ProjectDocument {
 	// Elements, shared by every Diagram kind
 
 	nodes(diagramId: string): DiagramNode[] {
-		return [...this.nodeMap(diagramId).values()].map((n) => n.toJSON() as DiagramNode);
+		return [...this.nodeMap(diagramId).values()].map((n) => withCompleteAttributes(n.toJSON()));
 	}
 
 	edges(diagramId: string): DiagramEdge[] {
@@ -260,7 +268,15 @@ export class ProjectDocument {
 			x: Math.round(x),
 			y: Math.round(y),
 			name,
-			attributes: [{ id: crypto.randomUUID(), name: 'id', identifier: true }]
+			attributes: [
+				{
+					id: crypto.randomUUID(),
+					name: 'id',
+					identifier: true,
+					type: dataType('serial'),
+					optional: false
+				}
+			]
 		};
 		this.insertNode(diagramId, entity);
 		return id;
@@ -325,7 +341,13 @@ export class ProjectDocument {
 		const id = crypto.randomUUID();
 		this.updateAttributes(diagramId, nodeId, (list) => [
 			...list,
-			{ id, name: name.trim() || 'attribute', identifier: false }
+			{
+				id,
+				name: name.trim() || 'attribute',
+				identifier: false,
+				type: dataType('text'),
+				optional: false
+			}
 		]);
 		return id;
 	}
@@ -357,7 +379,32 @@ export class ProjectDocument {
 	toggleIdentifier(diagramId: string, entityId: string, attributeId: string): void {
 		if (this.nodeMap(diagramId).get(entityId)?.get('type') !== 'entity') return;
 		this.updateAttributes(diagramId, entityId, (list) =>
-			list.map((a) => (a.id === attributeId ? { ...a, identifier: !a.identifier } : a))
+			list.map((a) =>
+				a.id === attributeId ? { ...a, identifier: !a.identifier, optional: false } : a
+			)
+		);
+	}
+
+	setAttributeType(diagramId: string, nodeId: string, attributeId: string, type: DataType): void {
+		if (!isDataType(type)) return;
+		this.updateAttributes(diagramId, nodeId, (list) =>
+			list.map((a) =>
+				a.id === attributeId
+					? { ...a, type, optional: a.optional && canBeOptional({ ...a, type }) }
+					: a
+			)
+		);
+	}
+
+	/** Lets a column accept NULL, or not; an Identifier stays required. */
+	setAttributeOptional(
+		diagramId: string,
+		nodeId: string,
+		attributeId: string,
+		optional: boolean
+	): void {
+		this.updateAttributes(diagramId, nodeId, (list) =>
+			list.map((a) => (a.id === attributeId ? { ...a, optional: optional && canBeOptional(a) } : a))
 		);
 	}
 
@@ -420,7 +467,7 @@ export class ProjectDocument {
 				diagram.set('kind', d.kind);
 				diagram.set('name', d.name);
 				diagram.set('createdAt', d.createdAt);
-				diagram.set('nodes', toFieldsMap(d.nodes));
+				diagram.set('nodes', toFieldsMap(d.nodes.map(withCompleteAttributes)));
 				diagram.set('edges', toFieldsMap(d.edges));
 				project.diagramMap.set(d.id, diagram);
 			}
@@ -454,7 +501,8 @@ export class ProjectDocument {
 	): void {
 		const node = this.nodeMap(diagramId).get(nodeId);
 		if (!node) return;
-		node.set('attributes', change((node.get('attributes') as Attribute[] | undefined) ?? []));
+		const stored = (node.get('attributes') as Partial<Attribute>[] | undefined) ?? [];
+		node.set('attributes', change(completeAttributes(stored)));
 	}
 
 	private requireDiagram(id: string): Fields {
@@ -462,6 +510,38 @@ export class ProjectDocument {
 		if (!diagram) throw new Error(`Unknown diagram ${id}`);
 		return diagram;
 	}
+}
+
+/**
+ * Attributes written before Data types existed (by an older version, a file or
+ * a peer) are completed when read, never rewritten in place, so they cannot
+ * race a collaborator's edits: the only Identifier of an Entity reads as
+ * Auto-increment, any other Attribute as Text, all required.
+ */
+function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
+	const loneIdentifier = attributes.filter((a) => a.identifier).length === 1;
+	return attributes.map((a, index) => {
+		const type = a.type ?? dataType(a.identifier && loneIdentifier ? 'serial' : 'text');
+		return {
+			// Stable across reads, so the UI keeps its rows.
+			id: a.id ?? `attribute-${index}`,
+			name: a.name ?? 'attribute',
+			identifier: a.identifier ?? false,
+			type,
+			optional: canBeOptional({ identifier: a.identifier ?? false, type }) && (a.optional ?? false)
+		};
+	});
+}
+
+/** An Identifier or an Auto-increment column is never NULL. */
+const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
+	!a.identifier && a.type.kind !== 'serial';
+
+function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
+	const attributes = node.attributes as Partial<Attribute>[] | undefined;
+	return (
+		attributes ? { ...node, attributes: completeAttributes(attributes) } : node
+	) as DiagramNode;
 }
 
 function toFields(element: Record<string, unknown>): Fields {
@@ -522,7 +602,13 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 		(node.type === 'entity' || node.type === 'association') &&
 		Array.isArray(attributes) &&
 		attributes.every(
-			(a) => isString(a?.id) && isString(a.name) && typeof a.identifier === 'boolean'
+			(a) =>
+				isString(a?.id) &&
+				isString(a.name) &&
+				typeof a.identifier === 'boolean' &&
+				// Files written before Data types existed have neither field; reads complete them.
+				(a.type === undefined || isDataType(a.type)) &&
+				(a.optional === undefined || typeof a.optional === 'boolean')
 		)
 	);
 }
