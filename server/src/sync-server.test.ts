@@ -1,4 +1,5 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
+import { randomBytes } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -117,7 +118,7 @@ describe('sync server', () => {
 				Connection: 'Upgrade',
 				Upgrade: 'websocket',
 				'Sec-WebSocket-Version': '13',
-				'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+				'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
 				'X-Forwarded-For': '203.0.113.7'
 			}
 		});
