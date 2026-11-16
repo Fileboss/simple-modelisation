@@ -7,8 +7,6 @@ tags: [backlog]
 
 ## In progress
 
-- [v1-core](docs/specs/v1-core/): Projects, System design diagrams and MCDs, local only
-
 ## To do
 
 - Sync server, link sharing and live cursors (Yjs provider)
@@ -20,5 +18,8 @@ tags: [backlog]
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
 - Image export (PNG/SVG)
+- Canvas performance on large Diagrams: keep unchanged node and edge objects between updates instead of rebuilding them all
 
 ## Done
+
+- [v1-core](docs/specs/v1-core/): Projects, System design diagrams and MCDs, local only

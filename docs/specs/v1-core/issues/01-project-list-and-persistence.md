@@ -2,7 +2,7 @@
 title: '01: Project list, persistence and Docker image'
 tags: [ticket, v1-core]
 date: 2026-11-16
-status: ready-for-agent
+status: done
 blocked_by: []
 ---
 
@@ -14,11 +14,11 @@ Part of [v1-core](../spec.md).
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The home page lists Projects (name, last updated) and creates, renames and deletes them.
-- [ ] Opening a Project goes to its own route; an unknown id shows a "not found" message with a link home.
-- [ ] Projects and their documents persist in IndexedDB; deleting a Project removes both.
-- [ ] Vitest runs through `make test` with a first test on the Project document module.
-- [ ] A Dockerfile builds the app and serves it with nginx, used by the generated Docker workflow.
-- [ ] The demo Vite page is gone.
+- [x] The home page lists Projects (name, last updated) and creates, renames and deletes them.
+- [x] Opening a Project goes to its own route; an unknown id shows a "not found" message with a link home.
+- [x] Projects and their documents persist in IndexedDB; deleting a Project removes both.
+- [x] Vitest runs through `make test` with a first test on the Project document module.
+- [x] A Dockerfile builds the app and serves it with nginx, used by the generated Docker workflow.
+- [x] The demo Vite page is gone.

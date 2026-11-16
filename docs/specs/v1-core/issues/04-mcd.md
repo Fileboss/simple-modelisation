@@ -2,7 +2,7 @@
 title: '04: MCD with Entities, Associations and Cardinalities'
 tags: [ticket, v1-core]
 date: 2026-11-16
-status: ready-for-agent
+status: done
 blocked_by: [3]
 ---
 
@@ -14,12 +14,12 @@ Part of [v1-core](../spec.md).
 
 **Blocked by:** 03 (reuses the properties panel)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Entities are added, moved, renamed by double-click and deleted.
-- [ ] Attributes are added, renamed, reordered and removed in the panel; Identifier Attributes show underlined.
-- [ ] The Association tool creates binary and reflexive Associations with two 0,n Legs.
-- [ ] Clicking a Cardinality cycles it; the panel can set it directly.
-- [ ] Deleting an Entity deletes its Legs and any Association left with fewer than two Legs (a reflexive one goes with its Entity).
-- [ ] The rendering matches Looping's colors and shapes.
-- [ ] Tests: binary and reflexive Association creation, Cardinality cycling, cascade delete.
+- [x] Entities are added, moved, renamed by double-click and deleted.
+- [x] Attributes are added, renamed, reordered and removed in the panel; Identifier Attributes show underlined.
+- [x] The Association tool creates binary and reflexive Associations with two 0,n Legs.
+- [x] Clicking a Cardinality cycles it; the panel can set it directly.
+- [x] Deleting an Entity deletes its Legs and any Association left with fewer than two Legs (a reflexive one goes with its Entity).
+- [x] The rendering matches Looping's colors and shapes.
+- [x] Tests: binary and reflexive Association creation, Cardinality cycling, cascade delete.

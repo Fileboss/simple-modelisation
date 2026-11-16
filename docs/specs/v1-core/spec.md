@@ -2,7 +2,7 @@
 title: v1 core - Projects, System design diagrams and MCDs
 tags: [spec, v1]
 date: 2026-11-16
-status: ready-for-agent
+status: done
 ---
 
 # v1 core

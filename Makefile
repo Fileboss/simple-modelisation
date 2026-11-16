@@ -9,7 +9,7 @@ test:
 	pnpm run --if-present test
 
 lint:
-	pnpm exec prettier --check . && pnpm exec eslint . && pnpm exec tsc --noEmit
+	pnpm exec prettier --check . && pnpm exec eslint . && pnpm exec tsc -b
 
 build:
 	pnpm run --if-present build
