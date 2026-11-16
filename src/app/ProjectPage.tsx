@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import type { Diagram, DiagramKind, ProjectDocument } from '../document/project';
+import type { Diagram, DiagramKind, ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { DiagramCanvas, type CanvasKind } from '../canvas/DiagramCanvas';
 import { EditableText } from '../canvas/EditableText';
 import { mcdKind } from '../mcd/mcd-kind';

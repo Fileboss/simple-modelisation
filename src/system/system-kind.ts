@@ -1,6 +1,6 @@
 import type { CanvasKind } from '../canvas/DiagramCanvas';
 import { asStored } from '../canvas/layout';
-import type { ComponentType } from '../document/project';
+import type { ComponentType } from '@simple-modelisation/model/project.ts';
 import { componentTypeInfo } from './catalog';
 import { ComponentNode } from './ComponentNode';
 import { ConnectionEdge } from './ConnectionEdge';

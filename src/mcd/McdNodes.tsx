@@ -5,7 +5,7 @@ import type {
 	AssociationNode as AssociationData,
 	Attribute,
 	EntityNode as EntityData
-} from '../document/project';
+} from '@simple-modelisation/model/project.ts';
 import { umlAttribute, useNotation, type AssociationClassSide } from './notation';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];

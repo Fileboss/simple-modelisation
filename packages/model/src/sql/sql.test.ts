@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { DataType } from '../document/data-types';
-import { ProjectDocument, type Cardinality } from '../document/project';
-import { deriveMld, snakeCase } from './mld';
-import { mldText, postgresScript } from './postgres';
+import type { DataType } from '../data-types.ts';
+import { ProjectDocument, type Cardinality } from '../project.ts';
+import { deriveMld, snakeCase } from './mld.ts';
+import { mldText, postgresScript } from './postgres.ts';
 
 /** Builds an MCD through the Project document, as the app does. */
 function mcd() {

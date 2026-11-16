@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useProjectVersion } from '../app/project-hooks';
 import { useCanvas } from '../canvas/canvas-context';
-import type { Diagram } from '../document/project';
-import { deriveMld } from '../sql/mld';
-import { linesText, mldLines, postgresScript } from '../sql/postgres';
+import type { Diagram } from '@simple-modelisation/model/project.ts';
+import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
+import { linesText, mldLines, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { copyText } from '../ui/clipboard';
 import { downloadText } from '../ui/download';
 import { strings } from '../ui/strings';

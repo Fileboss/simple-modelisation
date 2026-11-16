@@ -2,7 +2,7 @@ import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@x
 import { useCanvas } from '../canvas/canvas-context';
 import type { RemoteHighlight, TwinPosition } from '../canvas/DiagramCanvas';
 import { borderPoint, center } from '../canvas/geometry';
-import type { LegEdge as LegData } from '../document/project';
+import type { LegEdge as LegData } from '@simple-modelisation/model/project.ts';
 import { umlMultiplicity, useNotation, type PeerLeg } from './notation';
 
 /** Gap between Legs joining the same Association and Entity (a reflexive Association has two). */

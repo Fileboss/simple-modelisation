@@ -24,7 +24,12 @@ import {
 	type CSSProperties,
 	type DragEvent
 } from 'react';
-import type { Diagram, DiagramEdge, DiagramNode, ProjectDocument } from '../document/project';
+import type {
+	Diagram,
+	DiagramEdge,
+	DiagramNode,
+	ProjectDocument
+} from '@simple-modelisation/model/project.ts';
 import {
 	reportPresence,
 	useCursorReporter,

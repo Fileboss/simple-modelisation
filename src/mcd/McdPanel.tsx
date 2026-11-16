@@ -7,14 +7,14 @@ import {
 	type Cardinality,
 	type EntityNode,
 	type LegEdge
-} from '../document/project';
+} from '@simple-modelisation/model/project.ts';
 import {
 	DATA_TYPE_KINDS,
 	dataType,
 	isDataType,
 	type DataType,
 	type DataTypeKind
-} from '../document/data-types';
+} from '@simple-modelisation/model/data-types.ts';
 import { strings } from '../ui/strings';
 import { umlMultiplicity, useNotation } from './notation';
 

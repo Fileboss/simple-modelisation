@@ -1,5 +1,5 @@
-import type { DataType } from '../document/data-types';
-import type { Mld } from './mld';
+import type { DataType } from '../data-types.ts';
+import type { Mld } from './mld.ts';
 
 export function postgresType(type: DataType): string {
 	switch (type.kind) {

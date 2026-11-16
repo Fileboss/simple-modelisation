@@ -1,7 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import type { RemoteHighlight } from '../canvas/DiagramCanvas';
 import { borderPoint, center } from '../canvas/geometry';
-import type { ConnectionEdge as ConnectionData } from '../document/project';
+import type { ConnectionEdge as ConnectionData } from '@simple-modelisation/model/project.ts';
 
 /** A straight arrow between the borders of two Components, with its label in the middle. */
 export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps) {

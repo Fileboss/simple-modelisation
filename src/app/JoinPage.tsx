@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import * as Y from 'yjs';
-import { ProjectDocument } from '../document/project';
+import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { saveProjectDoc } from '../storage/persistence';
 import { connectSync } from '../storage/sync';
 import { strings } from '../ui/strings';

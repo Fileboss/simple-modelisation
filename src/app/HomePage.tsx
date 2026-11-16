@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { EditableText } from '../canvas/EditableText';
-import { ProjectDocument } from '../document/project';
+import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import type { ProjectSummary } from '../document/registry';
 import { deleteProjectDoc, renameStoredProject, saveProjectDoc } from '../storage/persistence';
 import { strings } from '../ui/strings';

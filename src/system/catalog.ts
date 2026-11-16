@@ -20,7 +20,8 @@ import {
 	siVuedotjs,
 	type SimpleIcon
 } from 'simple-icons';
-import type { ComponentType } from '../document/project';
+import type { ComponentType } from '@simple-modelisation/model/project.ts';
+import { SKIN_IDS, type SkinId } from '@simple-modelisation/model/skins.ts';
 
 /** A market product a Component can wear. Logos come from Simple Icons (CC0). */
 export type Skin = {
@@ -38,82 +39,55 @@ export type ComponentTypeInfo = {
 	skins: Skin[];
 };
 
-const fromIcon = (id: string, icon: SimpleIcon, name: string = icon.title): Skin => ({
-	id,
+type Look = Omit<Skin, 'id'>;
+
+const fromIcon = (icon: SimpleIcon, name: string = icon.title): Look => ({
 	name,
 	color: `#${icon.hex}`,
 	logo: icon.path
 });
 
-export const COMPONENT_TYPES: ComponentTypeInfo[] = [
-	{
-		type: 'client',
-		label: 'Client',
-		color: '#64748b',
-		skins: [fromIcon('react', siReact), fromIcon('vue', siVuedotjs), fromIcon('android', siAndroid)]
-	},
-	{
-		type: 'service',
-		label: 'Service',
-		color: '#2563eb',
-		skins: [
-			fromIcon('nodejs', siNodedotjs),
-			fromIcon('spring-boot', siSpringboot),
-			fromIcon('go', siGo)
-		]
-	},
-	{
-		type: 'database',
-		label: 'Database',
-		color: '#0f766e',
-		skins: [
-			fromIcon('postgresql', siPostgresql),
-			fromIcon('mysql', siMysql),
-			fromIcon('mongodb', siMongodb)
-		]
-	},
-	{
-		type: 'cache',
-		label: 'Cache',
-		color: '#b91c1c',
-		skins: [
-			fromIcon('redis', siRedis),
-			{ id: 'valkey', name: 'Valkey', color: '#4a62d8' },
-			{ id: 'memcached', name: 'Memcached', color: '#2a7a3b' }
-		]
-	},
-	{
-		type: 'queue',
-		label: 'Message queue',
-		color: '#9333ea',
-		skins: [
-			fromIcon('kafka', siApachekafka, 'Kafka'),
-			fromIcon('rabbitmq', siRabbitmq),
-			fromIcon('nats', siNatsdotio, 'NATS')
-		]
-	},
-	{
-		type: 'gateway',
-		label: 'Gateway',
-		color: '#ea580c',
-		skins: [
-			fromIcon('nginx', siNginx),
-			fromIcon('traefik', siTraefikproxy, 'Traefik'),
-			fromIcon('kong', siKong)
-		]
-	},
-	{
-		type: 'storage',
-		label: 'Object storage',
-		color: '#ca8a04',
-		skins: [
-			{ id: 's3', name: 'Amazon S3', color: '#569a31' },
-			fromIcon('minio', siMinio),
-			fromIcon('gcs', siGooglecloudstorage, 'Cloud Storage'),
-			fromIcon('ceph', siCeph)
-		]
-	}
+// The look of every Skin the model knows; the type makes a missing one a compile error.
+const LOOKS: Record<SkinId, Look> = {
+	react: fromIcon(siReact),
+	vue: fromIcon(siVuedotjs),
+	android: fromIcon(siAndroid),
+	nodejs: fromIcon(siNodedotjs),
+	'spring-boot': fromIcon(siSpringboot),
+	go: fromIcon(siGo),
+	postgresql: fromIcon(siPostgresql),
+	mysql: fromIcon(siMysql),
+	mongodb: fromIcon(siMongodb),
+	redis: fromIcon(siRedis),
+	valkey: { name: 'Valkey', color: '#4a62d8' },
+	memcached: { name: 'Memcached', color: '#2a7a3b' },
+	kafka: fromIcon(siApachekafka, 'Kafka'),
+	rabbitmq: fromIcon(siRabbitmq),
+	nats: fromIcon(siNatsdotio, 'NATS'),
+	nginx: fromIcon(siNginx),
+	traefik: fromIcon(siTraefikproxy, 'Traefik'),
+	kong: fromIcon(siKong),
+	s3: { name: 'Amazon S3', color: '#569a31' },
+	minio: fromIcon(siMinio),
+	gcs: fromIcon(siGooglecloudstorage, 'Cloud Storage'),
+	ceph: fromIcon(siCeph)
+};
+
+const TYPES: { type: ComponentType; label: string; color: string }[] = [
+	{ type: 'client', label: 'Client', color: '#64748b' },
+	{ type: 'service', label: 'Service', color: '#2563eb' },
+	{ type: 'database', label: 'Database', color: '#0f766e' },
+	{ type: 'cache', label: 'Cache', color: '#b91c1c' },
+	{ type: 'queue', label: 'Message queue', color: '#9333ea' },
+	{ type: 'gateway', label: 'Gateway', color: '#ea580c' },
+	{ type: 'storage', label: 'Object storage', color: '#ca8a04' }
 ];
+
+/** Each Component type with its Skins, in the model's order (packages/model skins.ts). */
+export const COMPONENT_TYPES: ComponentTypeInfo[] = TYPES.map((info) => ({
+	...info,
+	skins: SKIN_IDS[info.type].map((id) => ({ id, ...LOOKS[id] }))
+}));
 
 export function componentTypeInfo(type: ComponentType): ComponentTypeInfo {
 	return COMPONENT_TYPES.find((t) => t.type === type) ?? COMPONENT_TYPES[0];

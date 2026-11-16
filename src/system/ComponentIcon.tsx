@@ -1,4 +1,4 @@
-import type { ComponentType } from '../document/project';
+import type { ComponentType } from '@simple-modelisation/model/project.ts';
 import type { Skin } from './catalog';
 
 // Line glyphs on a 24×24 box for the generic look of each Component type.

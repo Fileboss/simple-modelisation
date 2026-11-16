@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { dataType, isDataType, type DataType } from './data-types';
+import { dataType, isDataType, type DataType } from './data-types.ts';
 
 export type DiagramKind = 'system' | 'mcd';
 
@@ -421,6 +421,11 @@ export class ProjectDocument {
 	/** Ends the current undo step, so the next change undoes on its own. */
 	stopCapturing(): void {
 		this.undoManager.stopCapturing();
+	}
+
+	/** Stops tracking undo; for a short-lived wrapper around a document someone else owns. */
+	destroy(): void {
+		this.undoManager.destroy();
 	}
 
 	subscribe(listener: () => void): () => void {

@@ -1,6 +1,6 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
-import { ProjectDocument } from '../document/project';
+import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { ProjectRegistry } from '../document/registry';
 
 const PREFIX = 'simple-modelisation';
