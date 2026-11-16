@@ -51,6 +51,8 @@ export type CanvasKind = {
 	edgeTypes: EdgeTypes;
 	Palette: ComponentType;
 	Panel: ComponentType<{ selection: Selection }>;
+	/** Shown under the canvas (the MCD's MLD and SQL). */
+	Footer?: ComponentType<{ diagram: Diagram }>;
 	drop: (project: ProjectDocument, diagramId: string, item: string, x: number, y: number) => void;
 	connect: (project: ProjectDocument, diagramId: string, source: string, target: string) => void;
 };
@@ -180,52 +182,55 @@ function Canvas({ project, diagram, kind }: Props) {
 	return (
 		<div className="workspace">
 			<kind.Palette />
-			<div
-				className="flow"
-				onDrop={onDrop}
-				onDragOver={(e) => e.preventDefault()}
-				onPointerMove={(e) => {
-					const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-					cursor.move(x, y);
-				}}
-				onPointerLeave={cursor.leave}
-			>
-				<ReactFlow
-					nodes={shownNodes}
-					edges={shownEdges}
-					nodeTypes={kind.nodeTypes}
-					edgeTypes={kind.edgeTypes}
-					onNodesChange={onNodesChange}
-					onEdgesChange={onEdgesChange}
-					onNodeDragStart={() => project.stopCapturing()}
-					onNodeDragStop={(_event, _node, dragged) => {
-						project.doc.transact(() => {
-							for (const n of dragged) {
-								project.moveNode(diagram.id, n.id, n.position.x, n.position.y);
-							}
-						});
+			<div className="flow-column">
+				<div
+					className="flow"
+					onDrop={onDrop}
+					onDragOver={(e) => e.preventDefault()}
+					onPointerMove={(e) => {
+						const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+						cursor.move(x, y);
 					}}
-					onConnect={({ source, target }) => {
-						project.stopCapturing();
-						kind.connect(project, diagram.id, source, target);
-					}}
-					onDelete={({ nodes: deletedNodes, edges: deletedEdges }) => {
-						project.stopCapturing();
-						project.deleteElements(
-							diagram.id,
-							deletedNodes.map((n) => n.id),
-							deletedEdges.map((e) => e.id)
-						);
-					}}
-					connectionMode={ConnectionMode.Loose}
-					fitView
-					fitViewOptions={{ maxZoom: 1 }}
-					proOptions={{ hideAttribution: true }}
+					onPointerLeave={cursor.leave}
 				>
-					<Background gap={16} />
-					<RemoteCursors diagramId={diagram.id} />
-					<Controls showInteractive={false} />
-				</ReactFlow>
+					<ReactFlow
+						nodes={shownNodes}
+						edges={shownEdges}
+						nodeTypes={kind.nodeTypes}
+						edgeTypes={kind.edgeTypes}
+						onNodesChange={onNodesChange}
+						onEdgesChange={onEdgesChange}
+						onNodeDragStart={() => project.stopCapturing()}
+						onNodeDragStop={(_event, _node, dragged) => {
+							project.doc.transact(() => {
+								for (const n of dragged) {
+									project.moveNode(diagram.id, n.id, n.position.x, n.position.y);
+								}
+							});
+						}}
+						onConnect={({ source, target }) => {
+							project.stopCapturing();
+							kind.connect(project, diagram.id, source, target);
+						}}
+						onDelete={({ nodes: deletedNodes, edges: deletedEdges }) => {
+							project.stopCapturing();
+							project.deleteElements(
+								diagram.id,
+								deletedNodes.map((n) => n.id),
+								deletedEdges.map((e) => e.id)
+							);
+						}}
+						connectionMode={ConnectionMode.Loose}
+						fitView
+						fitViewOptions={{ maxZoom: 1 }}
+						proOptions={{ hideAttribution: true }}
+					>
+						<Background gap={16} />
+						<RemoteCursors diagramId={diagram.id} />
+						<Controls showInteractive={false} />
+					</ReactFlow>
+				</div>
+				{kind.Footer && <kind.Footer diagram={diagram} />}
 			</div>
 			<aside className="panel">
 				<kind.Panel selection={selection} />

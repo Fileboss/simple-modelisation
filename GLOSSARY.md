@@ -74,6 +74,10 @@ _Avoid_: Table, class
 A named property of an Entity or an Association.
 _Avoid_: Field, column
 
+**Data type**:
+The conceptual type of an Attribute (Integer, Text, Date, Auto-increment…), independent of any database; each SQL target translates it.
+_Avoid_: Column type, SQL type
+
 **Identifier**:
 The Attribute(s) that uniquely identify an Entity, shown underlined.
 _Avoid_: Primary key, ID
@@ -89,6 +93,10 @@ _Avoid_: Link, edge, branch
 **Cardinality**:
 The min,max count on a Leg: one of 0,1 / 1,1 / 0,n / 1,n.
 _Avoid_: Multiplicity (the UML Notation's word for it)
+
+**MLD**:
+The relational model derived from an MCD: its tables, their columns, primary keys and foreign keys, written in Looping's textual notation.
+_Avoid_: Schema, physical model, ERD
 
 **Notation**:
 The visual convention an MCD is rendered in: Merise (Looping style) or UML class diagram; the model is the same.

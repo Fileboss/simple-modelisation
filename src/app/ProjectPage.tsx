@@ -5,6 +5,8 @@ import { DiagramCanvas, type CanvasKind } from '../canvas/DiagramCanvas';
 import { EditableText } from '../canvas/EditableText';
 import { mcdKind } from '../mcd/mcd-kind';
 import { systemKind } from '../system/system-kind';
+import { copyText } from '../ui/clipboard';
+import { downloadText } from '../ui/download';
 import { strings } from '../ui/strings';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
@@ -68,15 +70,13 @@ function ProjectActions({ project, projectId, status }: ActionsProps) {
 
 	const share = async () => {
 		if (status === 'local') registry.setShared(projectId, true);
-		try {
-			// navigator.clipboard is missing outside secure origins (http on a LAN address).
-			await navigator.clipboard.writeText(shareLink(projectId));
-			setCopy('copied');
-			setTimeout(() => setCopy('idle'), 2000);
-		} catch {
-			setCopy('failed');
-		}
+		setCopy((await copyText(shareLink(projectId))) ? 'copied' : 'failed');
 	};
+	useEffect(() => {
+		if (copy !== 'copied') return;
+		const timer = setTimeout(() => setCopy('idle'), 2000);
+		return () => clearTimeout(timer);
+	}, [copy]);
 
 	return (
 		<div className="project-actions">
@@ -100,7 +100,15 @@ function ProjectActions({ project, projectId, status }: ActionsProps) {
 			</button>
 			<button onClick={() => project.undo()}>{strings.project.undo}</button>
 			<button onClick={() => project.redo()}>{strings.project.redo}</button>
-			<button onClick={() => downloadJson(`${project.name()}.json`, project.toFile())}>
+			<button
+				onClick={() =>
+					downloadText(
+						`${project.name()}.json`,
+						JSON.stringify(project.toFile(), null, 2),
+						'application/json'
+					)
+				}
+			>
 				{strings.project.export}
 			</button>
 		</div>
@@ -198,18 +206,4 @@ function useUndoShortcuts(project: ProjectDocument) {
 		window.addEventListener('keydown', onKeyDown);
 		return () => window.removeEventListener('keydown', onKeyDown);
 	}, [project]);
-}
-
-function downloadJson(fileName: string, data: unknown) {
-	const url = URL.createObjectURL(
-		new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-	);
-	const link = document.createElement('a');
-	link.href = url;
-	link.download = fileName;
-	document.body.append(link);
-	link.click();
-	link.remove();
-	// Some browsers start the download after click() returns: revoke later.
-	setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

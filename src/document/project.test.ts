@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { ProjectDocument } from './project';
+import type { DataType } from './data-types';
+import { ProjectDocument, type Attribute } from './project';
 
 describe('ProjectDocument', () => {
 	it('keeps its name in the document, renames it and undoes the rename', () => {
@@ -223,5 +224,113 @@ describe('Local edits', () => {
 		theirs.addDiagram('mcd');
 		Y.applyUpdate(mine.doc, Y.encodeStateAsUpdate(theirs.doc), 'provider');
 		expect(edits).toBe(2);
+	});
+});
+
+describe('Attribute Data types', () => {
+	it('reads an untyped Attribute received from a peer with the same rules', () => {
+		const project = new ProjectDocument();
+		const diagram = project.addDiagram('mcd');
+		const entity = project.addEntity(diagram, 0, 0, 'Customer');
+		const node = (project.doc.getMap('diagrams').get(diagram) as Y.Map<Y.Map<Y.Map<unknown>>>)
+			.get('nodes')!
+			.get(entity)!;
+		node.set('attributes', [{ id: 'old', name: 'id', identifier: true }]);
+		expect(project.nodes(diagram)[0].attributes).toEqual([
+			{ id: 'old', name: 'id', identifier: true, type: { kind: 'serial' }, optional: false }
+		]);
+	});
+
+	it('never lets an Auto-increment column be optional', () => {
+		const project = new ProjectDocument();
+		const diagram = project.addDiagram('mcd');
+		const entity = project.addEntity(diagram, 0, 0, 'Customer');
+		const count = project.addAttribute(diagram, entity, 'count');
+		project.setAttributeOptional(diagram, entity, count, true);
+		project.setAttributeType(diagram, entity, count, { kind: 'serial' });
+		project.setAttributeOptional(diagram, entity, count, true);
+		expect((project.nodes(diagram)[0].attributes as Attribute[])[1].optional).toBe(false);
+	});
+
+	const setup = () => {
+		const project = new ProjectDocument();
+		const diagram = project.addDiagram('mcd');
+		const entity = project.addEntity(diagram, 0, 0, 'Customer');
+		const attributes = () => project.nodes(diagram)[0].attributes as Attribute[];
+		return { project, diagram, entity, attributes };
+	};
+
+	it('gives a new Entity an Auto-increment id and new Attributes required Text', () => {
+		const { project, diagram, entity, attributes } = setup();
+		project.addAttribute(diagram, entity, 'email');
+		expect(attributes().map((a) => [a.name, a.type.kind, a.optional])).toEqual([
+			['id', 'serial', false],
+			['email', 'text', false]
+		]);
+	});
+
+	it('sets a type with its parameters and makes a column optional, never an Identifier', () => {
+		const { project, diagram, entity, attributes } = setup();
+		const email = project.addAttribute(diagram, entity, 'email');
+		project.setAttributeType(diagram, entity, email, { kind: 'varchar', length: 120 });
+		project.setAttributeOptional(diagram, entity, email, true);
+		project.setAttributeOptional(diagram, entity, attributes()[0].id, true);
+		expect(attributes().map((a) => [a.type, a.optional])).toEqual([
+			[{ kind: 'serial' }, false],
+			[{ kind: 'varchar', length: 120 }, true]
+		]);
+		project.setAttributeType(diagram, entity, email, { kind: 'varchar', length: -1 } as DataType);
+		expect(attributes()[1].type).toEqual({ kind: 'varchar', length: 120 });
+	});
+
+	it('completes Attributes written before Data types, without writing or an undo step', () => {
+		const file = {
+			format: 'simple-modelisation',
+			version: 1,
+			name: 'Old',
+			diagrams: [
+				{
+					id: 'd',
+					kind: 'mcd',
+					name: 'MCD',
+					createdAt: 1,
+					nodes: [
+						{
+							id: 'e',
+							type: 'entity',
+							x: 0,
+							y: 0,
+							name: 'Customer',
+							attributes: [
+								{ id: 'a1', name: 'id', identifier: true },
+								{ id: 'a2', name: 'name', identifier: false }
+							]
+						},
+						{
+							id: 'f',
+							type: 'entity',
+							x: 0,
+							y: 0,
+							name: 'Line',
+							attributes: [
+								{ id: 'b1', name: 'order', identifier: true },
+								{ id: 'b2', name: 'rank', identifier: true }
+							]
+						}
+					],
+					edges: []
+				}
+			]
+		};
+		const project = ProjectDocument.fromFile(file);
+		const kinds = project
+			.nodes('d')
+			.map((n) => (n.attributes as Attribute[]).map((a) => a.type.kind));
+		expect(kinds).toEqual([
+			['serial', 'text'],
+			['text', 'text']
+		]);
+		project.undo();
+		expect(project.nodes('d')[0].attributes).toHaveLength(2);
 	});
 });
