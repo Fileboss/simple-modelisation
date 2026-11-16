@@ -6,21 +6,26 @@ import type {
 	Attribute,
 	EntityNode as EntityData
 } from '../document/project';
+import { umlAttribute, useNotation, type AssociationClassSide } from './notation';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
-/** An Entity in Looping's style: orange header, yellow body, Identifier underlined. */
+/**
+ * An Entity: in Merise, Looping's style (orange header, yellow body, Identifier
+ * underlined); in UML, a class listing `name : Type`.
+ */
 export function EntityNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
 	const entity = data as EntityData;
+	const isUml = useNotation(diagramId) === 'uml';
 	return (
-		<div className={`entity ${selected ? 'selected' : ''}`}>
+		<div className={`${isUml ? 'uml-class' : 'entity'} ${selected ? 'selected' : ''}`}>
 			<EditableText
 				className="entity-name"
 				value={entity.name}
 				onChange={(name) => project.renameNode(diagramId, id, name)}
 			/>
-			<AttributeList nodeId={id} attributes={entity.attributes} />
+			<AttributeList nodeId={id} attributes={entity.attributes} isUml={isUml} />
 			{SIDES.map((side) => (
 				<Handle key={side} id={side} type="source" position={side} className="handle" />
 			))}
@@ -28,10 +33,39 @@ export function EntityNode({ id, data, selected }: NodeProps) {
 	);
 }
 
-/** An Association in Looping's style: a cyan rounded box with its name above its Attributes. */
+/**
+ * An Association: in Merise, Looping's cyan rounded box with its name above its
+ * Attributes; in UML, its name on the line between its classes, with its
+ * Attributes in an association class joined by a dashed line.
+ */
 export function AssociationNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
 	const association = data as AssociationData;
+	const isUml = useNotation(diagramId) === 'uml';
+	if (isUml) {
+		return (
+			<div className={`uml-association ${selected ? 'selected' : ''}`}>
+				<EditableText
+					className="uml-association-name"
+					value={association.name}
+					onChange={(name) => project.renameNode(diagramId, id, name)}
+				/>
+				{association.attributes.length > 0 && (
+					<div
+						className={`uml-association-class uml-side-${(data as AssociationClassSide).umlSide ?? 'top'}`}
+					>
+						<AttributeList nodeId={id} attributes={association.attributes} isUml />
+					</div>
+				)}
+				<Handle
+					type="source"
+					position={Position.Top}
+					isConnectable={false}
+					className="hidden-handle"
+				/>
+			</div>
+		);
+	}
 	return (
 		<div className={`association ${selected ? 'selected' : ''}`}>
 			<EditableText
@@ -39,7 +73,7 @@ export function AssociationNode({ id, data, selected }: NodeProps) {
 				value={association.name}
 				onChange={(name) => project.renameNode(diagramId, id, name)}
 			/>
-			<AttributeList nodeId={id} attributes={association.attributes} />
+			<AttributeList nodeId={id} attributes={association.attributes} isUml={false} />
 			{/* React Flow draws an edge only between handles; Legs are created by the tool, not from here. */}
 			<Handle
 				type="source"
@@ -51,15 +85,19 @@ export function AssociationNode({ id, data, selected }: NodeProps) {
 	);
 }
 
-function AttributeList({ nodeId, attributes }: { nodeId: string; attributes: Attribute[] }) {
+type AttributeListProps = { nodeId: string; attributes: Attribute[]; isUml: boolean };
+
+function AttributeList({ nodeId, attributes, isUml }: AttributeListProps) {
 	const { project, diagramId } = useCanvas();
 	return (
 		<div className="attributes">
 			{attributes.map((attribute) => (
 				<EditableText
 					key={attribute.id}
-					className={attribute.identifier ? 'attribute identifier' : 'attribute'}
+					className={!isUml && attribute.identifier ? 'attribute identifier' : 'attribute'}
 					value={attribute.name}
+					// In UML the line also shows the type; double-click still edits the name.
+					display={isUml ? umlAttribute(attribute) : undefined}
 					onChange={(name) => project.renameAttribute(diagramId, nodeId, attribute.id, name)}
 				/>
 			))}

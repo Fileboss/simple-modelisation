@@ -16,9 +16,11 @@ import {
 	type DataTypeKind
 } from '../document/data-types';
 import { strings } from '../ui/strings';
+import { umlMultiplicity, useNotation } from './notation';
 
 export function McdPanel({ selection }: { selection: Selection }) {
 	const { project, diagramId } = useCanvas();
+	const isUml = useNotation(diagramId) === 'uml';
 	const node = selection.node;
 
 	if (node?.type === 'entity' || node?.type === 'association') {
@@ -44,7 +46,7 @@ export function McdPanel({ selection }: { selection: Selection }) {
 						{strings.mcd.addReflexive}
 					</button>
 				) : (
-					<LegsEditor associationId={element.id} />
+					<LegsEditor associationId={element.id} isUml={isUml} />
 				)}
 			</>
 		);
@@ -52,6 +54,15 @@ export function McdPanel({ selection }: { selection: Selection }) {
 
 	if (selection.edge?.type === 'leg') {
 		const leg = selection.edge as LegEdge;
+		// In UML a Leg's label shows the other Leg: list both ends, as drawn.
+		if (isUml) {
+			return (
+				<>
+					<h2>{strings.mcd.association}</h2>
+					<LegsEditor associationId={leg.source} isUml />
+				</>
+			);
+		}
 		return (
 			<>
 				<h2>{strings.mcd.leg}</h2>
@@ -201,27 +212,39 @@ function DataTypeField({ type, onChange }: { type: DataType; onChange: (type: Da
 	);
 }
 
-function LegsEditor({ associationId }: { associationId: string }) {
+function LegsEditor({ associationId, isUml }: { associationId: string; isUml: boolean }) {
 	const { project, diagramId } = useCanvas();
 	const legs = project
 		.edges(diagramId)
 		.filter((e): e is LegEdge => e.type === 'leg' && e.source === associationId);
 	return (
 		<>
-			<h3>{strings.mcd.legs}</h3>
-			{legs.map((leg) => (
-				<LegRow key={leg.id} leg={leg} />
-			))}
+			<h3>{isUml ? strings.mcd.multiplicities : strings.mcd.legs}</h3>
+			{legs.map((leg) => {
+				// In UML a Leg's Cardinality shows next to the other class.
+				const peer = legs.find((other) => other.id !== leg.id);
+				return (
+					<LegRow
+						key={leg.id}
+						leg={leg}
+						nextTo={isUml && legs.length === 2 ? peer?.target : undefined}
+					/>
+				);
+			})}
 		</>
 	);
 }
 
-function LegRow({ leg }: { leg: LegEdge }) {
+/** One Leg's Cardinality; in UML, as the multiplicity shown next to `nextTo`'s class. */
+function LegRow({ leg, nextTo }: { leg: LegEdge; nextTo?: string }) {
 	const { project, diagramId } = useCanvas();
-	const entity = project.nodes(diagramId).find((n) => n.id === leg.target);
+	const nameOf = (id: string) =>
+		String(project.nodes(diagramId).find((n) => n.id === id)?.name ?? '');
 	return (
 		<label className="panel-field leg-row">
-			<span>{String(entity?.name ?? '')}</span>
+			<span>
+				{nextTo === undefined ? nameOf(leg.target) : `${nameOf(nextTo)} ${strings.mcd.end}`}
+			</span>
 			<select
 				value={leg.cardinality}
 				onChange={(e) =>
@@ -229,7 +252,9 @@ function LegRow({ leg }: { leg: LegEdge }) {
 				}
 			>
 				{CARDINALITIES.map((c) => (
-					<option key={c}>{c}</option>
+					<option key={c} value={c}>
+						{nextTo === undefined ? c : umlMultiplicity(c)}
+					</option>
 				))}
 			</select>
 		</label>

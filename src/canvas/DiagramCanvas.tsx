@@ -33,6 +33,7 @@ import {
 } from '../presence/presence-context';
 import { RemoteCursors } from '../presence/RemoteCursors';
 import { CanvasContext } from './canvas-context';
+import type { Layout } from './layout';
 
 /** MIME type of what the palette drags onto the canvas. */
 export const PALETTE_MIME = 'application/x-simple-modelisation';
@@ -51,6 +52,11 @@ export type CanvasKind = {
 	edgeTypes: EdgeTypes;
 	Palette: ComponentType;
 	Panel: ComponentType<{ selection: Selection }>;
+	/**
+	 * Adjusts what is drawn (positions, edge data) without touching the
+	 * document: the MCD's UML Notation. A hook, called on every render.
+	 */
+	useLayout: () => Layout;
 	/** Shown under the canvas (the MCD's MLD and SQL). */
 	Footer?: ComponentType<{ diagram: Diagram }>;
 	drop: (project: ProjectDocument, diagramId: string, item: string, x: number, y: number) => void;
@@ -67,7 +73,8 @@ export function DiagramCanvas(props: Props) {
 	return (
 		<CanvasContext value={context}>
 			<ReactFlowProvider>
-				<Canvas {...props} />
+				{/* Keyed by Diagram: the kind's hooks (useLayout) must not change on one instance. */}
+				<Canvas key={props.diagram.id} {...props} />
 			</ReactFlowProvider>
 		</CanvasContext>
 	);
@@ -160,6 +167,9 @@ function Canvas({ project, diagram, kind }: Props) {
 		[edges, remoteSelections]
 	);
 
+	const layout = kind.useLayout();
+	const drawn = useMemo(() => layout(shownNodes, shownEdges), [layout, shownNodes, shownEdges]);
+
 	const selectedNodes = nodes.filter((n) => n.selected);
 	const selectedEdges = edges.filter((e) => e.selected);
 	const selection: Selection =
@@ -194,8 +204,8 @@ function Canvas({ project, diagram, kind }: Props) {
 					onPointerLeave={cursor.leave}
 				>
 					<ReactFlow
-						nodes={shownNodes}
-						edges={shownEdges}
+						nodes={drawn.nodes}
+						edges={drawn.edges}
 						nodeTypes={kind.nodeTypes}
 						edgeTypes={kind.edgeTypes}
 						onNodesChange={onNodesChange}

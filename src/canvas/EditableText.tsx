@@ -4,6 +4,8 @@ type Props = {
 	value: string;
 	onChange: (value: string) => void;
 	className?: string;
+	/** What shows when not editing, if not the value itself (a UML Attribute line). */
+	display?: string;
 	/** Controls the editing state from outside (e.g. a Rename button); otherwise double-click starts it. */
 	isEditing?: boolean;
 	onEditingChange?: (isEditing: boolean) => void;
@@ -13,7 +15,7 @@ type Props = {
  * Text that turns into an input; Enter or leaving the field saves a changed,
  * non-blank value, Escape cancels.
  */
-export function EditableText({ value, onChange, className, ...control }: Props) {
+export function EditableText({ value, onChange, className, display, ...control }: Props) {
 	const [isEditingLocally, setEditingLocally] = useState(false);
 	const isEditing = control.isEditing ?? isEditingLocally;
 	const setEditing = (editing: boolean) => {
@@ -24,7 +26,7 @@ export function EditableText({ value, onChange, className, ...control }: Props) 
 	if (!isEditing) {
 		return (
 			<span className={className} onDoubleClick={() => setEditing(true)}>
-				{value}
+				{display ?? value}
 			</span>
 		);
 	}

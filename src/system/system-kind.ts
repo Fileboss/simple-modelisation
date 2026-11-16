@@ -1,4 +1,5 @@
 import type { CanvasKind } from '../canvas/DiagramCanvas';
+import { asStored } from '../canvas/layout';
 import type { ComponentType } from '../document/project';
 import { componentTypeInfo } from './catalog';
 import { ComponentNode } from './ComponentNode';
@@ -11,6 +12,7 @@ export const systemKind: CanvasKind = {
 	edgeTypes: { connection: ConnectionEdge },
 	Palette: SystemPalette,
 	Panel: SystemPanel,
+	useLayout: () => asStored,
 	drop: (project, diagramId, item, x, y) => {
 		const type = item as ComponentType;
 		project.addComponent(diagramId, type, componentTypeInfo(type).label, x, y);
