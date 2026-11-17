@@ -9,19 +9,21 @@ tags: [backlog]
 
 ## To do
 
+- Image export through MCP, and every Diagram at once
+- SVG export readable outside browsers (Figma, Inkscape, slides): plain SVG shapes instead of HTML in a foreignObject
 - Hosting provider (AWS, GCP, OVH, Scaleway…) as a second badge on Components
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Grouping zones in System design diagrams (VPC, region)
 - Custom Skins
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
-- Image export (PNG/SVG)
 - Stop sharing a Project (back to Local)
 - End-to-end tests in CI (Playwright), once the product settles; until then they are run by hand per item
 - Canvas performance on large Diagrams: keep unchanged node and edge objects between updates instead of rebuilding them all
 
 ## Done
 
+- [image-export](docs/specs/image-export/): a Diagram as a PNG or SVG image
 - trackpad-gestures: two fingers pan, pinch zooms, Cmd/Ctrl+wheel zooms
 - bidirectional-tidy: Tidy up keeps A→B and B→A on one shared route (a two-way arrow)
 - [label-placement](docs/specs/label-placement/): Connection labels never overlap each other or boxes

@@ -46,7 +46,10 @@ import {
 	layoutFingerprint
 } from '@simple-modelisation/model/layout.ts';
 import { strings } from '../ui/strings';
+import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
+import { captureViewport, drawnBounds, exportFrame } from './export-image';
+import { registerExporter } from './exporter';
 import type { Layout } from './layout';
 
 /** MIME type of what the palette drags onto the canvas. */
@@ -100,6 +103,7 @@ export function DiagramCanvas(props: Props) {
  */
 function Canvas({ project, diagram, kind }: Props) {
 	const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
+	const flowRef = useRef<HTMLDivElement>(null);
 
 	// Fit once the tidied positions have reached React Flow, not before.
 	const [fitPending, setFitPending] = useState(false);
@@ -191,6 +195,34 @@ function Canvas({ project, diagram, kind }: Props) {
 		return () => cancelAnimationFrame(frame);
 	}, [fitPending, nodes, fitView]);
 
+	// Export: the whole Diagram, framed on what it draws, drawn for the time of the
+	// capture without anyone's selection; one export at a time.
+	const [exporting, setExporting] = useState(false);
+	const exportBusy = useRef(false);
+	useEffect(
+		() =>
+			registerExporter(async (format) => {
+				const viewport = flowRef.current?.querySelector<HTMLElement>('.react-flow__viewport');
+				if (!viewport || exportBusy.current) return false;
+				exportBusy.current = true;
+				setExporting(true);
+				try {
+					await new Promise((resolve) =>
+						requestAnimationFrame(() => requestAnimationFrame(resolve))
+					);
+					const bounds = drawnBounds(viewport, screenToFlowPosition);
+					if (!bounds) return false;
+					const image = await captureViewport(viewport, exportFrame(bounds), format);
+					downloadBlob(`${diagram.name}.${format}`, image);
+					return true;
+				} finally {
+					exportBusy.current = false;
+					setExporting(false);
+				}
+			}),
+		[diagram.name, screenToFlowPosition]
+	);
+
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
 		[setNodes]
@@ -213,21 +245,23 @@ function Canvas({ project, diagram, kind }: Props) {
 	const shownNodes = useMemo(
 		() =>
 			nodes.map((n) => {
+				if (exporting) return n.selected ? { ...n, selected: false } : n;
 				const color = remoteSelections.get(n.id);
 				if (!color) return n;
 				// The node's own box draws the outline, so it follows its shape (see .remote-selected).
 				const style = { ...n.style, '--remote-color': color } as CSSProperties;
 				return { ...n, className: `${n.className ?? ''} remote-selected`, style };
 			}),
-		[nodes, remoteSelections]
+		[nodes, remoteSelections, exporting]
 	);
 	const shownEdges = useMemo(
 		() =>
 			edges.map((e) => {
+				if (exporting) return e.selected ? { ...e, selected: false } : e;
 				const color = remoteSelections.get(e.id);
 				return color ? { ...e, data: { ...e.data, remoteColor: color } } : e;
 			}),
-		[edges, remoteSelections]
+		[edges, remoteSelections, exporting]
 	);
 
 	const layout = kind.useLayout();
@@ -277,6 +311,7 @@ function Canvas({ project, diagram, kind }: Props) {
 			<kind.Palette />
 			<div className="flow-column">
 				<div
+					ref={flowRef}
 					className="flow"
 					onDrop={onDrop}
 					onDragOver={(e) => e.preventDefault()}
