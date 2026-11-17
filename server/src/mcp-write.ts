@@ -2,6 +2,7 @@ import { dataType, isDataType, type DataType } from '@simple-modelisation/model/
 import {
 	CARDINALITIES,
 	COMPONENT_TYPE_IDS,
+	HOSTINGS,
 	type Attribute,
 	type DiagramNode,
 	type LegEdge,
@@ -20,6 +21,11 @@ import { ToolError } from './mcp-error.ts';
 import { pick, pickDiagram } from './mcp-views.ts';
 
 const diagramArgument = z.string().describe('Diagram id or exact name.');
+const hostingArgument = z
+	.enum(HOSTINGS)
+	.describe(
+		'Where the Component runs: bare-metal, vm (a VM or VPS we run), docker (containers on our servers), kubernetes, managed (a cloud service), serverless (functions), external (a third-party service).'
+	);
 // Bounds on what an agent sends, on top of the document size limit.
 const name = () => z.string().min(1).max(200);
 const cardinality = z
@@ -125,9 +131,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			skin: z
 				.string()
 				.optional()
-				.describe('A market product, e.g. postgresql, redis, kafka, nginx.')
+				.describe('A market product, e.g. postgresql, redis, kafka, nginx.'),
+			hosting: hostingArgument.optional()
 		},
-		({ project, diagram, type, name, skin }) =>
+		({ project, diagram, type, name, skin, hosting }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				if (skin && !(SKIN_IDS[type] as readonly string[]).includes(skin)) {
@@ -138,6 +145,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const { x, y } = freeSpot(nodesOf(p, d.id));
 				const id = p.addComponent(d.id, type, name, x, y);
 				if (skin) p.setSkin(d.id, id, skin);
+				if (hosting) p.setHosting(d.id, id, hosting);
 				return { id };
 			})
 	);
@@ -187,6 +195,24 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					);
 				}
 				p.setSkin(d.id, target.id, skin === 'generic' ? null : skin);
+				return { id: target.id };
+			})
+	);
+
+	tool(
+		'set_hosting',
+		'Says where a Component runs (bare-metal, vm, docker, kubernetes, managed, serverless, external), or clears it with "none".',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			component: z.string().describe('Component id or exact name.'),
+			hosting: z.enum([...HOSTINGS, 'none'])
+		},
+		({ project, diagram, component, hosting }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				p.setHosting(d.id, target.id, hosting === 'none' ? null : hosting);
 				return { id: target.id };
 			})
 	);

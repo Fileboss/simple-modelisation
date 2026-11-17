@@ -56,6 +56,10 @@ _Avoid_: Category, kind
 A market product applied to a Component (PostgreSQL on a Database, Redis on a Cache), changing its logo, color and displayed name but not its Component type.
 _Avoid_: Theme, technology, vendor
 
+**Hosting**:
+Where a Component runs, from the most concrete to the most abstract: Bare metal, VM, Docker, Kubernetes, Managed, Serverless or External; shown as a badge on the Component.
+_Avoid_: Infra type, deployment, environment
+
 **Connection**:
 A directed arrow between two Components, with an optional label such as the protocol.
 _Avoid_: Link, edge, flow

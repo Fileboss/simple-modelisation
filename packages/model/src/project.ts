@@ -39,7 +39,21 @@ export type ComponentNode = DiagramNode & {
 	name: string;
 	/** A Skin id from the catalog, or null for the generic look. */
 	skin: string | null;
+	/** Where the Component runs; absent or null when unspecified. */
+	hosting?: Hosting | null;
 };
+
+/** Where a Component runs, from the most concrete to the most abstract. */
+export const HOSTINGS = [
+	'bare-metal',
+	'vm',
+	'docker',
+	'kubernetes',
+	'managed',
+	'serverless',
+	'external'
+] as const;
+export type Hosting = (typeof HOSTINGS)[number];
 
 export type Point = { x: number; y: number };
 
@@ -304,6 +318,15 @@ export class ProjectDocument {
 	/** Applies a Skin to a Component, or clears it with null (Generic). */
 	setSkin(diagramId: string, componentId: string, skin: string | null): void {
 		this.nodeMap(diagramId).get(componentId)?.set('skin', skin);
+	}
+
+	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
+	setHosting(diagramId: string, componentId: string, hosting: Hosting | null): void {
+		if (hosting !== null && !HOSTINGS.includes(hosting)) return;
+		const component = this.nodeMap(diagramId).get(componentId);
+		if (component?.get('type') !== 'component') return;
+		if (hosting === null) component.delete('hosting');
+		else component.set('hosting', hosting);
 	}
 
 	/** Joins two different Components with a directed Connection. */
@@ -608,11 +631,18 @@ function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
 	!a.identifier && a.type.kind !== 'serial';
 
+/**
+ * A node as the app reads it: old Attributes completed, and a Hosting this
+ * version does not know (a newer file or peer) read as unspecified.
+ */
 function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
 	const attributes = node.attributes as Partial<Attribute>[] | undefined;
-	return (
-		attributes ? { ...node, attributes: completeAttributes(attributes) } : node
-	) as DiagramNode;
+	const read: Record<string, unknown> = attributes
+		? { ...node, attributes: completeAttributes(attributes) }
+		: { ...node };
+	if (read.hosting !== undefined && !HOSTINGS.includes(read.hosting as Hosting))
+		delete read.hosting;
+	return read as DiagramNode;
 }
 
 function toFields(element: Record<string, unknown>): Fields {
@@ -665,7 +695,9 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 		return (
 			node.type === 'component' &&
 			COMPONENT_TYPE_IDS.includes(node.componentType as ComponentType) &&
-			(node.skin === null || isString(node.skin))
+			(node.skin === null || isString(node.skin)) &&
+			// An unknown Hosting is read as unspecified rather than refusing the file.
+			(node.hosting === undefined || node.hosting === null || isString(node.hosting))
 		);
 	}
 	const attributes = node.attributes as Attribute[] | undefined;

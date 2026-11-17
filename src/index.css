@@ -338,6 +338,8 @@ input {
 /* System design */
 
 .component {
+	/* Positions the Hosting badge in the corner. */
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -841,4 +843,77 @@ input {
 
 .cardinality.multiplicity {
 	font-weight: 600;
+}
+
+/* Hosting */
+
+.hosting-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	flex: none;
+}
+
+.hosting-badge {
+	position: absolute;
+	top: -9px;
+	right: -9px;
+	display: flex;
+	border: 2px solid var(--surface);
+	border-radius: 50%;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+}
+
+.hosting-picker {
+	display: flex;
+	gap: 2px;
+	padding: 2px;
+	border: 1px solid var(--border);
+	border-radius: 999px;
+	background: var(--surface);
+	box-shadow: 0 2px 6px rgb(0 0 0 / 0.12);
+}
+
+.hosting-choice {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 1px;
+	border: 2px solid transparent;
+	border-radius: 999px;
+	background: none;
+	opacity: 0.55;
+}
+
+.hosting-choice:hover,
+.hosting-current {
+	opacity: 1;
+}
+
+.hosting-current {
+	border-color: var(--accent);
+}
+
+.hosting-picker-labelled {
+	flex-direction: column;
+	align-items: stretch;
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+}
+
+.hosting-picker-labelled .hosting-choice {
+	padding: 3px 6px;
+	border-radius: 6px;
+	font-size: 0.8rem;
+	opacity: 1;
+}
+
+.hosting-unset {
+	display: inline-block;
+	flex: none;
+	border: 1.5px dashed var(--muted);
+	border-radius: 50%;
 }

@@ -334,3 +334,31 @@ describe('Attribute Data types', () => {
 		expect(project.nodes('d')[0].attributes).toHaveLength(2);
 	});
 });
+
+describe('Hosting', () => {
+	it('sets, changes and clears where a Component runs, ignoring unknown values', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const db = project.addComponent(d, 'database', 'DB', 0, 0);
+		const hosting = () => project.nodes(d)[0].hosting;
+		expect(hosting()).toBeUndefined();
+		project.setHosting(d, db, 'docker');
+		expect(hosting()).toBe('docker');
+		project.setHosting(d, db, 'managed');
+		expect(hosting()).toBe('managed');
+		project.setHosting(d, db, 'mainframe' as never);
+		expect(hosting()).toBe('managed');
+		project.setHosting(d, db, null);
+		expect(hosting()).toBeUndefined();
+	});
+
+	it('keeps the Hosting through export and import, and reads an unknown one as unspecified', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.setHosting(d, project.addComponent(d, 'cache', 'Cache', 0, 0), 'kubernetes');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].hosting).toBe('kubernetes');
+		file.diagrams[0].nodes[0].hosting = 'mainframe';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].hosting).toBeUndefined();
+	});
+});

@@ -9,6 +9,7 @@ tags: [backlog]
 
 ## To do
 
+- Hosting provider (AWS, GCP, OVH, Scaleway…) as a second badge on Components
 - Label collision avoidance: place Connection labels with ELK's label positions so two labels never overlap
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Grouping zones in System design diagrams (VPC, region)
@@ -22,6 +23,7 @@ tags: [backlog]
 
 ## Done
 
+- [component-hosting](docs/specs/component-hosting/): Hosting badge and picker on Components, MCP set_hosting
 - deps-hygiene: typescript-eslint 8.73 (fixes the minimatch alert), @types/node 26
 - [orthogonal-routing](docs/specs/orthogonal-routing/): ELK layout, right-angle routes, tighter MCDs
 - [auto-layout](docs/specs/auto-layout/): Tidy up button and layout_diagram tool, routed Connections and Legs
