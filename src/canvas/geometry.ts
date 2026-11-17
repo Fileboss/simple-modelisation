@@ -95,3 +95,54 @@ export function facingSides(source: InternalNode, target: InternalNode) {
 		targetPosition
 	};
 }
+
+/**
+ * How a route leaves or enters a box toward its first or last bend, keeping
+ * right angles: straight from the side the bend is level with; when the bend is
+ * just off the drawn box (the layout reserved a larger one), from the nearest
+ * point of that side with an elbow; otherwise where the line toward the bend
+ * leaves the box. Returns the points from the box to just before the bend.
+ */
+export function attachRoute(node: InternalNode, bend: Point): Point[] {
+	const { x, y } = node.internals.positionAbsolute;
+	const width = node.measured.width ?? 0;
+	const height = node.measured.height ?? 0;
+	const c = center(node);
+	const clamp = (value: number, low: number, high: number) =>
+		Math.min(Math.max(value, low + 4), high - 4);
+	if (bend.x >= x + width || bend.x <= x) {
+		const side = bend.x >= c.x ? x + width : x;
+		if (bend.y >= y && bend.y <= y + height) return [{ x: side, y: bend.y }];
+		const level = clamp(bend.y, y, y + height);
+		return [
+			{ x: side, y: level },
+			{ x: bend.x, y: level }
+		];
+	}
+	if (bend.y >= y + height || bend.y <= y) {
+		const side = bend.y >= c.y ? y + height : y;
+		return [{ x: bend.x, y: side }];
+	}
+	return [borderPoint(node, bend)];
+}
+
+/** A whole drawn route: from the source box, through the bends, into the target box. */
+export function drawnRoute(source: InternalNode, bends: Point[], target: InternalNode): Point[] {
+	return [
+		...attachRoute(source, bends[0]),
+		...bends,
+		...attachRoute(target, bends.at(-1)!).reverse()
+	];
+}
+
+/** The middle of a route's longest segment: away from bends, where labels collide least. */
+export function labelPoint(points: Point[]): Point {
+	let best = 0;
+	for (let i = 1; i < points.length - 1; i++) {
+		if (distance(points[i], points[i + 1]) > distance(points[best], points[best + 1])) best = i;
+	}
+	return {
+		x: (points[best].x + points[best + 1].x) / 2,
+		y: (points[best].y + points[best + 1].y) / 2
+	};
+}

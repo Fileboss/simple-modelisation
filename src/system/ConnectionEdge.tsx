@@ -6,7 +6,7 @@ import {
 	type EdgeProps
 } from '@xyflow/react';
 import type { RemoteHighlight } from '../canvas/DiagramCanvas';
-import { borderPoint, facingSides, pointAlong, routedPath } from '../canvas/geometry';
+import { drawnRoute, facingSides, labelPoint, routedPath } from '../canvas/geometry';
 import type { ConnectionEdge as ConnectionData } from '@simple-modelisation/model/project.ts';
 
 /**
@@ -23,13 +23,9 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 	let middle: { x: number; y: number };
 	if (points && points.length > 0) {
 		// Stored bends; the ends attach to the boxes as they are drawn now.
-		const route = [
-			borderPoint(sourceNode, points[0]),
-			...points,
-			borderPoint(targetNode, points.at(-1)!)
-		];
+		const route = drawnRoute(sourceNode, points, targetNode);
 		path = routedPath(route);
-		middle = pointAlong(route, 0.5);
+		middle = labelPoint(route);
 	} else {
 		const { start, end, sourcePosition, targetPosition } = facingSides(sourceNode, targetNode);
 		const [stepPath, x, y] = getSmoothStepPath({

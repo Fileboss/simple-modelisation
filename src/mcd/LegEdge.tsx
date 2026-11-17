@@ -1,7 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
 import type { RemoteHighlight, TwinPosition } from '../canvas/DiagramCanvas';
-import { borderPoint, center, pointAlong, routedPath } from '../canvas/geometry';
+import { borderPoint, center, drawnRoute, routedPath } from '../canvas/geometry';
 import type { LegEdge as LegData } from '@simple-modelisation/model/project.ts';
 import { umlMultiplicity, useNotation, type PeerLeg } from './notation';
 
@@ -25,16 +25,14 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 	// A route stored by a Tidy up (Merise only: in UML the Leg starts at the label).
 	// Stored bends, ends attached to the boxes as they are drawn now.
 	const bends = !isUml && leg.points && leg.points.length > 0 ? leg.points : null;
-	const route = bends && [
-		borderPoint(sourceNode, bends[0]),
-		...bends,
-		borderPoint(targetNode, bends.at(-1)!)
-	];
+	const route = bends && drawnRoute(sourceNode, bends, targetNode);
 	let path: string;
 	let label: { x: number; y: number };
 	if (route) {
 		path = routedPath(route);
-		label = pointAlong(route, 0.7);
+		// The Cardinality sits on the last segment, next to its Entity, as in Looping.
+		const [a, b] = route.slice(-2);
+		label = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 	} else {
 		// Twin Legs bend apart around the straight line between the two centers.
 		const from = center(sourceNode);

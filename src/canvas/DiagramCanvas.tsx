@@ -20,6 +20,7 @@ import {
 	useCallback,
 	useEffect,
 	useMemo,
+	useRef,
 	useState,
 	type ComponentType,
 	type CSSProperties,
@@ -38,7 +39,11 @@ import {
 	useRemoteSelections
 } from '../presence/presence-context';
 import { RemoteCursors } from '../presence/RemoteCursors';
-import { estimatedSize, layoutDiagram } from '@simple-modelisation/model/layout.ts';
+import {
+	estimatedSize,
+	layoutDiagram,
+	layoutFingerprint
+} from '@simple-modelisation/model/layout.ts';
 import { strings } from '../ui/strings';
 import { CanvasContext } from './canvas-context';
 import type { Layout } from './layout';
@@ -99,24 +104,40 @@ function Canvas({ project, diagram, kind }: Props) {
 	const [fitPending, setFitPending] = useState(false);
 
 	// Tidy up: arrange the whole Diagram along its links with the sizes drawn, as one undo step.
-	const tidyUp = () => {
-		const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
-		// The positions are shared by every Notation: never smaller than either draws a box.
-		const sizeOf = (node: DiagramNode) => {
-			const size = measured.get(node.id);
-			const guess = estimatedSize(node);
-			return {
-				width: Math.max(size?.width ?? 0, guess.width),
-				height: Math.max(size?.height ?? 0, guess.height)
+	const tidying = useRef(false);
+	const tidyUp = async () => {
+		if (tidying.current) return;
+		tidying.current = true;
+		try {
+			const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
+			// The positions are shared by every Notation: never smaller than either draws a box.
+			const sizeOf = (node: DiagramNode) => {
+				const size = measured.get(node.id);
+				const guess = estimatedSize(node);
+				return {
+					width: Math.max(size?.width ?? 0, guess.width),
+					height: Math.max(size?.height ?? 0, guess.height)
+				};
 			};
-		};
-		const { positions, routes } = layoutDiagram(
-			project.nodes(diagram.id),
-			project.edges(diagram.id),
-			sizeOf
-		);
-		project.arrange(diagram.id, positions, routes);
-		setFitPending(true);
+			// The layout is asynchronous: if the Diagram changed meanwhile (here or by a
+			// peer), lay it out again rather than overwrite the change.
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const nodes = project.nodes(diagram.id);
+				const edges = project.edges(diagram.id);
+				const before = layoutFingerprint(nodes, edges);
+				const { positions, routes } = await layoutDiagram(nodes, edges, sizeOf, diagram.kind);
+				if (layoutFingerprint(project.nodes(diagram.id), project.edges(diagram.id)) !== before) {
+					continue;
+				}
+				project.arrange(diagram.id, positions, routes);
+				setFitPending(true);
+				return;
+			}
+		} catch (error) {
+			console.error('Tidy up failed', error);
+		} finally {
+			tidying.current = false;
+		}
 	};
 
 	const toNodes = useCallback(
@@ -297,7 +318,7 @@ function Canvas({ project, diagram, kind }: Props) {
 						<RemoteCursors diagramId={diagram.id} />
 						<Controls showInteractive={false}>
 							<ControlButton
-								onClick={tidyUp}
+								onClick={() => void tidyUp()}
 								title={strings.canvas.tidyUp}
 								aria-label={strings.canvas.tidyUp}
 							>
