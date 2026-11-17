@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- bidirectional-tidy: Tidy up keeps A→B and B→A on one shared route (a two-way arrow)
 - [label-placement](docs/specs/label-placement/): Connection labels never overlap each other or boxes
 - [component-hosting](docs/specs/component-hosting/): Hosting badge and picker on Components, MCP set_hosting
 - deps-hygiene: typescript-eslint 8.73 (fixes the minimatch alert), @types/node 26

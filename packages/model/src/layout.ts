@@ -12,7 +12,14 @@ export type Positions = Map<string, Point>;
 export type Layout = { positions: Positions; routes: Map<string, Point[]> };
 
 /** A link ELK ranks along: the edge it routes, drawn the other way when reversed. */
-type Link = { from: string; to: string; edge: string; reversed?: boolean };
+type Link = {
+	from: string;
+	to: string;
+	edge: string;
+	reversed?: boolean;
+	/** Connections going the other way between the same Components: they share the route. */
+	returns?: string[];
+};
 
 // An MCD packs tighter: each Association is a layer of its own between its Entities,
 // so Looping-like proximity needs small gaps; a System design diagram needs room for
@@ -116,7 +123,10 @@ export async function layoutDiagram(
 					}
 				];
 		const rounded = bends.map((p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
-		routes.set(link.edge, link.reversed ? rounded.reverse() : rounded);
+		const route = link.reversed ? rounded.reverse() : rounded;
+		routes.set(link.edge, route);
+		// A Connection back the other way follows the same line: together, a two-way arrow.
+		for (const back of link.returns ?? []) routes.set(back, [...route].reverse());
 	}
 
 	const loose = nodes.filter((n) => !linked.has(n.id));
@@ -145,6 +155,24 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 	);
 	const links: Link[] = [];
 	const firstLeg = new Set<string>();
+	// The link of each Connection by its ends, to spot the one going back the other way.
+	const connectionLinks = new Map<string, Link>();
+	const backwards: DiagramEdge[] = [];
+	const typeOf = new Map(nodes.map((n) => [n.id, n.componentType]));
+	const connections = edges.filter((e) => e.type === 'connection');
+	const has = (from: string, to: string) =>
+		connections.some((e) => e.source === from && e.target === to);
+	// What flows into a Component from elsewhere than a two-way partner: it comes later in the flow.
+	const incoming = (id: string) =>
+		connections.filter((e) => e.target === id && !has(id, e.source)).length;
+	const isStore = (id: string) =>
+		['database', 'cache', 'storage', 'queue'].includes(String(typeOf.get(id)));
+	/** For A ↔ B, which way the shared link runs in the flow. */
+	const forward = (a: string, b: string) => {
+		if (isStore(a) !== isStore(b)) return isStore(b);
+		if (incoming(a) !== incoming(b)) return incoming(a) > incoming(b);
+		return a < b;
+	};
 	for (const edge of edges) {
 		if (!present.has(edge.source) || !present.has(edge.target)) continue;
 		if (edge.type === 'leg') {
@@ -159,13 +187,25 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 			);
 			continue;
 		}
+		// A two-way pair shares one link, run the way of the flow; the other Connection
+		// takes the same route backwards.
+		// A loop (A → A, possible in an imported file) is not a two-way pair.
+		const twoWay = edge.source !== edge.target && has(edge.target, edge.source);
+		if (twoWay && !forward(edge.source, edge.target)) {
+			backwards.push(edge);
+			continue;
+		}
 		// Clients are where flows start: a Connection back to one (a push) ranks the other way.
 		const back = clients.has(edge.target) && !clients.has(edge.source);
-		links.push(
-			back
-				? { from: edge.target, to: edge.source, edge: edge.id, reversed: true }
-				: { from: edge.source, to: edge.target, edge: edge.id }
-		);
+		const link: Link = back
+			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true }
+			: { from: edge.source, to: edge.target, edge: edge.id };
+		links.push(link);
+		connectionLinks.set(`${edge.source}|${edge.target}`, link);
+	}
+	for (const edge of backwards) {
+		const forth = connectionLinks.get(`${edge.target}|${edge.source}`);
+		if (forth) (forth.returns ??= []).push(edge.id);
 	}
 	return links;
 }
