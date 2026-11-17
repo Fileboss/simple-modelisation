@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { Diagram, DiagramKind, ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { DiagramCanvas, type CanvasKind } from '../canvas/DiagramCanvas';
 import { EditableText } from '../canvas/EditableText';
 import { mcdKind } from '../mcd/mcd-kind';
 import { systemKind } from '../system/system-kind';
+import type { ImageFormat } from '../canvas/export-image';
+import { exportOpenDiagram } from '../canvas/exporter';
 import { copyText } from '../ui/clipboard';
 import { downloadText } from '../ui/download';
 import { strings } from '../ui/strings';
@@ -100,18 +102,71 @@ function ProjectActions({ project, projectId, status }: ActionsProps) {
 			</button>
 			<button onClick={() => project.undo()}>{strings.project.undo}</button>
 			<button onClick={() => project.redo()}>{strings.project.redo}</button>
-			<button
-				onClick={() =>
-					downloadText(
-						`${project.name()}.json`,
-						JSON.stringify(project.toFile(), null, 2),
-						'application/json'
-					)
-				}
-			>
-				{strings.project.export}
-			</button>
+			<ExportMenu project={project} />
 		</div>
+	);
+}
+
+/** Export: the Project as JSON, the open Diagram as an image. */
+function ExportMenu({ project }: { project: ProjectDocument }) {
+	const menu = useRef<HTMLDetailsElement>(null);
+	const [note, setNote] = useState<string | null>(null);
+
+	// Closes on a click elsewhere or on Escape, like a menu.
+	useEffect(() => {
+		const close = (e: Event) => {
+			const details = menu.current;
+			if (!details?.open) return;
+			if (e instanceof KeyboardEvent ? e.key === 'Escape' : !details.contains(e.target as Node))
+				details.open = false;
+		};
+		document.addEventListener('pointerdown', close);
+		document.addEventListener('keydown', close);
+		return () => {
+			document.removeEventListener('pointerdown', close);
+			document.removeEventListener('keydown', close);
+		};
+	}, []);
+	useEffect(() => {
+		if (!note) return;
+		const timer = setTimeout(() => setNote(null), 3000);
+		return () => clearTimeout(timer);
+	}, [note]);
+
+	const exportImage = async (format: ImageFormat) => {
+		try {
+			if (!(await exportOpenDiagram(format))) setNote(strings.project.nothingToExport);
+		} catch (error) {
+			console.error('Image export failed', error);
+			setNote(strings.project.exportFailed);
+		}
+	};
+
+	return (
+		<>
+			{note && <span className="export-note">{note}</span>}
+			<details className="export-menu" ref={menu}>
+				<summary>{strings.project.export}</summary>
+				<div className="export-options" onClick={() => menu.current?.removeAttribute('open')}>
+					<button
+						onClick={() =>
+							downloadText(
+								`${project.name()}.json`,
+								JSON.stringify(project.toFile(), null, 2),
+								'application/json'
+							)
+						}
+					>
+						{strings.project.exportProject}
+					</button>
+					{(['png', 'svg'] as const).map((format) => (
+						<button key={format} onClick={() => void exportImage(format)}>
+							{strings.project.exportImage[format]}
+						</button>
+					))}
+				</div>
+			</details>
+		</>
 	);
 }
 
