@@ -49,6 +49,20 @@ export const strings = {
 		warnings: 'warnings',
 		empty: 'Add Entities to see the tables they make.'
 	},
+	hosting: {
+		title: 'Hosting',
+		unset: 'Not specified',
+		clear: 'Click again to clear',
+		names: {
+			'bare-metal': 'Bare metal',
+			vm: 'VM',
+			docker: 'Docker',
+			kubernetes: 'Kubernetes',
+			managed: 'Managed (cloud)',
+			serverless: 'Serverless',
+			external: 'External service'
+		}
+	},
 	dataTypes: {
 		label: 'Data type',
 		length: 'Length',

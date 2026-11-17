@@ -5,6 +5,7 @@ import type { ComponentNode, ConnectionEdge } from '@simple-modelisation/model/p
 import { strings } from '../ui/strings';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
+import { HostingPicker } from './HostingPicker';
 
 export function SystemPanel({ selection }: { selection: Selection }) {
 	const { project, diagramId } = useCanvas();
@@ -25,6 +26,8 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					value={component.name}
 					onChange={(name) => project.renameNode(diagramId, component.id, name)}
 				/>
+				<h3>{strings.hosting.title}</h3>
+				<HostingPicker labelled componentId={component.id} current={component.hosting} />
 				<h3>{strings.system.skin}</h3>
 				<div className="skin-grid">
 					<button className={`skin ${current ? '' : 'skin-current'}`} onClick={() => choose(null)}>

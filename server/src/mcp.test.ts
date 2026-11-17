@@ -79,6 +79,7 @@ describe('MCP endpoint', () => {
 			'layout_diagram',
 			'rename_element',
 			'set_cardinality',
+			'set_hosting',
 			'set_skin'
 		]);
 	});
@@ -161,6 +162,45 @@ describe('MCP endpoint', () => {
 		expect(anyOverlap(browser.nodes(diagram).map((n) => ({ ...n, ...estimatedSize(n) })))).toBe(
 			false
 		);
+	});
+
+	it('says where Components run', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_component', {
+			project: id,
+			diagram: 'Architecture',
+			type: 'database',
+			name: 'DB',
+			hosting: 'managed'
+		});
+		await call(client, 'add_component', {
+			project: id,
+			diagram: 'Architecture',
+			type: 'service',
+			name: 'API'
+		});
+		await call(client, 'set_hosting', {
+			project: id,
+			diagram: 'Architecture',
+			component: 'API',
+			hosting: 'kubernetes'
+		});
+		const { components } = await call(client, 'get_diagram', {
+			project: id,
+			diagram: 'Architecture'
+		});
+		expect(components.map((c: { name: string; hosting: string }) => [c.name, c.hosting])).toEqual([
+			['DB', 'managed'],
+			['API', 'kubernetes']
+		]);
+		await call(client, 'set_hosting', {
+			project: id,
+			diagram: 'Architecture',
+			component: 'API',
+			hosting: 'none'
+		});
+		const after = await call(client, 'get_diagram', { project: id, diagram: 'Architecture' });
+		expect(after.components[1].hosting).toBeNull();
 	});
 
 	it('models an MCD and returns its SQL', async () => {
