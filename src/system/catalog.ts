@@ -97,3 +97,6 @@ export function componentTypeInfo(type: ComponentType): ComponentTypeInfo {
 export function findSkin(type: ComponentType, skinId: string | null): Skin | undefined {
 	return componentTypeInfo(type).skins.find((s) => s.id === skinId);
 }
+
+/** What the palette drags to draw a Zone, beside the Component types. */
+export const ZONE_ITEM = 'zone';

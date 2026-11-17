@@ -65,6 +65,16 @@ export type Route = { points?: Point[] };
 
 export type ConnectionEdge = DiagramEdge & Route & { type: 'connection'; label: string };
 
+/** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
+export type ZoneNode = DiagramNode & { type: 'zone'; name: string; width: number; height: number };
+
+/** The smallest Zone, so that it still holds a title and a Component. */
+export const ZONE_MIN = { width: 160, height: 100 };
+/** A new Zone's size. */
+export const ZONE_DEFAULT = { width: 400, height: 280 };
+/** Room a Zone keeps around its content, under its title bar. */
+export const ZONE_PADDING = { top: 48, side: 24 };
+
 export type Attribute = {
 	id: string;
 	name: string;
@@ -207,20 +217,33 @@ export class ProjectDocument {
 	/** Moves several nodes in one transaction, dropping the routes attached to any of them. */
 	moveNodes(diagramId: string, moves: { id: string; x: number; y: number }[]): void {
 		const nodes = this.nodeMap(diagramId);
-		const moved = new Set<string>();
+		const moved = new Map<string, Point>();
 		this.doc.transact(() => {
 			for (const { id, x, y } of moves) {
 				const node = nodes.get(id);
 				if (!node) continue;
+				const offset = {
+					x: Math.round(x) - (node.get('x') as number),
+					y: Math.round(y) - (node.get('y') as number)
+				};
 				node.set('x', Math.round(x));
 				node.set('y', Math.round(y));
-				moved.add(id);
+				moved.set(id, offset);
 			}
 			if (moved.size === 0) return;
 			for (const edge of this.edgeMap(diagramId).values()) {
-				const attached =
-					moved.has(edge.get('source') as string) || moved.has(edge.get('target') as string);
-				if (attached && edge.has('points')) edge.delete('points');
+				const points = edge.get('points') as Point[] | undefined;
+				if (!points) continue;
+				const source = moved.get(edge.get('source') as string);
+				const target = moved.get(edge.get('target') as string);
+				if (!source && !target) continue;
+				// Both ends moved alike (a Zone and its content): the route moves with them.
+				if (source && target && source.x === target.x && source.y === target.y) {
+					edge.set(
+						'points',
+						points.map((p) => ({ x: p.x + source.x, y: p.y + source.y }))
+					);
+				} else edge.delete('points');
 			}
 		});
 	}
@@ -233,7 +256,8 @@ export class ProjectDocument {
 	arrange(
 		diagramId: string,
 		positions: Map<string, Point>,
-		routes: Map<string, Point[]> = new Map()
+		routes: Map<string, Point[]> = new Map(),
+		zoneSizes: Map<string, { width: number; height: number }> = new Map()
 	): void {
 		const nodes = this.nodeMap(diagramId);
 		const edges = this.edgeMap(diagramId);
@@ -241,16 +265,28 @@ export class ProjectDocument {
 			const node = nodes.get(id);
 			return node && (node.get('x') !== Math.round(p.x) || node.get('y') !== Math.round(p.y));
 		});
+		const resizes = [...zoneSizes].filter(([id, size]) => {
+			const zone = nodes.get(id);
+			return (
+				zone?.get('type') === 'zone' &&
+				(zone.get('width') !== Math.round(size.width) ||
+					zone.get('height') !== Math.round(size.height))
+			);
+		});
 		const reroutes = [...edges].filter(
 			([id, edge]) => !samePoints(routes.get(id), edge.get('points') as Point[] | undefined)
 		);
 		// Already in place: no update for collaborators, no empty undo step.
-		if (moves.length === 0 && reroutes.length === 0) return;
+		if (moves.length === 0 && reroutes.length === 0 && resizes.length === 0) return;
 		this.undoManager.stopCapturing();
 		this.doc.transact(() => {
 			for (const [id, { x, y }] of moves) {
 				nodes.get(id)!.set('x', Math.round(x));
 				nodes.get(id)!.set('y', Math.round(y));
+			}
+			for (const [id, { width, height }] of resizes) {
+				nodes.get(id)!.set('width', Math.round(width));
+				nodes.get(id)!.set('height', Math.round(height));
 			}
 			for (const [id, edge] of reroutes) {
 				const route = routes.get(id);
@@ -329,13 +365,51 @@ export class ProjectDocument {
 		else component.set('hosting', hosting);
 	}
 
-	/** Joins two different Components with a directed Connection. */
+	/** Joins two different Components with a directed Connection; null otherwise (a Zone, say). */
 	addConnection(diagramId: string, source: string, target: string): string | null {
 		if (source === target) return null;
+		const nodes = this.nodeMap(diagramId);
+		if (nodes.get(source)?.get('type') !== 'component') return null;
+		if (nodes.get(target)?.get('type') !== 'component') return null;
 		const id = crypto.randomUUID();
 		const connection: ConnectionEdge = { id, type: 'connection', source, target, label: '' };
 		this.insertEdge(diagramId, connection);
 		return id;
+	}
+
+	/** Draws a Zone; it groups whatever is drawn inside it. */
+	addZone(
+		diagramId: string,
+		x: number,
+		y: number,
+		width: number = ZONE_DEFAULT.width,
+		height: number = ZONE_DEFAULT.height,
+		name: string = 'Zone'
+	): string {
+		const id = crypto.randomUUID();
+		const zone: ZoneNode = {
+			id,
+			type: 'zone',
+			name: name.trim() || 'Zone',
+			...roundedBox({ x, y, width, height })
+		};
+		this.insertNode(diagramId, zone);
+		return id;
+	}
+
+	/** Places and sizes a Zone, never smaller than ZONE_MIN; its content stays where it is. */
+	setZoneBox(
+		diagramId: string,
+		zoneId: string,
+		box: { x: number; y: number; width: number; height: number }
+	): void {
+		const zone = this.nodeMap(diagramId).get(zoneId);
+		if (zone?.get('type') !== 'zone') return;
+		this.doc.transact(() => {
+			for (const [key, value] of Object.entries(roundedBox(box))) {
+				if (zone.get(key) !== value) zone.set(key, value);
+			}
+		});
 	}
 
 	setEdgeLabel(diagramId: string, edgeId: string, label: string): void {
@@ -601,17 +675,26 @@ export class ProjectDocument {
 	}
 }
 
+function roundedBox(box: { x: number; y: number; width: number; height: number }) {
+	return {
+		x: Math.round(box.x),
+		y: Math.round(box.y),
+		width: Math.round(Math.max(ZONE_MIN.width, box.width)),
+		height: Math.round(Math.max(ZONE_MIN.height, box.height))
+	};
+}
+
+function samePoints(a: Point[] | undefined, b: Point[] | undefined): boolean {
+	if (!a || !b) return a === b;
+	return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
+}
+
 /**
  * Attributes written before Data types existed (by an older version, a file or
  * a peer) are completed when read, never rewritten in place, so they cannot
  * race a collaborator's edits: the only Identifier of an Entity reads as
  * Auto-increment, any other Attribute as Text, all required.
  */
-function samePoints(a: Point[] | undefined, b: Point[] | undefined): boolean {
-	if (!a || !b) return a === b;
-	return a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
-}
-
 function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 	const loneIdentifier = attributes.filter((a) => a.identifier).length === 1;
 	return attributes.map((a, index) => {
@@ -692,6 +775,9 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 	if (!node || !isString(node.id) || !isNumber(node.x) || !isNumber(node.y)) return false;
 	if (!isString(node.name) || !node.name.trim()) return false;
 	if (kind === 'system') {
+		if (node.type === 'zone') {
+			return isNumber(node.width) && node.width > 0 && isNumber(node.height) && node.height > 0;
+		}
 		return (
 			node.type === 'component' &&
 			COMPONENT_TYPE_IDS.includes(node.componentType as ComponentType) &&
@@ -734,8 +820,8 @@ function isValidEdge(
 		return (
 			edge.type === 'connection' &&
 			isString(edge.label) &&
-			nodeTypes.has(edge.source) &&
-			nodeTypes.has(edge.target)
+			nodeTypes.get(edge.source) === 'component' &&
+			nodeTypes.get(edge.target) === 'component'
 		);
 	}
 	return (

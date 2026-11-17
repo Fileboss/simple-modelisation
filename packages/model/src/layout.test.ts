@@ -293,3 +293,73 @@ describe('layoutDiagram, loops', () => {
 		expect(routes.has('loop')).toBe(true);
 	});
 });
+
+describe('layoutDiagram with Zones', () => {
+	it('lays each Zone out around its content, nested Zones too, siblings apart', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		// Drawn roughly: a region holding a VPC with two services, a cache beside it; a client outside.
+		const region = project.addZone(d, 0, 0, 1200, 700, 'Region');
+		const vpc = project.addZone(d, 20, 20, 700, 600, 'VPC');
+		const other = project.addZone(d, 1400, 0, 400, 300, 'Other region');
+		const api = project.addComponent(d, 'service', 'API', 60, 80);
+		const db = project.addComponent(d, 'database', 'DB', 60, 300);
+		const cache = project.addComponent(d, 'cache', 'Cache', 900, 80);
+		const client = project.addComponent(d, 'client', 'Browser', -600, 80);
+		const replica = project.addComponent(d, 'database', 'Replica', 1450, 60);
+		// In and out of the VPC and back: the shape that made ELK's model order fail.
+		const queue = project.addComponent(d, 'queue', 'Events', 300, 80);
+		const worker = project.addComponent(d, 'service', 'Worker', 900, 300);
+		for (const [a, b] of [
+			[client, api],
+			[api, db],
+			[api, cache],
+			[db, replica],
+			[api, queue],
+			[queue, worker],
+			[worker, db]
+		]) {
+			project.addConnection(d, a, b);
+		}
+		const nodes = project.nodes(d);
+		const { positions, zoneSizes, routes } = await layoutDiagram(
+			nodes,
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		project.arrange(d, positions, routes, zoneSizes);
+
+		const box = (id: string) => {
+			const node = project.nodes(d).find((n) => n.id === id)!;
+			return { ...node, ...estimatedSize(node) };
+		};
+		const within = (inner: string, outer: string) => {
+			const a = box(inner);
+			const b = box(outer);
+			return (
+				a.x >= b.x &&
+				a.y >= b.y &&
+				a.x + a.width <= b.x + b.width &&
+				a.y + a.height <= b.y + b.height
+			);
+		};
+		expect(within(api, vpc) && within(db, vpc)).toBe(true);
+		expect(within(vpc, region) && within(cache, region)).toBe(true);
+		expect(within(replica, other)).toBe(true);
+		expect(within(client, region) || within(client, other)).toBe(false);
+		expect(within(cache, vpc)).toBe(false);
+		expect(
+			overlapping(
+				new Map([
+					[region, box(region)],
+					[other, box(other)],
+					[client, box(client)]
+				]),
+				(id) => box(id)
+			)
+		).toBe(false);
+		expect(within(queue, vpc) && within(worker, region) && !within(worker, vpc)).toBe(true);
+		expect(routes.size).toBe(7);
+	});
+});

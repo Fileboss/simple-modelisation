@@ -7,8 +7,11 @@ import type {
 	DiagramNode,
 	EntityNode,
 	LegEdge,
-	ProjectDocument
+	ProjectDocument,
+	ZoneNode
 } from '@simple-modelisation/model/project.ts';
+import { estimatedSize } from '@simple-modelisation/model/layout.ts';
+import { zoneParents } from '@simple-modelisation/model/zones.ts';
 import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
 import { mldText, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { ToolError } from './mcp-error.ts';
@@ -59,14 +62,31 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	const base = { id: diagram.id, name: diagram.name, kind: kindName(diagram.kind) };
 
 	if (diagram.kind === 'system') {
+		// The innermost Zone each element lies in, as drawn.
+		const parents = zoneParents(nodes, estimatedSize);
+		// By id and name: Zone names need not be unique (a Private subnet per region).
+		const zoneOf = (id: string) => {
+			const parent = parents.get(id);
+			return parent ? { id: parent, name: nameOf(parent) } : null;
+		};
 		return {
 			...base,
+			zones: only<ZoneNode>(nodes, 'zone').map((z) => ({
+				id: z.id,
+				name: z.name,
+				zone: zoneOf(z.id),
+				x: z.x,
+				y: z.y,
+				width: z.width,
+				height: z.height
+			})),
 			components: only<ComponentNode>(nodes, 'component').map((c) => ({
 				id: c.id,
 				name: c.name,
 				type: c.componentType,
 				skin: c.skin,
-				hosting: c.hosting ?? null
+				hosting: c.hosting ?? null,
+				zone: zoneOf(c.id)
 			})),
 			connections: only<ConnectionEdge>(edges, 'connection').map((c) => ({
 				id: c.id,

@@ -13,8 +13,8 @@ tags: [backlog]
 - SVG export readable outside browsers (Figma, Inkscape, slides): plain SVG shapes instead of HTML in a foreignObject
 - Hosting provider (AWS, GCP, OVH, Scaleway…) as a second badge on Components
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
-- Grouping zones in System design diagrams (VPC, region)
 - Custom Skins
+- Zone colors, and Zones in Tidy up options (direction, spacing)
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
 - Stop sharing a Project (back to Local)
@@ -23,6 +23,7 @@ tags: [backlog]
 
 ## Done
 
+- [grouping-zones](docs/specs/grouping-zones/): Zones (region, VPC, subnet) grouping Components in System design diagrams
 - [image-export](docs/specs/image-export/): a Diagram as a PNG or SVG image
 - trackpad-gestures: two fingers pan, pinch zooms, Cmd/Ctrl+wheel zooms
 - bidirectional-tidy: Tidy up keeps A→B and B→A on one shared route (a two-way arrow)

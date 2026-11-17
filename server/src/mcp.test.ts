@@ -71,6 +71,7 @@ describe('MCP endpoint', () => {
 			'add_component',
 			'add_diagram',
 			'add_entity',
+			'add_zone',
 			'connect_components',
 			'delete_elements',
 			'get_diagram',
@@ -80,7 +81,8 @@ describe('MCP endpoint', () => {
 			'rename_element',
 			'set_cardinality',
 			'set_hosting',
-			'set_skin'
+			'set_skin',
+			'set_zone'
 		]);
 	});
 
@@ -162,6 +164,96 @@ describe('MCP endpoint', () => {
 		expect(anyOverlap(browser.nodes(diagram).map((n) => ({ ...n, ...estimatedSize(n) })))).toBe(
 			false
 		);
+	});
+
+	it('groups Components in nested Zones, kept through a layout', async () => {
+		const { client, id, browser } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_zone', { ...at, name: 'eu-west-1' });
+		await call(client, 'add_zone', { ...at, name: 'VPC', zone: 'eu-west-1' });
+		for (const [type, name, zone] of [
+			['client', 'Browser', undefined],
+			['service', 'API', 'VPC'],
+			['database', 'DB', 'VPC'],
+			['cache', 'Cache', 'eu-west-1']
+		]) {
+			await call(client, 'add_component', { ...at, type, name, zone });
+		}
+		await call(client, 'connect_components', { ...at, from: 'Browser', to: 'API' });
+		await call(client, 'connect_components', { ...at, from: 'API', to: 'DB' });
+		await call(client, 'connect_components', { ...at, from: 'API', to: 'Cache' });
+
+		const zonesOf = async () => {
+			const { zones, components } = await call(client, 'get_diagram', at);
+			return Object.fromEntries(
+				[...zones, ...components].map((e: { name: string; zone: { name: string } | null }) => [
+					e.name,
+					e.zone?.name ?? null
+				])
+			);
+		};
+		const expected = {
+			'eu-west-1': null,
+			VPC: 'eu-west-1',
+			Browser: null,
+			API: 'VPC',
+			DB: 'VPC',
+			Cache: 'eu-west-1'
+		};
+		expect(await zonesOf()).toEqual(expected);
+		await call(client, 'layout_diagram', at);
+		expect(await zonesOf()).toEqual(expected);
+
+		// Moving a Zone takes its content along.
+		const diagram = browser.diagrams()[0].id;
+		await vi.waitFor(() => expect(browser.nodes(diagram)).toHaveLength(6));
+		const before = browser.nodes(diagram).find((n) => n.name === 'DB')!;
+		const vpc = browser.nodes(diagram).find((n) => n.name === 'VPC')!;
+		await call(client, 'set_zone', {
+			...at,
+			zone: 'VPC',
+			name: 'VPC prod',
+			x: vpc.x + 100,
+			y: vpc.y
+		});
+		await vi.waitFor(() =>
+			expect(browser.nodes(diagram).find((n) => n.name === 'DB')!.x).toBe(before.x + 100)
+		);
+		expect((await zonesOf()).DB).toBe('VPC prod');
+
+		const refused = await call(client, 'connect_components', {
+			...at,
+			from: 'API',
+			to: 'VPC prod'
+		});
+		expect(refused.error).toMatch(/No component/);
+	});
+
+	it('grows a Zone without changing what any Zone holds', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_zone', { ...at, name: 'Region' });
+		await call(client, 'add_zone', { ...at, name: 'Subnet', zone: 'Region' });
+		await call(client, 'add_component', { ...at, type: 'cache', name: 'Cache', zone: 'Region' });
+		await call(client, 'add_component', { ...at, type: 'client', name: 'Browser' });
+		// Each one grows the Subnet, pushing the Cache beside it and the Browser beyond.
+		for (const name of ['A', 'B', 'C', 'D', 'E', 'F']) {
+			await call(client, 'add_component', { ...at, type: 'service', name, zone: 'Subnet' });
+		}
+		const { zones, components } = await call(client, 'get_diagram', at);
+		const zoneOf = Object.fromEntries(
+			[...zones, ...components].map((e: { name: string; zone: { name: string } | null }) => [
+				e.name,
+				e.zone?.name ?? null
+			])
+		);
+		expect(zoneOf).toMatchObject({
+			Subnet: 'Region',
+			Cache: 'Region',
+			Browser: null,
+			A: 'Subnet',
+			F: 'Subnet'
+		});
 	});
 
 	it('says where Components run', async () => {

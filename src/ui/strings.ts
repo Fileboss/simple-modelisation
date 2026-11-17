@@ -103,8 +103,12 @@ export const strings = {
 	},
 	system: {
 		palette: 'Components',
-		paletteHint: 'Drag onto the canvas. Drag from a dot on a component to connect it.',
-		panelHint: 'Select a component or a connection to edit it.',
+		paletteHint:
+			'Drag onto the canvas. Drag from a dot on a component to connect it. A Zone groups what is drawn inside it: drag it by its title.',
+		panelHint: 'Select a component, a connection or a zone to edit it.',
+		zone: 'Zone',
+		zoneHint:
+			'A Zone holds the components and zones drawn wholly inside it, and moves them with it. Drag a component in or out to change that.',
 		skin: 'Skin',
 		generic: 'Generic',
 		connection: 'Connection'

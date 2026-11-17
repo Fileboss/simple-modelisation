@@ -4,7 +4,11 @@ import {
 	COMPONENT_TYPE_IDS,
 	HOSTINGS,
 	type Attribute,
+	ZONE_DEFAULT,
+	ZONE_PADDING,
 	type DiagramNode,
+	type Point,
+	type ZoneNode,
 	type LegEdge,
 	type ProjectDocument
 } from '@simple-modelisation/model/project.ts';
@@ -14,6 +18,13 @@ import {
 	layoutFingerprint
 } from '@simple-modelisation/model/layout.ts';
 import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
+import {
+	nodeBox,
+	overlaps,
+	zoneContent,
+	zoneParents,
+	type Box
+} from '@simple-modelisation/model/zones.ts';
 import { z } from 'zod';
 import type { ProjectAccess, RegisterTool } from './mcp.ts';
 import { projectArgument } from './mcp.ts';
@@ -97,6 +108,102 @@ export function freeSpot(nodes: DiagramNode[]): { x: number; y: number } {
 const nodesOf = (project: ProjectDocument, diagramId: string, type?: string) =>
 	project.nodes(diagramId).filter((n) => !type || n.type === type);
 
+const zoneArgument = z.string().describe('Zone id or exact name.');
+
+/**
+ * A free spot for an element of `size` among `nodes`: next to them, or under
+ * them all when that spot falls on a Zone, which would then hold it.
+ */
+function spotAmong(nodes: DiagramNode[], size: { width: number; height: number }) {
+	const spot = freeSpot(nodes);
+	const zones = nodes.filter((n) => n.type === 'zone');
+	if (!zones.some((zone) => overlaps({ ...spot, ...size }, nodeBox(zone, estimatedSize)))) {
+		return spot;
+	}
+	const boxes = nodes.map((n) => nodeBox(n, estimatedSize));
+	return {
+		x: Math.min(...boxes.map((b) => b.x)),
+		y: Math.max(...boxes.map((b) => b.y + b.height)) + SLOT.height / 2
+	};
+}
+
+/**
+ * Where a new element of `size` goes: among the others, or in a Zone after
+ * its content, the Zone and the Zones around it growing to hold it.
+ */
+function placeNew(
+	project: ProjectDocument,
+	diagramId: string,
+	size: { width: number; height: number },
+	zoneId?: string
+): { x: number; y: number } {
+	const nodes = nodesOf(project, diagramId);
+	if (!zoneId) return spotAmong(nodes, size);
+	const parents = zoneParents(nodes, estimatedSize);
+	const zone = nodes.find((n) => n.id === zoneId)!;
+	const content = nodes.filter((n) => parents.get(n.id) === zoneId);
+	const spot = content.length
+		? spotAmong(content, size)
+		: { x: zone.x + ZONE_PADDING.side, y: zone.y + ZONE_PADDING.top };
+	growToHold(project, diagramId, zoneId, { ...spot, ...size });
+	return spot;
+}
+
+/**
+ * Grows a Zone, then each Zone around it, to hold `box` and what it held.
+ * What lies across or beyond a growing edge moves by as much (a Zone with its
+ * content), so that no Zone takes in an element it did not hold, nor loses one.
+ */
+function growToHold(project: ProjectDocument, diagramId: string, zoneId: string, box: Box): void {
+	// Who holds what before anything moves: pushing must not change it.
+	const parents = zoneParents(nodesOf(project, diagramId), estimatedSize);
+	const ancestors = (id: string) => {
+		const found: string[] = [];
+		for (let up = parents.get(id); up; up = parents.get(up)) found.push(up);
+		return found;
+	};
+	let extra: Box[] = [box];
+	for (let at: string | undefined = zoneId; at; at = parents.get(at)) {
+		const nodes = nodesOf(project, diagramId);
+		const boxes = new Map(nodes.map((n) => [n.id, nodeBox(n, estimatedSize)]));
+		const zone = boxes.get(at)!;
+		const held = [
+			...nodes.filter((n) => parents.get(n.id) === at).map((n) => boxes.get(n.id)!),
+			...extra
+		];
+		extra = [];
+		const right = zone.x + zone.width;
+		const bottom = zone.y + zone.height;
+		const dx = Math.max(0, ...held.map((b) => b.x + b.width + ZONE_PADDING.side - right));
+		const dy = Math.max(0, ...held.map((b) => b.y + b.height + ZONE_PADDING.side - bottom));
+		if (dx === 0 && dy === 0) continue;
+		const around = new Set([at, ...zoneContent(parents, at), ...ancestors(at)]);
+		const own = new Map<string, Point>();
+		for (const n of nodes) {
+			if (around.has(n.id)) continue;
+			const b = boxes.get(n.id)!;
+			own.set(n.id, { x: b.x + b.width > right ? dx : 0, y: b.y + b.height > bottom ? dy : 0 });
+		}
+		// An element moves at least as much as the Zones holding it, so it stays in them.
+		const pushes = nodes.flatMap((n) => {
+			const offset = own.get(n.id);
+			if (!offset) return [];
+			let { x, y } = offset;
+			for (const up of ancestors(n.id)) {
+				x = Math.max(x, own.get(up)?.x ?? 0);
+				y = Math.max(y, own.get(up)?.y ?? 0);
+			}
+			return x || y ? [{ id: n.id, x: n.x + x, y: n.y + y }] : [];
+		});
+		if (pushes.length) project.moveNodes(diagramId, pushes);
+		project.setZoneBox(diagramId, at, {
+			...zone,
+			width: zone.width + dx,
+			height: zone.height + dy
+		});
+	}
+}
+
 function addAttributes(
 	project: ProjectDocument,
 	diagramId: string,
@@ -132,9 +239,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.string()
 				.optional()
 				.describe('A market product, e.g. postgresql, redis, kafka, nginx.'),
-			hosting: hostingArgument.optional()
+			hosting: hostingArgument.optional(),
+			zone: zoneArgument.optional().describe('Zone id or exact name to place the Component in.')
 		},
-		({ project, diagram, type, name, skin, hosting }) =>
+		({ project, diagram, type, name, skin, hosting, zone }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				if (skin && !(SKIN_IDS[type] as readonly string[]).includes(skin)) {
@@ -142,11 +250,77 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 						`No "${skin}" Skin for a ${type}. Skins: ${SKIN_IDS[type].join(', ')}.`
 					);
 				}
-				const { x, y } = freeSpot(nodesOf(p, d.id));
+				const zoneId = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
+				const size = estimatedSize({ id: '', type: 'component', x: 0, y: 0, name, skin });
+				const { x, y } = placeNew(p, d.id, size, zoneId);
 				const id = p.addComponent(d.id, type, name, x, y);
 				if (skin) p.setSkin(d.id, id, skin);
 				if (hosting) p.setHosting(d.id, id, hosting);
 				return { id };
+			})
+	);
+
+	tool(
+		'add_zone',
+		"Adds a Zone to a System design diagram: a named area (region, VPC, subnet…) that groups the Components drawn inside it, possibly inside another Zone. Put Components in it with add_component's zone, then call layout_diagram to fit it around them.",
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			name: name(),
+			zone: zoneArgument.optional().describe('The Zone to nest this one in.')
+		},
+		({ project, diagram, name, zone }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const parent = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
+				const { x, y } = placeNew(p, d.id, ZONE_DEFAULT, parent);
+				return { id: p.addZone(d.id, x, y, ZONE_DEFAULT.width, ZONE_DEFAULT.height, name) };
+			})
+	);
+
+	tool(
+		'set_zone',
+		'Renames, moves or resizes a Zone. Moving it takes along everything it holds; resizing leaves its content in place, so it may then hold more or less.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			zone: zoneArgument,
+			name: name().optional(),
+			x: z.number().optional(),
+			y: z.number().optional(),
+			width: z.number().min(1).optional(),
+			height: z.number().min(1).optional()
+		},
+		({ project, diagram, zone, name, x, y, width, height }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const nodes = nodesOf(p, d.id);
+				const target = pick(
+					nodes.filter((n) => n.type === 'zone'),
+					zone,
+					'zone'
+				) as ZoneNode;
+				if (name) p.renameNode(d.id, target.id, name);
+				const to = { x: x ?? target.x, y: y ?? target.y };
+				if (to.x !== target.x || to.y !== target.y) {
+					const dx = Math.round(to.x) - target.x;
+					const dy = Math.round(to.y) - target.y;
+					const carried = zoneContent(zoneParents(nodes, estimatedSize), target.id);
+					p.moveNodes(d.id, [
+						{ id: target.id, ...to },
+						...carried.map((id) => {
+							const node = nodes.find((n) => n.id === id)!;
+							return { id, x: node.x + dx, y: node.y + dy };
+						})
+					]);
+				}
+				p.setZoneBox(d.id, target.id, {
+					x: Math.round(to.x),
+					y: Math.round(to.y),
+					width: width ?? target.width,
+					height: height ?? target.height
+				});
+				return { id: target.id };
 			})
 	);
 
@@ -330,7 +504,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'rename_element',
-		'Renames a Diagram (without element) or one of its elements: Component, Entity or Association.',
+		'Renames a Diagram (without element) or one of its elements: Component, Zone, Entity or Association.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -366,10 +540,15 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					return { id: d.id, kind: d.kind, nodes: p.nodes(d.id), edges: p.edges(d.id) };
 				});
 				const before = layoutFingerprint(nodes, edges);
-				const { positions, routes } = await layoutDiagram(nodes, edges, estimatedSize, kind);
+				const { positions, routes, zoneSizes } = await layoutDiagram(
+					nodes,
+					edges,
+					estimatedSize,
+					kind
+				);
 				const written = await access.write(project, (p) => {
 					if (layoutFingerprint(p.nodes(id), p.edges(id)) !== before) return null;
-					p.arrange(id, positions, routes);
+					p.arrange(id, positions, routes, zoneSizes);
 					return { arranged: positions.size, routed: routes.size };
 				});
 				if (written) return written;
@@ -380,7 +559,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'delete_elements',
-		'Deletes elements of a Diagram (by id or exact name); their Connections or Legs go with them.',
+		'Deletes elements of a Diagram (by id or exact name); their Connections or Legs go with them. Deleting a Zone keeps what it holds.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,

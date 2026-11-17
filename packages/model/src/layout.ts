@@ -1,6 +1,8 @@
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
+import { ZONE_PADDING } from './project.ts';
+import { overlaps, zoneParents } from './zones.ts';
 
 export type Size = { width: number; height: number };
 export type Positions = Map<string, Point>;
@@ -9,7 +11,12 @@ export type Positions = Map<string, Point>;
  * Where every node goes, and the bends of every edge ELK routed: only the
  * inner points, since the ends attach to the boxes as they are drawn.
  */
-export type Layout = { positions: Positions; routes: Map<string, Point[]> };
+export type Layout = {
+	positions: Positions;
+	routes: Map<string, Point[]>;
+	/** The size each Zone gets to fit around its content. */
+	zoneSizes: Map<string, Size>;
+};
 
 /** A link ELK ranks along: the edge it routes, drawn the other way when reversed. */
 type Link = {
@@ -59,7 +66,8 @@ function loadElk(): Promise<Elk> {
  * routed as broken lines. Elements without links go on a grid underneath.
  * Deterministic: every peer computes the same layout. The positions are
  * shared by every Notation, so an MCD is always laid out with its
- * Associations as boxes.
+ * Associations as boxes. With Zones, each Zone's content is laid out inside it
+ * and the Zone sized around it, every element taking part.
  */
 export async function layoutDiagram(
 	allNodes: DiagramNode[],
@@ -75,22 +83,47 @@ export async function layoutDiagram(
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
 	const orthogonal = kind === 'system';
 	const gaps = GAPS[kind];
+	const hasZones = nodes.some((n) => n.type === 'zone');
+	// Membership at the model's sizes, as everywhere else.
+	const parents = hasZones ? zoneParents(nodes, estimatedSize) : new Map<string, string>();
+	// Elements without links and outside every Zone still go on the grid underneath.
+	const isLoose = (n: DiagramNode) => !linked.has(n.id) && n.type !== 'zone' && !parents.has(n.id);
 
+	const options = {
+		'elk.algorithm': 'layered',
+		'elk.direction': 'RIGHT',
+		'elk.edgeRouting': orthogonal ? 'ORTHOGONAL' : 'POLYLINE',
+		'elk.spacing.nodeNode': String(gaps.node),
+		'elk.layered.spacing.nodeNodeBetweenLayers': String(gaps.layer),
+		'elk.spacing.edgeNode': '25',
+		'elk.spacing.edgeEdge': '15',
+		'elk.layered.spacing.edgeNodeBetweenLayers': '25',
+		// ELK's model order fails on nested layouts (a TypeError in 0.12): left out with Zones.
+		...(hasZones ? {} : { 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES' }),
+		'elk.padding': '[top=0,left=0,bottom=0,right=0]'
+	};
 	const graph: ElkNode = {
 		id: 'root',
-		layoutOptions: {
-			'elk.algorithm': 'layered',
-			'elk.direction': 'RIGHT',
-			'elk.edgeRouting': orthogonal ? 'ORTHOGONAL' : 'POLYLINE',
-			'elk.spacing.nodeNode': String(gaps.node),
-			'elk.layered.spacing.nodeNodeBetweenLayers': String(gaps.layer),
-			'elk.spacing.edgeNode': '25',
-			'elk.spacing.edgeEdge': '15',
-			'elk.layered.spacing.edgeNodeBetweenLayers': '25',
-			'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
-			'elk.padding': '[top=0,left=0,bottom=0,right=0]'
-		},
-		children: nodes.filter((n) => linked.has(n.id)).map((n) => ({ id: n.id, ...sizeOf(n) })),
+		layoutOptions: hasZones
+			? {
+					...options,
+					// One layout across the Zones, every coordinate relative to the Diagram.
+					'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+					'elk.json.shapeCoords': 'ROOT',
+					'elk.json.edgeCoords': 'ROOT'
+				}
+			: options,
+		children: hasZones
+			? zoneTree(
+					nodes.filter((n) => !isLoose(n)),
+					parents,
+					sizeOf,
+					{
+						...options,
+						'elk.padding': `[top=${ZONE_PADDING.top},left=${ZONE_PADDING.side},bottom=${ZONE_PADDING.side},right=${ZONE_PADDING.side}]`
+					}
+				)
+			: nodes.filter((n) => !isLoose(n)).map((n) => ({ id: n.id, ...sizeOf(n) })),
 		edges: links.map((link, index) => ({
 			id: String(index),
 			sources: [link.from],
@@ -100,13 +133,25 @@ export async function layoutDiagram(
 	const result = await (await loadElk()).layout(graph);
 
 	const positions: Positions = new Map();
+	const zoneSizes = new Map<string, Size>();
+	const zoneIds = new Set(nodes.filter((n) => n.type === 'zone').map((n) => n.id));
 	let bottom = 0;
-	for (const child of result.children ?? []) {
-		const x = Math.round(child.x ?? 0);
-		const y = Math.round(child.y ?? 0);
-		positions.set(child.id, { x, y });
-		bottom = Math.max(bottom, y + (child.height ?? 0));
-	}
+	const place = (children: ElkNode[]) => {
+		for (const child of children) {
+			const x = Math.round(child.x ?? 0);
+			const y = Math.round(child.y ?? 0);
+			positions.set(child.id, { x, y });
+			bottom = Math.max(bottom, y + (child.height ?? 0));
+			if (zoneIds.has(child.id)) {
+				zoneSizes.set(child.id, {
+					width: Math.round(child.width ?? 0),
+					height: Math.round(child.height ?? 0)
+				});
+			}
+			place(child.children ?? []);
+		}
+	};
+	place(result.children ?? []);
 
 	const routes = new Map<string, Point[]>();
 	for (const edge of result.edges ?? []) {
@@ -129,7 +174,7 @@ export async function layoutDiagram(
 		for (const back of link.returns ?? []) routes.set(back, [...route].reverse());
 	}
 
-	const loose = nodes.filter((n) => !linked.has(n.id));
+	const loose = nodes.filter(isLoose);
 	let x = 0;
 	let y = positions.size > 0 ? bottom + gaps.layer * 2 : 0;
 	let rowHeight = 0;
@@ -144,7 +189,36 @@ export async function layoutDiagram(
 		x += size.width + gaps.node;
 		rowHeight = Math.max(rowHeight, size.height);
 	});
-	return { positions, routes };
+	return { positions, routes, zoneSizes };
+}
+
+/**
+ * The Diagram as nested ELK nodes: each Zone holding what lies inside it now.
+ * An empty Zone keeps its size.
+ */
+function zoneTree(
+	nodes: DiagramNode[],
+	parents: Map<string, string>,
+	sizeOf: (node: DiagramNode) => Size,
+	zoneOptions: Record<string, string>
+): ElkNode[] {
+	const holds = new Set(parents.values());
+	const elkNodes = new Map<string, ElkNode>(
+		nodes.map((n) => [
+			n.id,
+			n.type === 'zone' && holds.has(n.id)
+				? { id: n.id, layoutOptions: zoneOptions, children: [] }
+				: { id: n.id, ...sizeOf(n) }
+		])
+	);
+	const roots: ElkNode[] = [];
+	for (const node of nodes) {
+		const parent = parents.get(node.id);
+		const elkNode = elkNodes.get(node.id)!;
+		if (parent) elkNodes.get(parent)!.children!.push(elkNode);
+		else roots.push(elkNode);
+	}
+	return roots;
 }
 
 /** The directed links ELK ranks along. */
@@ -235,6 +309,7 @@ const TYPE_CHARS: Record<DataTypeKind, number> = {
 export function estimatedSize(node: DiagramNode): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
+	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
 	if (node.type === 'component') {
 		// The Skin's product name shows under the name.
 		return { width: Math.max(150, name.length * 8 + 80 + (node.skin ? 20 : 0)), height: 64 };
@@ -274,14 +349,5 @@ type Box = Point & Size;
 
 /** Whether any two boxes overlap (touching edges do not count). */
 export function anyOverlap(boxes: Box[]): boolean {
-	return boxes.some((a, i) =>
-		boxes.some(
-			(b, j) =>
-				i < j &&
-				a.x < b.x + b.width &&
-				b.x < a.x + a.width &&
-				a.y < b.y + b.height &&
-				b.y < a.y + a.height
-		)
-	);
+	return boxes.some((a, i) => boxes.some((b, j) => i < j && overlaps(a, b)));
 }

@@ -110,11 +110,14 @@ const drawnEdges = new WeakMap<Edge, Edge>();
  * is drawn at (`labelAt`), from the boxes as React Flow measured them.
  */
 export const placeConnectionLabels: Layout = (nodes, edges) => {
+	// Zones hold labels rather than block them.
 	const boxes = new Map<string, Box>(
-		nodes.map((n) => [
-			n.id,
-			{ ...n.position, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 }
-		])
+		nodes
+			.filter((n) => n.type !== 'zone')
+			.map((n) => [
+				n.id,
+				{ ...n.position, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 }
+			])
 	);
 	const placed = placeLabels(
 		boxes,
