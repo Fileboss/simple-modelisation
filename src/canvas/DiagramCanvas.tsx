@@ -31,7 +31,9 @@ import type {
 	Diagram,
 	DiagramEdge,
 	DiagramNode,
-	ProjectDocument
+	Point,
+	ProjectDocument,
+	Route
 } from '@simple-modelisation/model/project.ts';
 import {
 	reportPresence,
@@ -45,6 +47,7 @@ import {
 	layoutDiagram,
 	layoutFingerprint
 } from '@simple-modelisation/model/layout.ts';
+import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
 import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
@@ -130,11 +133,16 @@ function Canvas({ project, diagram, kind }: Props) {
 				const nodes = project.nodes(diagram.id);
 				const edges = project.edges(diagram.id);
 				const before = layoutFingerprint(nodes, edges);
-				const { positions, routes } = await layoutDiagram(nodes, edges, sizeOf, diagram.kind);
+				const { positions, routes, zoneSizes } = await layoutDiagram(
+					nodes,
+					edges,
+					sizeOf,
+					diagram.kind
+				);
 				if (layoutFingerprint(project.nodes(diagram.id), project.edges(diagram.id)) !== before) {
 					continue;
 				}
-				project.arrange(diagram.id, positions, routes);
+				project.arrange(diagram.id, positions, routes, zoneSizes);
 				setFitPending(true);
 				return;
 			}
@@ -145,16 +153,32 @@ function Canvas({ project, diagram, kind }: Props) {
 		}
 	};
 
-	const toNodes = useCallback(
-		(): Node[] =>
-			project.nodes(diagram.id).map((n) => ({
-				id: n.id,
-				type: n.type,
-				position: { x: n.x, y: n.y },
-				data: n
-			})),
-		[project, diagram.id]
-	);
+	const toNodes = useCallback((): Node[] => {
+		const all = project.nodes(diagram.id);
+		// Zones under everything else, each under the Zones it holds; low enough that
+		// React Flow's +1000 for a selected node keeps a Zone under the Components.
+		const zones = all.filter((n) => n.type === 'zone');
+		const parents = zoneParents(zones, estimatedSize);
+		const depth = (id: string) => {
+			let count = 0;
+			for (let at = parents.get(id); at; at = parents.get(at)) count++;
+			return count;
+		};
+		return all.map((n) =>
+			n.type === 'zone'
+				? {
+						id: n.id,
+						type: n.type,
+						position: { x: n.x, y: n.y },
+						width: n.width as number,
+						height: n.height as number,
+						zIndex: depth(n.id) - 2000,
+						dragHandle: '.zone-title',
+						data: n
+					}
+				: { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n }
+		);
+	}, [project, diagram.id]);
 	const toEdges = useCallback((): Edge[] => {
 		const all = project.edges(diagram.id);
 		// Edges joining the same two nodes (a reflexive Association's Legs) are drawn apart.
@@ -223,6 +247,57 @@ function Canvas({ project, diagram, kind }: Props) {
 		[diagram.name, screenToFlowPosition]
 	);
 
+	// Dragging a Zone takes along what it holds when the drag starts.
+	const carried = useRef<{ zones: Map<string, Point>; content: Map<string, Point> } | null>(null);
+	const onNodeDragStart = (dragged: Node[]) => {
+		project.stopCapturing();
+		const zones = dragged.filter((n) => n.type === 'zone');
+		if (zones.length === 0) return;
+		// At the model's sizes, as Tidy up and agents see it.
+		const all = new Map(project.nodes(diagram.id).map((n) => [n.id, n]));
+		const parents = zoneParents([...all.values()], estimatedSize);
+		const moving = new Set(dragged.map((n) => n.id));
+		const content = new Map<string, Point>();
+		for (const zone of zones) {
+			for (const id of zoneContent(parents, zone.id)) {
+				const node = all.get(id);
+				if (node && !moving.has(id)) content.set(id, { x: node.x, y: node.y });
+			}
+		}
+		carried.current = {
+			zones: new Map(zones.map((z) => [z.id, z.data as DiagramNode])),
+			content
+		};
+	};
+	const onNodeDrag = (dragged: Node[]) => {
+		const carry = carried.current;
+		if (!carry || carry.content.size === 0) return;
+		const zone = dragged.find((n) => carry.zones.has(n.id));
+		if (!zone) return;
+		const start = carry.zones.get(zone.id)!;
+		const dx = zone.position.x - start.x;
+		const dy = zone.position.y - start.y;
+		setNodes((current) =>
+			current.map((n) => {
+				const from = carry.content.get(n.id);
+				return from ? { ...n, position: { x: from.x + dx, y: from.y + dy } } : n;
+			})
+		);
+	};
+	const onNodeDragStop = (dragged: Node[]) => {
+		const moves = dragged.map((n) => ({ id: n.id, ...n.position }));
+		const carry = carried.current;
+		carried.current = null;
+		const zone = carry && dragged.find((n) => carry.zones.has(n.id));
+		if (carry && zone) {
+			const start = carry.zones.get(zone.id)!;
+			const dx = zone.position.x - start.x;
+			const dy = zone.position.y - start.y;
+			for (const [id, from] of carry.content) moves.push({ id, x: from.x + dx, y: from.y + dy });
+		}
+		project.moveNodes(diagram.id, moves);
+	};
+
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
 		[setNodes]
@@ -268,22 +343,33 @@ function Canvas({ project, diagram, kind }: Props) {
 	const drawn = useMemo(() => {
 		// A box being dragged leaves its stored routes behind: draw those edges the default
 		// way, before the kind's drawing step (which places labels along the routes).
-		const moving = new Set(
-			shownNodes
-				.filter((n) => {
-					const stored = n.data as DiagramNode;
-					return n.position.x !== stored.x || n.position.y !== stored.y;
-				})
-				.map((n) => n.id)
-		);
+		// Edges whose two ends move alike (a Zone and its content) keep their route, shifted.
+		const moving = new Map<string, Point>();
+		for (const n of shownNodes) {
+			const stored = n.data as DiagramNode;
+			const offset = { x: n.position.x - stored.x, y: n.position.y - stored.y };
+			if (offset.x !== 0 || offset.y !== 0) moving.set(n.id, offset);
+		}
 		const edges =
 			moving.size === 0
 				? shownEdges
-				: shownEdges.map((e) =>
-						moving.has(e.source) || moving.has(e.target)
-							? { ...e, data: { ...e.data, points: undefined } }
-							: e
-					);
+				: shownEdges.map((e) => {
+						const source = moving.get(e.source) ?? { x: 0, y: 0 };
+						const target = moving.get(e.target) ?? { x: 0, y: 0 };
+						if (!moving.has(e.source) && !moving.has(e.target)) return e;
+						const points = (e.data as Route | undefined)?.points;
+						const together = source.x === target.x && source.y === target.y;
+						return {
+							...e,
+							data: {
+								...e.data,
+								points:
+									together && points
+										? points.map((p) => ({ x: p.x + source.x, y: p.y + source.y }))
+										: undefined
+							}
+						};
+					});
 		return layout(shownNodes, edges);
 	}, [layout, shownNodes, shownEdges]);
 
@@ -328,13 +414,9 @@ function Canvas({ project, diagram, kind }: Props) {
 						edgeTypes={kind.edgeTypes}
 						onNodesChange={onNodesChange}
 						onEdgesChange={onEdgesChange}
-						onNodeDragStart={() => project.stopCapturing()}
-						onNodeDragStop={(_event, _node, dragged) => {
-							project.moveNodes(
-								diagram.id,
-								dragged.map((n) => ({ id: n.id, ...n.position }))
-							);
-						}}
+						onNodeDragStart={(_event, _node, dragged) => onNodeDragStart(dragged)}
+						onNodeDrag={(_event, _node, dragged) => onNodeDrag(dragged)}
+						onNodeDragStop={(_event, _node, dragged) => onNodeDragStop(dragged)}
 						onConnect={({ source, target }) => {
 							project.stopCapturing();
 							kind.connect(project, diagram.id, source, target);

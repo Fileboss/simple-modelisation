@@ -1,7 +1,11 @@
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
 import { PanelField } from '../canvas/PanelField';
-import type { ComponentNode, ConnectionEdge } from '@simple-modelisation/model/project.ts';
+import type {
+	ComponentNode,
+	ConnectionEdge,
+	ZoneNode
+} from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
@@ -45,6 +49,21 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 						</button>
 					))}
 				</div>
+			</>
+		);
+	}
+
+	if (selection.node?.type === 'zone') {
+		const zone = selection.node as ZoneNode;
+		return (
+			<>
+				<h2>{strings.system.zone}</h2>
+				<PanelField
+					label={strings.panel.name}
+					value={zone.name}
+					onChange={(name) => project.renameNode(diagramId, zone.id, name)}
+				/>
+				<p className="panel-hint">{strings.system.zoneHint}</p>
 			</>
 		);
 	}

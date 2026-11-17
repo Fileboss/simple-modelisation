@@ -965,3 +965,62 @@ input {
 	color: var(--muted);
 	font-size: 0.85rem;
 }
+
+/* Zones: a dashed area under the Components; only the title bar and the resize handles catch the pointer. */
+.react-flow__node-zone {
+	pointer-events: none !important;
+}
+
+.zone {
+	width: 100%;
+	height: 100%;
+	border: 1.5px dashed #94a3b8;
+	border-radius: 12px;
+	background: rgb(148 163 184 / 0.07);
+}
+
+.zone.selected {
+	border-color: var(--accent);
+}
+
+.zone-title {
+	display: inline-flex;
+	max-width: calc(100% - 16px);
+	margin: 6px 8px;
+	padding: 2px 8px;
+	border-radius: 6px;
+	background: rgb(148 163 184 / 0.18);
+	color: #475569;
+	font-size: 0.8rem;
+	font-weight: 600;
+	cursor: grab;
+	pointer-events: all;
+}
+
+.zone-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.zone-handle,
+.zone-line {
+	pointer-events: all;
+}
+
+.zone-handle {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	background: var(--surface);
+	border-color: var(--accent);
+}
+
+.zone-icon {
+	width: 20px;
+	height: 20px;
+	fill: rgb(148 163 184 / 0.12);
+	stroke: #94a3b8;
+	stroke-width: 1.5;
+	stroke-dasharray: 3 2;
+}

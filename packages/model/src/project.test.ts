@@ -362,3 +362,89 @@ describe('Hosting', () => {
 		expect(ProjectDocument.fromFile(file).nodes(d)[0].hosting).toBeUndefined();
 	});
 });
+
+describe('Zones', () => {
+	const setup = () => {
+		const project = new ProjectDocument();
+		const diagram = project.addDiagram('system');
+		const api = project.addComponent(diagram, 'service', 'API', 40, 60);
+		const db = project.addComponent(diagram, 'database', 'Database', 240, 60);
+		const zone = project.addZone(diagram, 0, 0, 500, 200, ' VPC ');
+		const node = (id: string) => project.nodes(diagram).find((n) => n.id === id)!;
+		return { project, diagram, api, db, zone, node };
+	};
+
+	it('draws, resizes, renames and deletes a Zone, keeping its content', () => {
+		const { project, diagram, api, db, zone, node } = setup();
+		expect(node(zone)).toMatchObject({ type: 'zone', name: 'VPC', width: 500, height: 200 });
+
+		project.setZoneBox(diagram, zone, { x: -10.4, y: 5, width: 20, height: 300 });
+		expect(node(zone)).toMatchObject({ x: -10, y: 5, width: 160, height: 300 });
+
+		project.renameNode(diagram, zone, 'eu-west-1');
+		expect(node(zone).name).toBe('eu-west-1');
+
+		project.deleteElements(diagram, [zone], []);
+		expect(
+			project
+				.nodes(diagram)
+				.map((n) => n.id)
+				.sort()
+		).toEqual([api, db].sort());
+	});
+
+	it('refuses a Connection to or from a Zone', () => {
+		const { project, diagram, api, zone } = setup();
+		expect(project.addConnection(diagram, api, zone)).toBeNull();
+		expect(project.addConnection(diagram, zone, api)).toBeNull();
+	});
+
+	it('shifts a route whose two ends move alike, drops it otherwise', () => {
+		const { project, diagram, api, db, zone } = setup();
+		const connection = project.addConnection(diagram, api, db)!;
+		const route = (points: { x: number; y: number }[]) =>
+			project.arrange(diagram, new Map(), new Map([[connection, points]]));
+		route([{ x: 200, y: 90 }]);
+
+		project.moveNodes(diagram, [
+			{ id: zone, x: 100, y: 50 },
+			{ id: api, x: 140, y: 110 },
+			{ id: db, x: 340, y: 110 }
+		]);
+		expect(project.edges(diagram)[0].points).toEqual([{ x: 300, y: 140 }]);
+
+		project.moveNode(diagram, db, 400, 400);
+		expect(project.edges(diagram)[0].points).toBeUndefined();
+	});
+
+	it('stores the Zone sizes a Tidy up gives', () => {
+		const { project, diagram, zone, node } = setup();
+		project.arrange(
+			diagram,
+			new Map([[zone, { x: 10, y: 20 }]]),
+			new Map(),
+			new Map([[zone, { width: 640, height: 320 }]])
+		);
+		expect(node(zone)).toMatchObject({ x: 10, y: 20, width: 640, height: 320 });
+	});
+
+	it('imports Zones, but no Zone without a size nor a Connection to a Zone', () => {
+		const { project, diagram, api, zone } = setup();
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(diagram)).toHaveLength(3);
+
+		const sizeless = structuredClone(file);
+		delete sizeless.diagrams[0].nodes.find((n: { id: string }) => n.id === zone).width;
+		expect(() => ProjectDocument.fromFile(sizeless)).toThrow();
+
+		const toZone = structuredClone(file);
+		toZone.diagrams[0].edges.push({
+			id: 'c',
+			type: 'connection',
+			source: api,
+			target: zone,
+			label: ''
+		});
+		expect(() => ProjectDocument.fromFile(toZone)).toThrow();
+	});
+});
