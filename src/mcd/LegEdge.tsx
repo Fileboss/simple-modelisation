@@ -1,7 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
 import type { RemoteHighlight, TwinPosition } from '../canvas/DiagramCanvas';
-import { borderPoint, center, drawnRoute, routedPath } from '../canvas/geometry';
+import { borderPoint, boxOf, center, drawnRoute, routedPath } from '../canvas/geometry';
 import type { LegEdge as LegData } from '@simple-modelisation/model/project.ts';
 import { umlMultiplicity, useNotation, type PeerLeg } from './notation';
 
@@ -25,7 +25,9 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 	// A route stored by a Tidy up (Merise only: in UML the Leg starts at the label).
 	// Stored bends, ends attached to the boxes as they are drawn now.
 	const bends = !isUml && leg.points && leg.points.length > 0 ? leg.points : null;
-	const route = bends && drawnRoute(sourceNode, bends, targetNode);
+	const sourceBox = boxOf(sourceNode);
+	const targetBox = boxOf(targetNode);
+	const route = bends && drawnRoute(sourceBox, bends, targetBox);
 	let path: string;
 	let label: { x: number; y: number };
 	if (route) {
@@ -35,16 +37,16 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 		label = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 	} else {
 		// Twin Legs bend apart around the straight line between the two centers.
-		const from = center(sourceNode);
-		const to = center(targetNode);
+		const from = center(sourceBox);
+		const to = center(targetBox);
 		const length = Math.hypot(to.x - from.x, to.y - from.y) || 1;
 		const offset = (leg.twinIndex - (leg.twinCount - 1) / 2) * SPREAD * 2;
 		const control = {
 			x: (from.x + to.x) / 2 - ((to.y - from.y) / length) * offset,
 			y: (from.y + to.y) / 2 + ((to.x - from.x) / length) * offset
 		};
-		const start = borderPoint(sourceNode, control);
-		const end = borderPoint(targetNode, control);
+		const start = borderPoint(sourceBox, control);
+		const end = borderPoint(targetBox, control);
 		const at = (t: number) => ({
 			x: (1 - t) ** 2 * start.x + 2 * (1 - t) * t * control.x + t ** 2 * end.x,
 			y: (1 - t) ** 2 * start.y + 2 * (1 - t) * t * control.y + t ** 2 * end.y

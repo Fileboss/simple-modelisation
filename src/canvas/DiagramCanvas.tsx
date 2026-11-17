@@ -231,8 +231,8 @@ function Canvas({ project, diagram, kind }: Props) {
 
 	const layout = kind.useLayout();
 	const drawn = useMemo(() => {
-		const laid = layout(shownNodes, shownEdges);
-		// A box being dragged leaves its stored routes behind: draw those edges the default way.
+		// A box being dragged leaves its stored routes behind: draw those edges the default
+		// way, before the kind's drawing step (which places labels along the routes).
 		const moving = new Set(
 			shownNodes
 				.filter((n) => {
@@ -241,13 +241,15 @@ function Canvas({ project, diagram, kind }: Props) {
 				})
 				.map((n) => n.id)
 		);
-		if (moving.size === 0) return laid;
-		const edges = laid.edges.map((e) =>
-			moving.has(e.source) || moving.has(e.target)
-				? { ...e, data: { ...e.data, points: undefined } }
-				: e
-		);
-		return { nodes: laid.nodes, edges };
+		const edges =
+			moving.size === 0
+				? shownEdges
+				: shownEdges.map((e) =>
+						moving.has(e.source) || moving.has(e.target)
+							? { ...e, data: { ...e.data, points: undefined } }
+							: e
+					);
+		return layout(shownNodes, edges);
 	}, [layout, shownNodes, shownEdges]);
 
 	const selectedNodes = nodes.filter((n) => n.selected);
@@ -343,10 +345,23 @@ function Canvas({ project, diagram, kind }: Props) {
 
 const pairKey = (e: DiagramEdge) => `${e.source}|${e.target}`;
 
-function keepSelection<T extends { id: string; selected?: boolean }>(
+/**
+ * Carries over what React Flow knows of the previous elements: the selection,
+ * and a node's measured size, so drawing steps that need sizes (label
+ * placement) do not lose them for a frame after every document change.
+ */
+function keepSelection<T extends { id: string; selected?: boolean; measured?: unknown }>(
 	previous: T[],
 	next: T[]
 ): T[] {
-	const selected = new Set(previous.filter((e) => e.selected).map((e) => e.id));
-	return next.map((e) => (selected.has(e.id) ? { ...e, selected: true } : e));
+	const before = new Map(previous.map((e) => [e.id, e]));
+	return next.map((e) => {
+		const old = before.get(e.id);
+		if (!old?.selected && !old?.measured) return e;
+		return {
+			...e,
+			...(old.selected && { selected: true }),
+			...(old.measured ? { measured: old.measured } : {})
+		};
+	});
 }
