@@ -2,7 +2,7 @@
 title: dagre lays Diagrams out, in the shared model package
 tags: [adr]
 date: 2026-11-16
-status: accepted
+status: superseded by ADR 0006
 ---
 
 # dagre lays Diagrams out, in the shared model package

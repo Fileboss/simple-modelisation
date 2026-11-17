@@ -1,94 +1,143 @@
-import { Graph, layout } from '@dagrejs/dagre';
-import type { Attribute, DiagramEdge, DiagramNode, Point } from './project.ts';
+import type { ElkNode } from 'elkjs/lib/elk-api.js';
+import type { DataTypeKind } from './data-types.ts';
+import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
 
 export type Size = { width: number; height: number };
 export type Positions = Map<string, Point>;
 
 /**
- * Where every node goes, and the bends of every edge dagre routed: only the
+ * Where every node goes, and the bends of every edge ELK routed: only the
  * inner points, since the ends attach to the boxes as they are drawn.
  */
 export type Layout = { positions: Positions; routes: Map<string, Point[]> };
 
-/** A link dagre ranks along: the edge it routes, drawn the other way when reversed. */
+/** A link ELK ranks along: the edge it routes, drawn the other way when reversed. */
 type Link = { from: string; to: string; edge: string; reversed?: boolean };
 
-const NODE_GAP = 70;
-const LAYER_GAP = 140;
+// An MCD packs tighter: each Association is a layer of its own between its Entities,
+// so Looping-like proximity needs small gaps; a System design diagram needs room for
+// right-angle routes and their labels.
+const GAPS: Record<DiagramKind, { node: number; layer: number }> = {
+	system: { node: 50, layer: 110 },
+	mcd: { node: 40, layer: 40 }
+};
 /** Elements without any link go on a grid under the rest, this many per row. */
 const LOOSE_PER_ROW = 5;
 
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
+type Elk = { layout(graph: ElkNode): Promise<ElkNode> };
+let elk: Promise<Elk> | undefined;
+
+// ELK is large: load it on the first layout (a separate chunk in the browser, ADR 0006).
+function loadElk(): Promise<Elk> {
+	elk ??= import('elkjs/lib/elk.bundled.js').then((loaded) => {
+		// A CommonJS module: its default export is the constructor in Node and Vite,
+		// though TypeScript sees it one level down.
+		const exported = (loaded as { default: unknown }).default;
+		const ELK = (
+			typeof exported === 'function' ? exported : (exported as { default: unknown }).default
+		) as new () => Elk;
+		return new ELK();
+	});
+	// A failed load (offline, a stale chunk) must not stick: the next layout retries.
+	elk.catch(() => (elk = undefined));
+	return elk;
+}
+
 /**
- * Arranges a Diagram in layers from left to right along its links: the
- * Connections of a System design diagram, the Legs of an MCD (each
- * Association ranked between its Entities). Elements without links go on a
- * grid underneath. Deterministic: every peer computes the same layout. The
- * positions are shared by every Notation, so an MCD is always laid out with
- * its Associations as boxes.
+ * Arranges a Diagram in layers from left to right along its links (ELK
+ * layered): the Connections of a System design diagram, routed at right
+ * angles; the Legs of an MCD, each Association ranked between its Entities,
+ * routed as broken lines. Elements without links go on a grid underneath.
+ * Deterministic: every peer computes the same layout. The positions are
+ * shared by every Notation, so an MCD is always laid out with its
+ * Associations as boxes.
  */
-export function layoutDiagram(
+export async function layoutDiagram(
 	allNodes: DiagramNode[],
 	allEdges: DiagramEdge[],
-	sizeOf: (node: DiagramNode) => Size
-): Layout {
-	// Input order steers dagre: sort by id so peers that received the document in a
-	// different order still agree.
+	sizeOf: (node: DiagramNode) => Size,
+	kind: DiagramKind
+): Promise<Layout> {
+	// Input order steers the layout: sort by id so peers that received the document
+	// in a different order still agree.
 	const nodes = [...allNodes].sort(byId);
 	const edges = [...allEdges].sort(byId);
 	const links = linksOf(nodes, edges);
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
+	const orthogonal = kind === 'system';
+	const gaps = GAPS[kind];
 
-	const graph = new Graph({ multigraph: true });
-	graph.setGraph({
-		rankdir: 'LR',
-		nodesep: NODE_GAP,
-		ranksep: LAYER_GAP,
-		marginx: 0,
-		marginy: 0,
-		acyclicer: 'greedy'
-	});
-	graph.setDefaultEdgeLabel(() => ({}));
-	for (const node of nodes) if (linked.has(node.id)) graph.setNode(node.id, { ...sizeOf(node) });
-	links.forEach((link, index) => graph.setEdge(link.from, link.to, {}, String(index)));
-	layout(graph);
+	const graph: ElkNode = {
+		id: 'root',
+		layoutOptions: {
+			'elk.algorithm': 'layered',
+			'elk.direction': 'RIGHT',
+			'elk.edgeRouting': orthogonal ? 'ORTHOGONAL' : 'POLYLINE',
+			'elk.spacing.nodeNode': String(gaps.node),
+			'elk.layered.spacing.nodeNodeBetweenLayers': String(gaps.layer),
+			'elk.spacing.edgeNode': '25',
+			'elk.spacing.edgeEdge': '15',
+			'elk.layered.spacing.edgeNodeBetweenLayers': '25',
+			'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+			'elk.padding': '[top=0,left=0,bottom=0,right=0]'
+		},
+		children: nodes.filter((n) => linked.has(n.id)).map((n) => ({ id: n.id, ...sizeOf(n) })),
+		edges: links.map((link, index) => ({
+			id: String(index),
+			sources: [link.from],
+			targets: [link.to]
+		}))
+	};
+	const result = await (await loadElk()).layout(graph);
 
 	const positions: Positions = new Map();
 	let bottom = 0;
-	for (const node of nodes) {
-		if (!linked.has(node.id)) continue;
-		const { x, y, width, height } = graph.node(node.id);
-		positions.set(node.id, { x: Math.round(x - width / 2), y: Math.round(y - height / 2) });
-		bottom = Math.max(bottom, y + height / 2);
+	for (const child of result.children ?? []) {
+		const x = Math.round(child.x ?? 0);
+		const y = Math.round(child.y ?? 0);
+		positions.set(child.id, { x, y });
+		bottom = Math.max(bottom, y + (child.height ?? 0));
 	}
 
 	const routes = new Map<string, Point[]>();
-	links.forEach((link, index) => {
-		const points: Point[] = graph.edge(link.from, link.to, String(index))?.points ?? [];
-		const bends = points.slice(1, -1).map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
-		if (bends.length > 0) routes.set(link.edge, link.reversed ? bends.reverse() : bends);
-	});
+	for (const edge of result.edges ?? []) {
+		const link = links[Number(edge.id)];
+		const section = edge.sections?.[0];
+		if (!link || !section) continue;
+		// A straight link has no bend: keep its middle, so it stays exactly as routed.
+		const bends = section.bendPoints?.length
+			? section.bendPoints
+			: [
+					{
+						x: (section.startPoint.x + section.endPoint.x) / 2,
+						y: (section.startPoint.y + section.endPoint.y) / 2
+					}
+				];
+		const rounded = bends.map((p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+		routes.set(link.edge, link.reversed ? rounded.reverse() : rounded);
+	}
 
 	const loose = nodes.filter((n) => !linked.has(n.id));
 	let x = 0;
-	let y = positions.size > 0 ? Math.round(bottom + LAYER_GAP) : 0;
+	let y = positions.size > 0 ? bottom + gaps.layer * 2 : 0;
 	let rowHeight = 0;
 	loose.forEach((node, index) => {
 		if (index > 0 && index % LOOSE_PER_ROW === 0) {
 			x = 0;
-			y += rowHeight + NODE_GAP;
+			y += rowHeight + gaps.node;
 			rowHeight = 0;
 		}
 		const size = sizeOf(node);
 		positions.set(node.id, { x, y });
-		x += size.width + NODE_GAP;
+		x += size.width + gaps.node;
 		rowHeight = Math.max(rowHeight, size.height);
 	});
 	return { positions, routes };
 }
 
-/** The directed links dagre ranks along. */
+/** The directed links ELK ranks along. */
 function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 	const present = new Set(nodes.map((n) => n.id));
 	const clients = new Set(
@@ -121,23 +170,64 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 	return links;
 }
 
+// Rough text widths of the canvas fonts, per character.
+const CHAR = { title: 9, line: 7.2 };
+
+/** Characters of a Data type as UML lines print it (`Auto-increment`, `Text(120)`…). */
+const TYPE_CHARS: Record<DataTypeKind, number> = {
+	integer: 7,
+	bigint: 11,
+	decimal: 12,
+	text: 4,
+	varchar: 9,
+	boolean: 7,
+	date: 4,
+	datetime: 9,
+	uuid: 4,
+	serial: 14
+};
+
 /**
- * A node's drawn size guessed from its content, wide enough for both
- * Notations (a UML line also shows the type), where the canvas cannot measure
- * it (the server) or measures another Notation than the shared positions need.
+ * A node's drawn size guessed from its content, where the canvas cannot
+ * measure it (the server) or measures another Notation than the shared
+ * positions need: the larger of its Merise and UML drawings.
  */
 export function estimatedSize(node: DiagramNode): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
-	const longest = Math.max(name.length, ...attributes.map((a) => a.name.length + 24));
 	if (node.type === 'component') {
 		// The Skin's product name shows under the name.
-		return { width: Math.max(170, name.length * 8 + 90 + (node.skin ? 20 : 0)), height: 64 };
+		return { width: Math.max(150, name.length * 8 + 80 + (node.skin ? 20 : 0)), height: 64 };
 	}
+	const merise = Math.max(...attributes.map((a) => a.name.length * CHAR.line));
+	const uml = Math.max(
+		...attributes.map((a) => {
+			const flags = (a.identifier ? 5 : 0) + (a.optional ? 7 : 0);
+			return (a.name.length + 3 + TYPE_CHARS[a.type?.kind ?? 'text'] + flags) * CHAR.line;
+		})
+	);
+	const lines = attributes.length > 0 ? Math.max(merise, uml) : 0;
 	if (node.type === 'association') {
-		return { width: Math.max(100, longest * 8 + 40), height: 48 + attributes.length * 18 };
+		return {
+			width: Math.round(Math.max(90, name.length * CHAR.title + 40, merise + 40)),
+			height: 40 + attributes.length * 18
+		};
 	}
-	return { width: Math.max(130, longest * 8 + 30), height: 40 + attributes.length * 20 };
+	return {
+		width: Math.round(Math.max(120, name.length * CHAR.title + 24, lines + 20)),
+		height: 36 + attributes.length * 18
+	};
+}
+
+/**
+ * What a layout depends on in a Diagram: its nodes' places and sizes, its
+ * edges. A layout computed from one fingerprint is stale once it differs.
+ */
+export function layoutFingerprint(nodes: DiagramNode[], edges: DiagramEdge[]): string {
+	return JSON.stringify([
+		[...nodes].sort(byId).map((n) => [n.id, n.x, n.y, estimatedSize(n)]),
+		[...edges].sort(byId).map((e) => [e.id, e.source, e.target])
+	]);
 }
 
 type Box = Point & Size;

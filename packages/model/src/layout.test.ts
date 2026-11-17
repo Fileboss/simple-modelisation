@@ -20,7 +20,7 @@ const overlapping = (
 };
 
 describe('arrange', () => {
-	it('moves the nodes in one undo step', () => {
+	it('moves the nodes in one undo step', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const a = project.addComponent(d, 'service', 'A', 0, 0);
@@ -45,7 +45,7 @@ describe('arrange', () => {
 });
 
 describe('layoutDiagram', () => {
-	it('lays a System design flow out from left to right, without overlap', () => {
+	it('lays a System design flow out from left to right, without overlap', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const web = project.addComponent(d, 'client', 'Web', 500, 500);
@@ -63,7 +63,12 @@ describe('layoutDiagram', () => {
 			project.addConnection(d, a, b);
 		}
 		const nodes = project.nodes(d);
-		const { positions } = layoutDiagram(nodes, project.edges(d), estimatedSize);
+		const { positions } = await layoutDiagram(
+			nodes,
+			project.edges(d),
+			estimatedSize,
+			project.diagram(d)!.kind
+		);
 		const x = (id: string) => positions.get(id)!.x;
 		expect(x(web) < x(api) && x(api) < x(users) && x(users) < x(db)).toBe(true);
 		expect(x(users)).toBe(x(tweets));
@@ -71,13 +76,18 @@ describe('layoutDiagram', () => {
 		expect(overlapping(positions, sizeOf)).toBe(false);
 	});
 
-	it('puts each Association between its two Entities in an MCD', () => {
+	it('puts each Association between its two Entities in an MCD', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('mcd');
 		const customer = project.addEntity(d, 0, 0, 'Customer');
 		const order = project.addEntity(d, 0, 0, 'Order');
 		const places = project.addAssociation(d, customer, order, 'places');
-		const { positions } = layoutDiagram(project.nodes(d), project.edges(d), estimatedSize);
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			project.diagram(d)!.kind
+		);
 		const x = (id: string) => positions.get(id)!.x;
 		// Which Entity goes left follows the ids (deterministic); the Association sits between.
 		const [left, right] = [x(customer), x(order)].sort((a, b) => a - b);
@@ -86,7 +96,7 @@ describe('layoutDiagram', () => {
 });
 
 describe('layoutDiagram, more cases', () => {
-	it('gives the same layout whatever the order the elements arrive in', () => {
+	it('gives the same layout whatever the order the elements arrive in', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('mcd');
 		const a = project.addEntity(d, 0, 0, 'A');
@@ -96,25 +106,37 @@ describe('layoutDiagram, more cases', () => {
 		project.addAssociation(d, b, c, 'bc');
 		const nodes = project.nodes(d);
 		const edges = project.edges(d);
-		const forward = layoutDiagram(nodes, edges, estimatedSize);
-		const backward = layoutDiagram([...nodes].reverse(), [...edges].reverse(), estimatedSize);
+		const forward = await layoutDiagram(nodes, edges, estimatedSize, project.diagram(d)!.kind);
+		const backward = await layoutDiagram(
+			[...nodes].reverse(),
+			[...edges].reverse(),
+			estimatedSize,
+			project.diagram(d)!.kind
+		);
 		expect([...backward.positions].sort()).toEqual([...forward.positions].sort());
 		expect([...backward.routes].sort()).toEqual([...forward.routes].sort());
 	});
 
-	it('puts elements without links on a grid underneath, not in one column', () => {
+	it('puts elements without links on a grid underneath, not in one column', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('mcd');
 		for (let i = 0; i < 12; i++) project.addEntity(d, 0, 0, `E${i}`);
 		const positions = [
-			...layoutDiagram(project.nodes(d), project.edges(d), estimatedSize).positions.values()
+			...(
+				await layoutDiagram(
+					project.nodes(d),
+					project.edges(d),
+					estimatedSize,
+					project.diagram(d)!.kind
+				)
+			).positions.values()
 		];
 		expect(new Set(positions.map((p) => p.y)).size).toBe(3);
 	});
 });
 
 describe('arrange, unchanged positions', () => {
-	it('writes nothing and adds no undo step when everything is in place', () => {
+	it('writes nothing and adds no undo step when everything is in place', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const a = project.addComponent(d, 'service', 'A', 10, 20);
@@ -130,13 +152,18 @@ describe('arrange, unchanged positions', () => {
 });
 
 describe('routes', () => {
-	it('stores routes with a Tidy up and drops them when an end moves', () => {
+	it('stores routes with a Tidy up and drops them when an end moves', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const a = project.addComponent(d, 'service', 'A', 0, 0);
 		const b = project.addComponent(d, 'database', 'B', 0, 0);
 		const link = project.addConnection(d, a, b)!;
-		const { positions, routes } = layoutDiagram(project.nodes(d), project.edges(d), estimatedSize);
+		const { positions, routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
 		project.arrange(d, positions, routes);
 		expect(project.edges(d)[0].points).toEqual(routes.get(link));
 		project.moveNode(d, b, 900, 900);
@@ -144,8 +171,42 @@ describe('routes', () => {
 	});
 });
 
+describe('layoutDiagram, right angles', () => {
+	it('routes System design Connections with horizontal and vertical segments only', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const api = project.addComponent(d, 'gateway', 'API', 0, 0);
+		const ids = ['A', 'B', 'C'].map((name) => project.addComponent(d, 'service', name, 0, 0));
+		for (const id of ids) project.addConnection(d, api, id);
+		const { positions, routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			project.diagram(d)!.kind
+		);
+		for (const bends of routes.values()) {
+			for (let i = 1; i < bends.length; i++) {
+				const [a, b] = [bends[i - 1], bends[i]];
+				expect(a.x === b.x || a.y === b.y).toBe(true);
+			}
+		}
+		expect(routes.size).toBe(3);
+		// The first and last bends are level with their boxes, so the end segments are straight.
+		for (const edge of project.edges(d)) {
+			const bends = routes.get(edge.id)!;
+			const level = (id: string, y: number) => {
+				const top = positions.get(id)!.y;
+				return (
+					y >= top && y <= top + estimatedSize(project.nodes(d).find((n) => n.id === id)!).height
+				);
+			};
+			expect(level(edge.source, bends[0].y) && level(edge.target, bends.at(-1)!.y)).toBe(true);
+		}
+	});
+});
+
 describe('layoutDiagram, Clients', () => {
-	it('keeps Clients first when a Connection goes back to them', () => {
+	it('keeps Clients first when a Connection goes back to them', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const web = project.addComponent(d, 'client', 'Web', 0, 0);
@@ -154,7 +215,12 @@ describe('layoutDiagram, Clients', () => {
 		project.addConnection(d, web, api);
 		project.addConnection(d, api, notify);
 		const push = project.addConnection(d, notify, web)!;
-		const { positions, routes } = layoutDiagram(project.nodes(d), project.edges(d), estimatedSize);
+		const { positions, routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
 		const x = (id: string) => positions.get(id)!.x;
 		expect(x(web) < x(api) && x(api) < x(notify)).toBe(true);
 		// The push is still drawn from Notify to Web.

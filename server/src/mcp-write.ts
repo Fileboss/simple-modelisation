@@ -7,7 +7,11 @@ import {
 	type LegEdge,
 	type ProjectDocument
 } from '@simple-modelisation/model/project.ts';
-import { estimatedSize, layoutDiagram } from '@simple-modelisation/model/layout.ts';
+import {
+	estimatedSize,
+	layoutDiagram,
+	layoutFingerprint
+} from '@simple-modelisation/model/layout.ts';
 import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
 import { z } from 'zod';
 import type { ProjectAccess, RegisterTool } from './mcp.ts';
@@ -327,13 +331,25 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		'layout_diagram',
 		'Arranges a whole Diagram in layers from left to right along its Connections or Legs. Call it after adding several elements.',
 		{ project: projectArgument, diagram: diagramArgument },
-		({ project, diagram }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram);
-				const { positions, routes } = layoutDiagram(p.nodes(d.id), p.edges(d.id), estimatedSize);
-				p.arrange(d.id, positions, routes);
-				return { arranged: positions.size, routed: routes.size };
-			})
+		async ({ project, diagram }) => {
+			// The layout is asynchronous: compute it from a read, then write it only if the
+			// Diagram did not change meanwhile; otherwise lay it out again.
+			for (let attempt = 0; attempt < 3; attempt++) {
+				const { id, kind, nodes, edges } = await access.read(project, (p) => {
+					const d = pickDiagram(p, diagram);
+					return { id: d.id, kind: d.kind, nodes: p.nodes(d.id), edges: p.edges(d.id) };
+				});
+				const before = layoutFingerprint(nodes, edges);
+				const { positions, routes } = await layoutDiagram(nodes, edges, estimatedSize, kind);
+				const written = await access.write(project, (p) => {
+					if (layoutFingerprint(p.nodes(id), p.edges(id)) !== before) return null;
+					p.arrange(id, positions, routes);
+					return { arranged: positions.size, routed: routes.size };
+				});
+				if (written) return written;
+			}
+			throw new ToolError('The Diagram keeps changing: try layout_diagram again.');
+		}
 	);
 
 	tool(
