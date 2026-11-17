@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- deps-hygiene: typescript-eslint 8.73 (fixes the minimatch alert), @types/node 26
 - [orthogonal-routing](docs/specs/orthogonal-routing/): ELK layout, right-angle routes, tighter MCDs
 - [auto-layout](docs/specs/auto-layout/): Tidy up button and layout_diagram tool, routed Connections and Legs
 - [mcp-server](docs/specs/mcp-server/): AI agents read and edit Shared Projects over MCP
