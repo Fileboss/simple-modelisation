@@ -3,6 +3,7 @@ import {
 	applyNodeChanges,
 	Background,
 	ConnectionMode,
+	PanOnScrollMode,
 	ControlButton,
 	Controls,
 	ReactFlow,
@@ -312,6 +313,12 @@ function Canvas({ project, diagram, kind }: Props) {
 							);
 						}}
 						connectionMode={ConnectionMode.Loose}
+						// Trackpad gestures, as in Figma: two fingers pan, a pinch zooms (it arrives as a
+						// ctrl+wheel), and a mouse wheel zooms with Cmd (Ctrl elsewhere) held, React Flow's
+						// default zoom key.
+						panOnScroll
+						panOnScrollMode={PanOnScrollMode.Free}
+						zoomOnPinch
 						fitView
 						fitViewOptions={{ maxZoom: 1 }}
 						proOptions={{ hideAttribution: true }}
