@@ -1,12 +1,7 @@
-import {
-	BaseEdge,
-	EdgeLabelRenderer,
-	getSmoothStepPath,
-	useInternalNode,
-	type EdgeProps
-} from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import type { RemoteHighlight } from '../canvas/DiagramCanvas';
-import { drawnRoute, facingSides, labelPoint, routedPath } from '../canvas/geometry';
+import { boxOf, connectionRoute, labelPoint, routedPath } from '../canvas/geometry';
+import type { PlacedLabel } from './label-placement';
 import type { ConnectionEdge as ConnectionData } from '@simple-modelisation/model/project.ts';
 
 /**
@@ -18,28 +13,11 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 	const targetNode = useInternalNode(target);
 	if (!sourceNode || !targetNode) return null;
 
-	const { label, points } = data as ConnectionData;
-	let path: string;
-	let middle: { x: number; y: number };
-	if (points && points.length > 0) {
-		// Stored bends; the ends attach to the boxes as they are drawn now.
-		const route = drawnRoute(sourceNode, points, targetNode);
-		path = routedPath(route);
-		middle = labelPoint(route);
-	} else {
-		const { start, end, sourcePosition, targetPosition } = facingSides(sourceNode, targetNode);
-		const [stepPath, x, y] = getSmoothStepPath({
-			sourceX: start.x,
-			sourceY: start.y,
-			sourcePosition,
-			targetX: end.x,
-			targetY: end.y,
-			targetPosition,
-			borderRadius: 10
-		});
-		path = stepPath;
-		middle = { x, y };
-	}
+	const { label, points, labelAt } = data as ConnectionData & PlacedLabel;
+	// The same route the label placement used: stored bends, else a right-angle step.
+	const route = connectionRoute(boxOf(sourceNode), boxOf(targetNode), points);
+	const path = routedPath(route);
+	const at = labelAt ?? labelPoint(route);
 	const { remoteColor } = data as RemoteHighlight;
 	const color = selected ? 'var(--accent)' : (remoteColor ?? '#475569');
 	const arrow = `arrow-${id}`;
@@ -70,7 +48,7 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 					<div
 						className="edge-label"
 						style={{
-							transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)`
+							transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)`
 						}}
 					>
 						{label}
