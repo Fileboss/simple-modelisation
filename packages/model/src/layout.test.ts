@@ -228,3 +228,68 @@ describe('layoutDiagram, Clients', () => {
 		if (route.length > 1) expect(route[0].x > route.at(-1)!.x).toBe(true);
 	});
 });
+
+describe('layoutDiagram, two-way Connections', () => {
+	it('routes A → B and B → A along one line, in opposite directions', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const api = project.addComponent(d, 'service', 'API', 0, 0);
+		const auth = project.addComponent(d, 'service', 'Auth', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 0, 0);
+		const forth = project.addConnection(d, api, auth)!;
+		const back = project.addConnection(d, auth, api)!;
+		project.addConnection(d, auth, db);
+		const { routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		expect(routes.get(back)).toEqual([...routes.get(forth)!].reverse());
+	});
+});
+
+describe('layoutDiagram, two-way Connections in the flow', () => {
+	it('ranks a two-way pair the way the flow goes, whatever its ids', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const web = project.addComponent(d, 'client', 'Web', 0, 0);
+		const api = project.addComponent(d, 'gateway', 'API', 0, 0);
+		const auth = project.addComponent(d, 'service', 'Auth', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 0, 0);
+		// The backward Connections first, so their ids would come first.
+		const back = project.addConnection(d, auth, api)!;
+		project.addConnection(d, db, auth);
+		project.addConnection(d, web, api);
+		const forth = project.addConnection(d, api, auth)!;
+		project.addConnection(d, auth, db);
+		const { positions, routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		const x = (id: string) => positions.get(id)!.x;
+		expect(x(web) < x(api) && x(api) < x(auth) && x(auth) < x(db)).toBe(true);
+		expect(routes.get(back)).toEqual([...routes.get(forth)!].reverse());
+	});
+});
+
+describe('layoutDiagram, loops', () => {
+	it('keeps a Connection from a Component to itself in the layout', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 0, 0);
+		project.addConnection(d, a, b);
+		// The app refuses a loop; an imported file may still hold one.
+		const loop = { id: 'loop', type: 'connection', source: a, target: a, label: '' };
+		const { routes } = await layoutDiagram(
+			project.nodes(d),
+			[...project.edges(d), loop],
+			estimatedSize,
+			'system'
+		);
+		expect(routes.has('loop')).toBe(true);
+	});
+});
