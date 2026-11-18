@@ -285,6 +285,25 @@ describe('MCP endpoint', () => {
 		expect((await read())[1]).toEqual(['API', null, null]);
 	});
 
+	it('gives Components the new Skins, only on the types that offer them', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'gateway', name: 'Proxy', skin: 'caddy' });
+		await call(client, 'add_component', { ...at, type: 'service', name: 'Finance' });
+		await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'bun' });
+		const refused = await call(client, 'set_skin', {
+			...at,
+			component: 'Finance',
+			skin: 'tailscale'
+		});
+		expect(refused.error).toMatch(/No "tailscale" Skin/);
+		const { components } = await call(client, 'get_diagram', at);
+		expect(components.map((c: { name: string; skin: string }) => [c.name, c.skin])).toEqual([
+			['Proxy', 'caddy'],
+			['Finance', 'bun']
+		]);
+	});
+
 	it('says where Components run', async () => {
 		const { client, id } = await setup();
 		await call(client, 'add_component', {
