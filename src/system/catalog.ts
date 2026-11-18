@@ -100,7 +100,8 @@ const TYPES: { type: ComponentType; label: string; color: string }[] = [
 	{ type: 'cache', label: 'Cache', color: '#b91c1c' },
 	{ type: 'queue', label: 'Message queue', color: '#9333ea' },
 	{ type: 'gateway', label: 'Gateway', color: '#ea580c' },
-	{ type: 'storage', label: 'Object storage', color: '#ca8a04' }
+	{ type: 'storage', label: 'Object storage', color: '#ca8a04' },
+	{ type: 'disk', label: 'Disk', color: '#57534e' }
 ];
 
 /** Each Component type with its Skins, in the model's order (packages/model skins.ts). */

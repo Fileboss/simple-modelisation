@@ -80,6 +80,7 @@ describe('MCP endpoint', () => {
 			'layout_diagram',
 			'rename_element',
 			'set_cardinality',
+			'set_disk_kind',
 			'set_hosting',
 			'set_provider',
 			'set_skin',
@@ -301,6 +302,43 @@ describe('MCP endpoint', () => {
 		expect(components.map((c: { name: string; skin: string }) => [c.name, c.skin])).toEqual([
 			['Proxy', 'caddy'],
 			['Finance', 'bun']
+		]);
+	});
+
+	it('draws Disks with their kind', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', {
+			...at,
+			type: 'disk',
+			name: 'SSD 2 To',
+			disk_kind: 'ssd'
+		});
+		await call(client, 'add_component', { ...at, type: 'disk', name: 'USB 12 To' });
+		await call(client, 'set_disk_kind', { ...at, disk: 'USB 12 To', kind: 'usb' });
+		const misplaced = await call(client, 'add_component', {
+			...at,
+			type: 'service',
+			name: 'API',
+			disk_kind: 'ssd'
+		});
+		expect(misplaced.error).toMatch(/Only a disk/);
+		const skinned = await call(client, 'set_skin', { ...at, component: 'SSD 2 To', skin: 's3' });
+		expect(skinned.error).toBe('This Component takes no Skin.');
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
+		const notADisk = await call(client, 'set_disk_kind', { ...at, disk: 'API', kind: 'ssd' });
+		expect(notADisk.error).toBe('Only a disk has a kind.');
+		const { components } = await call(client, 'get_diagram', at);
+		expect(
+			components.map((c: { name: string; type: string; disk_kind?: string }) => [
+				c.name,
+				c.type,
+				c.disk_kind
+			])
+		).toEqual([
+			['SSD 2 To', 'disk', 'ssd'],
+			['USB 12 To', 'disk', 'usb'],
+			['API', 'service', undefined]
 		]);
 	});
 

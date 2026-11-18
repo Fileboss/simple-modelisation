@@ -9,6 +9,7 @@ import type {
 import { strings } from '../ui/strings';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
+import { DiskKindPicker } from './DiskKindPicker';
 import { HostingPicker } from './HostingPicker';
 import { ProviderPicker } from './ProviderPicker';
 
@@ -35,23 +36,37 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				<HostingPicker labelled componentId={component.id} current={component.hosting} />
 				<h3>{strings.provider.title}</h3>
 				<ProviderPicker componentId={component.id} current={component.provider} />
-				<h3>{strings.system.skin}</h3>
-				<div className="skin-grid">
-					<button className={`skin ${current ? '' : 'skin-current'}`} onClick={() => choose(null)}>
-						<GenericIcon type={info.type} color={info.color} />
-						{strings.system.generic}
-					</button>
-					{info.skins.map((skin) => (
-						<button
-							key={skin.id}
-							className={`skin ${current?.id === skin.id ? 'skin-current' : ''}`}
-							onClick={() => choose(skin.id)}
-						>
-							<SkinLogo skin={skin} />
-							{skin.name}
-						</button>
-					))}
-				</div>
+				{component.componentType === 'disk' && (
+					<>
+						<h3>{strings.disk.title}</h3>
+						<DiskKindPicker diskId={component.id} current={component.diskKind} />
+					</>
+				)}
+				{/* Disks have no Skins: their kind is not a product. */}
+				{info.skins.length > 0 && (
+					<>
+						<h3>{strings.system.skin}</h3>
+						<div className="skin-grid">
+							<button
+								className={`skin ${current ? '' : 'skin-current'}`}
+								onClick={() => choose(null)}
+							>
+								<GenericIcon type={info.type} color={info.color} />
+								{strings.system.generic}
+							</button>
+							{info.skins.map((skin) => (
+								<button
+									key={skin.id}
+									className={`skin ${current?.id === skin.id ? 'skin-current' : ''}`}
+									onClick={() => choose(skin.id)}
+								>
+									<SkinLogo skin={skin} />
+									{skin.name}
+								</button>
+							))}
+						</div>
+					</>
+				)}
 			</>
 		);
 	}

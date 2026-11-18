@@ -13,7 +13,6 @@ tags: [backlog]
 - SVG export readable outside browsers (Figma, Inkscape, slides): plain SVG shapes instead of HTML in a foreignObject
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
-- Disk Component type (HDD, SSD, NVMe, USB): physical storage attached to a machine
 - Zone colors, and Zones in Tidy up options (direction, spacing)
 - A Provider on a Zone (a region at AWS), its Components taking it by default
 - Ternary Associations, inheritance and CIF in MCDs
@@ -24,6 +23,7 @@ tags: [backlog]
 
 ## Done
 
+- [disk-component](docs/specs/disk-component/): Disk Component type (HDD, SSD, NVMe, USB)
 - [more-skins](docs/specs/more-skins/): Caddy, Bun, Python, Rust, Vaultwarden, Tailscale, AdGuard… Skins
 - [stop-sharing](docs/specs/stop-sharing/): stop sharing a Project on this device, keeping a Local copy
 - [hosting-provider](docs/specs/hosting-provider/): Provider (AWS, OVHcloud, Hetzner…) as a second badge on Components

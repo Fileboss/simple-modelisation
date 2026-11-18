@@ -95,6 +95,11 @@ export const strings = {
 			railway: 'Railway'
 		}
 	},
+	disk: {
+		title: 'Kind',
+		unset: 'Not specified',
+		names: { hdd: 'HDD', ssd: 'SSD', nvme: 'NVMe', usb: 'USB' }
+	},
 	dataTypes: {
 		label: 'Data type',
 		length: 'Length',

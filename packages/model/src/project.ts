@@ -29,7 +29,8 @@ export const COMPONENT_TYPE_IDS = [
 	'cache',
 	'queue',
 	'gateway',
-	'storage'
+	'storage',
+	'disk'
 ] as const;
 export type ComponentType = (typeof COMPONENT_TYPE_IDS)[number];
 
@@ -43,6 +44,8 @@ export type ComponentNode = DiagramNode & {
 	hosting?: Hosting | null;
 	/** Whose infrastructure it runs on; absent when unspecified. */
 	provider?: Provider;
+	/** A Disk's kind; absent when unspecified. */
+	diskKind?: DiskKind;
 };
 
 /** Where a Component runs, from the most concrete to the most abstract. */
@@ -79,6 +82,10 @@ export const PROVIDERS = [
 	'railway'
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
+
+/** What a Disk is: spinning, solid-state, NVMe, or plugged in over USB. */
+export const DISK_KINDS = ['hdd', 'ssd', 'nvme', 'usb'] as const;
+export type DiskKind = (typeof DISK_KINDS)[number];
 
 export type Point = { x: number; y: number };
 
@@ -384,6 +391,12 @@ export class ProjectDocument {
 	/** Says whose infrastructure a Component runs on, or clears it with null; an unknown value is ignored. */
 	setProvider(diagramId: string, componentId: string, provider: Provider | null): void {
 		this.setComponentChoice(diagramId, componentId, 'provider', provider, PROVIDERS);
+	}
+
+	/** Says what a Disk is, or clears it with null; ignored on other Components or for an unknown value. */
+	setDiskKind(diagramId: string, diskId: string, kind: DiskKind | null): void {
+		if (this.nodeMap(diagramId).get(diskId)?.get('componentType') !== 'disk') return;
+		this.setComponentChoice(diagramId, diskId, 'diskKind', kind, DISK_KINDS);
 	}
 
 	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
@@ -757,12 +770,13 @@ const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
 
 /**
  * A node as the app reads it: old Attributes completed, and a Hosting or a
- * Provider this version does not know (a newer file or peer) read as unspecified.
+ * Provider or a Disk kind this version does not know (a newer file or peer) read as unspecified.
  */
 /** Component fields that take one of a list; a value this version does not know reads as unspecified. */
 const COMPONENT_CHOICES: [string, readonly string[]][] = [
 	['hosting', HOSTINGS],
-	['provider', PROVIDERS]
+	['provider', PROVIDERS],
+	['diskKind', DISK_KINDS]
 ];
 
 function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
@@ -773,6 +787,8 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	for (const [key, allowed] of COMPONENT_CHOICES) {
 		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
 	}
+	// Only a Disk has a kind, whatever a file or a peer sent.
+	if (read.componentType !== 'disk') delete read.diskKind;
 	return read as DiagramNode;
 }
 

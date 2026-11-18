@@ -2,6 +2,7 @@ import { dataType, isDataType, type DataType } from '@simple-modelisation/model/
 import {
 	CARDINALITIES,
 	COMPONENT_TYPE_IDS,
+	DISK_KINDS,
 	HOSTINGS,
 	PROVIDERS,
 	type Attribute,
@@ -224,6 +225,13 @@ function addAttributes(
 	}
 }
 
+/** Why a Skin is refused, listing the ones the type offers; a Disk offers none. */
+function skinRefusal(skin: string, offered: readonly string[], what: string): string {
+	const products = offered.filter((id) => id !== 'generic');
+	if (products.length === 0) return `${what[0].toUpperCase()}${what.slice(1)} takes no Skin.`;
+	return `No "${skin}" Skin for ${what}. Skins: ${offered.join(', ')}.`;
+}
+
 /** The write tools: each call is one transaction that open browsers receive live. */
 export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	tool(
@@ -247,16 +255,20 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.describe('A market product, e.g. postgresql, redis, kafka, nginx.'),
 			hosting: hostingArgument.optional(),
 			provider: providerArgument.optional(),
+			disk_kind: z
+				.enum(DISK_KINDS)
+				.optional()
+				.describe('For a disk (physical storage attached to a machine): hdd, ssd, nvme or usb.'),
 			zone: zoneArgument.optional().describe('Zone id or exact name to place the Component in.')
 		},
-		({ project, diagram, type, name, skin, hosting, provider, zone }) =>
+		({ project, diagram, type, name, skin, hosting, provider, disk_kind, zone }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				if (skin && !(SKIN_IDS[type] as readonly string[]).includes(skin)) {
-					throw new ToolError(
-						`No "${skin}" Skin for a ${type}. Skins: ${SKIN_IDS[type].join(', ')}.`
-					);
+					throw new ToolError(skinRefusal(skin, SKIN_IDS[type], `a ${type}`));
 				}
+				// Checked before anything is drawn: a refused call leaves the Diagram as it was.
+				if (disk_kind && type !== 'disk') throw new ToolError('Only a disk has a disk_kind.');
 				const zoneId = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
 				const size = estimatedSize({ id: '', type: 'component', x: 0, y: 0, name, skin });
 				const { x, y } = placeNew(p, d.id, size, zoneId);
@@ -264,6 +276,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				if (skin) p.setSkin(d.id, id, skin);
 				if (hosting) p.setHosting(d.id, id, hosting);
 				if (provider) p.setProvider(d.id, id, provider);
+				if (disk_kind) p.setDiskKind(d.id, id, disk_kind);
 				return { id };
 			})
 	);
@@ -372,9 +385,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const skins: readonly string[] =
 					SKIN_IDS[target.componentType as keyof typeof SKIN_IDS] ?? [];
 				if (skin !== 'generic' && !skins.includes(skin)) {
-					throw new ToolError(
-						`No "${skin}" Skin for this Component. Skins: generic, ${skins.join(', ')}.`
-					);
+					throw new ToolError(skinRefusal(skin, ['generic', ...skins], 'this Component'));
 				}
 				p.setSkin(d.id, target.id, skin === 'generic' ? null : skin);
 				return { id: target.id };
@@ -413,6 +424,25 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
 				p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
+				return { id: target.id };
+			})
+	);
+
+	tool(
+		'set_disk_kind',
+		'Says what a disk is (hdd, ssd, nvme, usb), or clears it with "none".',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			disk: z.string().describe('Disk id or exact name.'),
+			kind: z.enum([...DISK_KINDS, 'none'])
+		},
+		({ project, diagram, disk, kind }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const target = pick(nodesOf(p, d.id, 'component'), disk, 'component');
+				if (target.componentType !== 'disk') throw new ToolError('Only a disk has a kind.');
+				p.setDiskKind(d.id, target.id, kind === 'none' ? null : kind);
 				return { id: target.id };
 			})
 	);

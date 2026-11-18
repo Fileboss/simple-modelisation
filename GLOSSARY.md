@@ -49,8 +49,12 @@ A box on a System design diagram standing for one part of the system; it has a C
 _Avoid_: Node, block, service (a Service is one Component type)
 
 **Component type**:
-The generic role of a Component: Client, Service, Database, Cache, Message queue, Gateway or Object storage.
+The generic role of a Component: Client, Service, Database, Cache, Message queue, Gateway, Object storage or Disk.
 _Avoid_: Category, kind
+
+**Disk**:
+A Component type for physical storage attached to a machine (an HDD, an SSD, an NVMe drive, a USB disk), as opposed to Object storage reached over the network; its Disk kind says which.
+_Avoid_: Volume, drive, storage (Object storage is another Component type)
 
 **Skin**:
 A market product applied to a Component (PostgreSQL on a Database, Redis on a Cache), changing its logo, color and displayed name but not its Component type.

@@ -240,7 +240,7 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 	const incoming = (id: string) =>
 		connections.filter((e) => e.target === id && !has(id, e.source)).length;
 	const isStore = (id: string) =>
-		['database', 'cache', 'storage', 'queue'].includes(String(typeOf.get(id)));
+		['database', 'cache', 'storage', 'disk', 'queue'].includes(String(typeOf.get(id)));
 	/** For A ↔ B, which way the shared link runs in the flow. */
 	const forward = (a: string, b: string) => {
 		if (isStore(a) !== isStore(b)) return isStore(b);
@@ -311,8 +311,9 @@ export function estimatedSize(node: DiagramNode): Size {
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
 	if (node.type === 'component') {
-		// The Skin's product name shows under the name.
-		return { width: Math.max(150, name.length * 8 + 80 + (node.skin ? 20 : 0)), height: 64 };
+		// The Skin's product name, or a Disk's kind, shows under the name.
+		const subtitle = node.skin || node.diskKind ? 20 : 0;
+		return { width: Math.max(150, name.length * 8 + 80 + subtitle), height: 64 };
 	}
 	const merise = Math.max(...attributes.map((a) => a.name.length * CHAR.line));
 	const uml = Math.max(
