@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { DiagramNode } from './project.ts';
-import { zoneContent, zoneParents } from './zones.ts';
+import { effectiveProviders, zoneContent, zoneParents } from './zones.ts';
 
 const component = (id: string, x: number, y: number): DiagramNode => ({
 	id,
@@ -45,4 +45,26 @@ it('nests two Zones with the same box by id, never in themselves', () => {
 		size
 	);
 	expect(Object.fromEntries(parents)).toEqual({ b: 'a', x: 'b' });
+});
+
+it("gives Components and Zones their own Provider, else the innermost Zone's, none to External services", () => {
+	const nodes = [
+		{ ...zone('region', 0, 0, 1000, 600), provider: 'aws' },
+		zone('vpc', 50, 50, 600, 400),
+		{ ...zone('edge', 700, 50, 250, 300), provider: 'cloudflare' },
+		component('api', 100, 100),
+		{ ...component('db', 100, 250), provider: 'scaleway' },
+		component('cdn', 720, 100),
+		{ ...component('stripe', 100, 400), hosting: 'external' },
+		component('outside', 1200, 0)
+	];
+	const providers = effectiveProviders(nodes, zoneParents(nodes, size));
+	expect(Object.fromEntries(providers)).toEqual({
+		region: { provider: 'aws', from: null },
+		vpc: { provider: 'aws', from: 'region' },
+		edge: { provider: 'cloudflare', from: null },
+		api: { provider: 'aws', from: 'region' },
+		db: { provider: 'scaleway', from: null },
+		cdn: { provider: 'cloudflare', from: 'edge' }
+	});
 });

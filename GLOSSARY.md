@@ -65,7 +65,7 @@ Where a Component runs, from the most concrete to the most abstract: Bare metal,
 _Avoid_: Infra type, deployment, environment
 
 **Provider**:
-Whose infrastructure a Component runs on: a company such as AWS, OVHcloud or Hetzner, or Self-hosted for one's own machines; shown as a badge beside the Hosting, which says how it runs there, except for an External service, which is its own provider.
+Whose infrastructure a Component runs on: a company such as AWS, OVHcloud or Hetzner, or Self-hosted for one's own machines; shown as a badge beside the Hosting, which says how it runs there, except for an External service, which is its own provider. A Zone can have one too, which the Components inside it take unless they have their own.
 _Avoid_: Cloud, vendor, host
 
 **Zone**:

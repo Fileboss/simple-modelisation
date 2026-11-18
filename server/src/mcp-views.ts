@@ -11,7 +11,7 @@ import type {
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
 import { estimatedSize } from '@simple-modelisation/model/layout.ts';
-import { zoneParents } from '@simple-modelisation/model/zones.ts';
+import { effectiveProviders, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
 import { mldText, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { ToolError } from './mcp-error.ts';
@@ -64,6 +64,15 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	if (diagram.kind === 'system') {
 		// The innermost Zone each element lies in, as drawn.
 		const parents = zoneParents(nodes, estimatedSize);
+		// A Component's Provider as shown: its own, else its Zone's (provider_from names that Zone).
+		const providers = effectiveProviders(nodes, parents);
+		const providerOf = (id: string) => {
+			const effective = providers.get(id);
+			return {
+				provider: effective?.provider ?? null,
+				provider_from: effective?.from ? { id: effective.from, name: nameOf(effective.from) } : null
+			};
+		};
 		// By id and name: Zone names need not be unique (a Private subnet per region).
 		const zoneOf = (id: string) => {
 			const parent = parents.get(id);
@@ -78,7 +87,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				x: z.x,
 				y: z.y,
 				width: z.width,
-				height: z.height
+				height: z.height,
+				provider: z.provider ?? null
 			})),
 			components: only<ComponentNode>(nodes, 'component').map((c) => ({
 				id: c.id,
@@ -86,7 +96,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				type: c.componentType,
 				skin: c.skin,
 				hosting: c.hosting ?? null,
-				provider: c.provider ?? null,
+				...providerOf(c.id),
 				...(c.componentType === 'disk' && { disk_kind: c.diskKind ?? null }),
 				zone: zoneOf(c.id)
 			})),

@@ -14,7 +14,6 @@ tags: [backlog]
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
 - Zone colors, and Zones in Tidy up options (direction, spacing)
-- A Provider on a Zone (a region at AWS), its Components taking it by default
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
 - Revoke a Share link for everyone (needs Project owners)
@@ -23,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [zone-provider](docs/specs/zone-provider/): a Provider on a Zone, taken by the Components inside it
 - [skin-picker](docs/specs/skin-picker/): recommended Skins and Providers first, show all, search; Self-hosted Provider
 - [disk-component](docs/specs/disk-component/): Disk Component type (HDD, SSD, NVMe, USB)
 - [more-skins](docs/specs/more-skins/): Caddy, Bun, Python, Rust, Vaultwarden, Tailscale, AdGuard… Skins

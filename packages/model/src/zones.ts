@@ -1,4 +1,4 @@
-import type { DiagramNode } from './project.ts';
+import type { DiagramNode, Provider } from './project.ts';
 
 type Size = { width: number; height: number };
 export type Box = { x: number; y: number } & Size;
@@ -70,4 +70,36 @@ export function zoneContent(parents: Map<string, string>, zoneId: string): strin
 		}
 	}
 	return content;
+}
+
+/** A node's Provider as shown, and the Zone it comes from (null when set on the node itself). */
+export type EffectiveProvider = { provider: Provider; from: string | null };
+
+/**
+ * Every Component's and Zone's Provider: its own, else the one of the
+ * innermost Zone around it that has one. An External service is its own
+ * provider and gets none; nodes with neither are left out.
+ */
+export function effectiveProviders(
+	nodes: DiagramNode[],
+	parents: Map<string, string>
+): Map<string, EffectiveProvider> {
+	const byId = new Map(nodes.map((n) => [n.id, n]));
+	const result = new Map<string, EffectiveProvider>();
+	for (const node of nodes) {
+		if (node.type !== 'component' && node.type !== 'zone') continue;
+		if (node.type === 'component' && node.hosting === 'external') continue;
+		if (node.provider) {
+			result.set(node.id, { provider: node.provider as Provider, from: null });
+			continue;
+		}
+		for (let at = parents.get(node.id); at; at = parents.get(at)) {
+			const zone = byId.get(at);
+			if (zone?.provider) {
+				result.set(node.id, { provider: zone.provider as Provider, from: zone.id });
+				break;
+			}
+		}
+	}
+	return result;
 }

@@ -3,6 +3,7 @@ import type { ComponentType } from '@simple-modelisation/model/project.ts';
 import { componentTypeInfo, ZONE_ITEM } from './catalog';
 import { ComponentNode } from './ComponentNode';
 import { ConnectionEdge } from './ConnectionEdge';
+import { withInheritedProviders } from './inherited-provider';
 import { placeConnectionLabels } from './label-placement';
 import { SystemPalette } from './SystemPalette';
 import { SystemPanel } from './SystemPanel';
@@ -15,6 +16,7 @@ export const systemKind: CanvasKind = {
 	Panel: SystemPanel,
 	// Connection labels are placed together, so that none overlaps another or a box.
 	useLayout: () => placeConnectionLabels,
+	derive: withInheritedProviders,
 	drop: (project, diagramId, item, x, y) => {
 		if (item === ZONE_ITEM) {
 			project.addZone(diagramId, x, y);
