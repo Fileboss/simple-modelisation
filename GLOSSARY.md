@@ -60,6 +60,10 @@ _Avoid_: Theme, technology, vendor
 Where a Component runs, from the most concrete to the most abstract: Bare metal, VM, Docker, Kubernetes, Managed, Serverless or External; shown as a badge on the Component.
 _Avoid_: Infra type, deployment, environment
 
+**Provider**:
+The company whose infrastructure a Component runs on, such as AWS, OVHcloud or Hetzner; shown as a badge beside the Hosting, which says how it runs there.
+_Avoid_: Cloud, vendor, host
+
 **Zone**:
 A named area of a System design diagram grouping the Components drawn inside it, such as a region, a VPC or a subnet; Zones can nest, and a Component belongs to the innermost Zone its box lies in.
 _Avoid_: Group, container, boundary, cluster (a Kubernetes cluster is one thing a Zone can stand for)

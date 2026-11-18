@@ -11,10 +11,10 @@ tags: [backlog]
 
 - Image export through MCP, and every Diagram at once
 - SVG export readable outside browsers (Figma, Inkscape, slides): plain SVG shapes instead of HTML in a foreignObject
-- Hosting provider (AWS, GCP, OVH, Scaleway…) as a second badge on Components
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
 - Zone colors, and Zones in Tidy up options (direction, spacing)
+- A Provider on a Zone (a region at AWS), its Components taking it by default
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
 - Stop sharing a Project (back to Local)
@@ -23,6 +23,7 @@ tags: [backlog]
 
 ## Done
 
+- [hosting-provider](docs/specs/hosting-provider/): Provider (AWS, OVHcloud, Hetzner…) as a second badge on Components
 - [grouping-zones](docs/specs/grouping-zones/): Zones (region, VPC, subnet) grouping Components in System design diagrams
 - [image-export](docs/specs/image-export/): a Diagram as a PNG or SVG image
 - trackpad-gestures: two fingers pan, pinch zooms, Cmd/Ctrl+wheel zooms

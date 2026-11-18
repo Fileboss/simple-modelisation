@@ -5,7 +5,7 @@ export function HostingIcon({ look, size = 18 }: { look: HostingLook; size?: num
 	const glyph = size * 0.62;
 	return (
 		<span
-			className="hosting-icon"
+			className="badge-icon"
 			style={{ background: look.color, width: size, height: size }}
 			aria-hidden="true"
 		>

@@ -86,6 +86,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				type: c.componentType,
 				skin: c.skin,
 				hosting: c.hosting ?? null,
+				provider: c.provider ?? null,
 				zone: zoneOf(c.id)
 			})),
 			connections: only<ConnectionEdge>(edges, 'connection').map((c) => ({

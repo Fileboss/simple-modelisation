@@ -363,6 +363,38 @@ describe('Hosting', () => {
 	});
 });
 
+describe('Provider', () => {
+	it('sets, changes and clears whose infrastructure a Component runs on, ignoring unknown values', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const db = project.addComponent(d, 'database', 'DB', 0, 0);
+		const provider = () => project.nodes(d)[0].provider;
+		expect(provider()).toBeUndefined();
+		project.setProvider(d, db, 'ovhcloud');
+		expect(provider()).toBe('ovhcloud');
+		project.setProvider(d, db, 'aws');
+		expect(provider()).toBe('aws');
+		project.setProvider(d, db, 'my-garage' as never);
+		expect(provider()).toBe('aws');
+		project.setProvider(d, db, null);
+		expect(provider()).toBeUndefined();
+	});
+
+	it('keeps the Provider through export and import, and reads an unknown one as unspecified', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.setProvider(d, project.addComponent(d, 'cache', 'Cache', 0, 0), 'hetzner');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].provider).toBe('hetzner');
+		file.diagrams[0].nodes[0].provider = 'my-garage';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].provider).toBeUndefined();
+		for (const unknown of [42, null]) {
+			file.diagrams[0].nodes[0].provider = unknown;
+			expect(ProjectDocument.fromFile(file).nodes(d)[0].provider).toBeUndefined();
+		}
+	});
+});
+
 describe('Zones', () => {
 	const setup = () => {
 		const project = new ProjectDocument();
