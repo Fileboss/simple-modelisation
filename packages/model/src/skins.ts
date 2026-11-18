@@ -22,7 +22,9 @@ export const SKIN_IDS = {
 	cache: ['redis', 'valkey', 'memcached'],
 	queue: ['kafka', 'rabbitmq', 'nats'],
 	gateway: ['nginx', 'traefik', 'kong', 'caddy', 'tailscale', 'adguard'],
-	storage: ['s3', 'minio', 'gcs', 'ceph']
+	storage: ['s3', 'minio', 'gcs', 'ceph'],
+	// A Disk kind (HDD, SSD…) is not a product: Disks have no Skins.
+	disk: []
 } as const satisfies Record<ComponentType, readonly string[]>;
 
 export type SkinId = (typeof SKIN_IDS)[ComponentType][number];

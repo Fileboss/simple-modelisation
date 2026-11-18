@@ -1042,3 +1042,19 @@ input {
 	gap: 6px;
 	font-size: 0.85rem;
 }
+
+.disk-kinds {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.disk-kinds button {
+	padding: 3px 8px;
+	font-size: 0.8rem;
+}
+
+.disk-kind-current {
+	border-color: var(--accent);
+	color: var(--accent);
+}

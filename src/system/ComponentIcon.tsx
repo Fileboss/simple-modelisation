@@ -10,7 +10,8 @@ const GLYPHS: Record<ComponentType, string> = {
 	cache: 'M13 2 4 14h7l-1 8 9-12h-7z',
 	queue: 'M3 7h4v10H3zM10 7h4v10h-4zM17 7h4v10h-4z',
 	gateway: 'M12 3l9 9-9 9-9-9zM8 12h8M13 9l3 3-3 3',
-	storage: 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10'
+	storage: 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10',
+	disk: 'M4 14l2.5-9h11L20 14M4 14h16v5H4zM16 16.5h.01M8 16.5h4'
 };
 
 export function GenericIcon({ type, color }: { type: ComponentType; color: string }) {

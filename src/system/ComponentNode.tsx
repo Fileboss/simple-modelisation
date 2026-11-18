@@ -20,7 +20,9 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 	const info = componentTypeInfo(component.componentType);
 	const skin = findSkin(component.componentType, component.skin);
 	const color = skin?.color ?? info.color;
-	const kind = skin?.name ?? info.label;
+	// A Disk shows its kind (SSD…) where other Components show their Skin.
+	const diskKind = component.componentType === 'disk' ? component.diskKind : undefined;
+	const kind = skin?.name ?? (diskKind && strings.disk.names[diskKind]) ?? info.label;
 	const hosting = hostingLook(component.hosting);
 	const provider = providerLook(component.provider);
 	const selectedCount = useStore((state) => {

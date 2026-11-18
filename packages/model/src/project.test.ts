@@ -480,3 +480,38 @@ describe('Zones', () => {
 		expect(() => ProjectDocument.fromFile(toZone)).toThrow();
 	});
 });
+
+describe('Disk kind', () => {
+	it('sets, changes and clears what a Disk is, only on Disks', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const disk = project.addComponent(d, 'disk', 'SSD 2 To', 0, 0);
+		const api = project.addComponent(d, 'service', 'API', 300, 0);
+		const node = (id: string) => project.nodes(d).find((n) => n.id === id)!;
+		project.setDiskKind(d, disk, 'ssd');
+		expect(node(disk).diskKind).toBe('ssd');
+		project.setDiskKind(d, disk, 'floppy' as never);
+		expect(node(disk).diskKind).toBe('ssd');
+		project.setDiskKind(d, api, 'hdd');
+		expect(node(api).diskKind).toBeUndefined();
+		project.setDiskKind(d, disk, null);
+		expect(node(disk).diskKind).toBeUndefined();
+	});
+
+	it('imports Disks, reading an unknown Disk kind as unspecified', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.setDiskKind(d, project.addComponent(d, 'disk', 'USB 12 To', 0, 0), 'usb');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(d)[0]).toMatchObject({
+			componentType: 'disk',
+			diskKind: 'usb'
+		});
+		file.diagrams[0].nodes[0].diskKind = 'floppy';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].diskKind).toBeUndefined();
+		// Only a Disk has a kind.
+		file.diagrams[0].nodes[0].componentType = 'cache';
+		file.diagrams[0].nodes[0].diskKind = 'ssd';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].diskKind).toBeUndefined();
+	});
+});
