@@ -28,7 +28,7 @@ export function HostingPicker({ componentId, current, labelled = false }: Props)
 				aria-pressed={!current}
 				onClick={() => choose(null)}
 			>
-				<span className="hosting-unset" style={{ width: size, height: size }} aria-hidden="true" />
+				<span className="badge-unset" style={{ width: size, height: size }} aria-hidden="true" />
 				{labelled && <span>{strings.hosting.unset}</span>}
 			</button>
 			{HOSTING_LOOKS.map((look) => {

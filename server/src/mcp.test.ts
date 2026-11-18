@@ -81,6 +81,7 @@ describe('MCP endpoint', () => {
 			'rename_element',
 			'set_cardinality',
 			'set_hosting',
+			'set_provider',
 			'set_skin',
 			'set_zone'
 		]);
@@ -254,6 +255,34 @@ describe('MCP endpoint', () => {
 			A: 'Subnet',
 			F: 'Subnet'
 		});
+	});
+
+	it('says whose infrastructure Components run on', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', {
+			...at,
+			type: 'database',
+			name: 'DB',
+			hosting: 'managed',
+			provider: 'scaleway'
+		});
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
+		await call(client, 'set_provider', { ...at, component: 'API', provider: 'hetzner' });
+		const read = async () =>
+			(await call(client, 'get_diagram', at)).components.map(
+				(c: { name: string; hosting: string | null; provider: string | null }) => [
+					c.name,
+					c.hosting,
+					c.provider
+				]
+			);
+		expect(await read()).toEqual([
+			['DB', 'managed', 'scaleway'],
+			['API', null, 'hetzner']
+		]);
+		await call(client, 'set_provider', { ...at, component: 'API', provider: 'none' });
+		expect((await read())[1]).toEqual(['API', null, null]);
 	});
 
 	it('says where Components run', async () => {

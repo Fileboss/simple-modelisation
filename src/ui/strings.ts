@@ -67,6 +67,30 @@ export const strings = {
 			external: 'External service'
 		}
 	},
+	provider: {
+		title: 'Provider',
+		unset: 'Not specified',
+		names: {
+			aws: 'AWS',
+			'google-cloud': 'Google Cloud',
+			azure: 'Azure',
+			ovhcloud: 'OVHcloud',
+			scaleway: 'Scaleway',
+			hetzner: 'Hetzner',
+			ionos: 'IONOS',
+			'clever-cloud': 'Clever Cloud',
+			digitalocean: 'DigitalOcean',
+			vultr: 'Vultr',
+			akamai: 'Akamai (Linode)',
+			'alibaba-cloud': 'Alibaba Cloud',
+			cloudflare: 'Cloudflare',
+			vercel: 'Vercel',
+			netlify: 'Netlify',
+			fly: 'Fly.io',
+			render: 'Render',
+			railway: 'Railway'
+		}
+	},
 	dataTypes: {
 		label: 'Data type',
 		length: 'Length',

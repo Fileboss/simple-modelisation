@@ -10,6 +10,7 @@ import { strings } from '../ui/strings';
 import { componentTypeInfo, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { HostingPicker } from './HostingPicker';
+import { ProviderPicker } from './ProviderPicker';
 
 export function SystemPanel({ selection }: { selection: Selection }) {
 	const { project, diagramId } = useCanvas();
@@ -32,6 +33,8 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				/>
 				<h3>{strings.hosting.title}</h3>
 				<HostingPicker labelled componentId={component.id} current={component.hosting} />
+				<h3>{strings.provider.title}</h3>
+				<ProviderPicker componentId={component.id} current={component.provider} />
 				<h3>{strings.system.skin}</h3>
 				<div className="skin-grid">
 					<button className={`skin ${current ? '' : 'skin-current'}`} onClick={() => choose(null)}>

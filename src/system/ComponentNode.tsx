@@ -1,4 +1,5 @@
 import { Handle, NodeToolbar, Position, useStore, type NodeProps } from '@xyflow/react';
+import type { ReactNode } from 'react';
 import { useCanvas } from '../canvas/canvas-context';
 import { EditableText } from '../canvas/EditableText';
 import type { ComponentNode as ComponentData } from '@simple-modelisation/model/project.ts';
@@ -8,6 +9,8 @@ import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { hostingLook } from './hosting-catalog';
 import { HostingIcon } from './HostingIcon';
 import { HostingPicker } from './HostingPicker';
+import { providerLook } from './provider-catalog';
+import { ProviderIcon } from './ProviderIcon';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
@@ -19,6 +22,7 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 	const color = skin?.color ?? info.color;
 	const kind = skin?.name ?? info.label;
 	const hosting = hostingLook(component.hosting);
+	const provider = providerLook(component.provider);
 	const selectedCount = useStore((state) => {
 		let count = 0;
 		for (const node of state.nodeLookup.values()) if (node.selected) count++;
@@ -44,14 +48,19 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 					</span>
 				)}
 			</div>
-			{hosting && (
-				<span
-					className="hosting-badge"
-					role="img"
-					aria-label={`${strings.hosting.title}: ${hosting.label}`}
-					title={`${strings.hosting.title}: ${hosting.label}`}
-				>
-					<HostingIcon look={hosting} />
+			{(provider || hosting) && (
+				// Read together, left to right: at whom, then how it runs.
+				<span className="component-badges">
+					{provider && (
+						<Badge title={`${strings.provider.title}: ${provider.label}`}>
+							<ProviderIcon look={provider} />
+						</Badge>
+					)}
+					{hosting && (
+						<Badge title={`${strings.hosting.title}: ${hosting.label}`}>
+							<HostingIcon look={hosting} />
+						</Badge>
+					)}
 				</span>
 			)}
 			{/* Only for a single selection: the picker changes this one Component. */}
@@ -62,5 +71,14 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 				<Handle key={side} id={side} type="source" position={side} className="handle" />
 			))}
 		</div>
+	);
+}
+
+/** A round badge in the Component's corner, named on hover and for screen readers. */
+function Badge({ title, children }: { title: string; children: ReactNode }) {
+	return (
+		<span className="component-badge" role="img" aria-label={title} title={title}>
+			{children}
+		</span>
 	);
 }

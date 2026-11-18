@@ -41,6 +41,8 @@ export type ComponentNode = DiagramNode & {
 	skin: string | null;
 	/** Where the Component runs; absent or null when unspecified. */
 	hosting?: Hosting | null;
+	/** Whose infrastructure it runs on; absent when unspecified. */
+	provider?: Provider;
 };
 
 /** Where a Component runs, from the most concrete to the most abstract. */
@@ -54,6 +56,29 @@ export const HOSTINGS = [
 	'external'
 ] as const;
 export type Hosting = (typeof HOSTINGS)[number];
+
+/** Whose infrastructure a Component runs on: the hyperscalers, then European, then other clouds and platforms. */
+export const PROVIDERS = [
+	'aws',
+	'google-cloud',
+	'azure',
+	'ovhcloud',
+	'scaleway',
+	'hetzner',
+	'ionos',
+	'clever-cloud',
+	'digitalocean',
+	'vultr',
+	'akamai',
+	'alibaba-cloud',
+	'cloudflare',
+	'vercel',
+	'netlify',
+	'fly',
+	'render',
+	'railway'
+] as const;
+export type Provider = (typeof PROVIDERS)[number];
 
 export type Point = { x: number; y: number };
 
@@ -356,13 +381,14 @@ export class ProjectDocument {
 		this.nodeMap(diagramId).get(componentId)?.set('skin', skin);
 	}
 
+	/** Says whose infrastructure a Component runs on, or clears it with null; an unknown value is ignored. */
+	setProvider(diagramId: string, componentId: string, provider: Provider | null): void {
+		this.setComponentChoice(diagramId, componentId, 'provider', provider, PROVIDERS);
+	}
+
 	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
 	setHosting(diagramId: string, componentId: string, hosting: Hosting | null): void {
-		if (hosting !== null && !HOSTINGS.includes(hosting)) return;
-		const component = this.nodeMap(diagramId).get(componentId);
-		if (component?.get('type') !== 'component') return;
-		if (hosting === null) component.delete('hosting');
-		else component.set('hosting', hosting);
+		this.setComponentChoice(diagramId, componentId, 'hosting', hosting, HOSTINGS);
 	}
 
 	/** Joins two different Components with a directed Connection; null otherwise (a Zone, say). */
@@ -649,6 +675,21 @@ export class ProjectDocument {
 		this.edgeMap(diagramId).set(edge.id, toFields(edge));
 	}
 
+	/** Sets a Component field to one of `allowed`, or clears it with null; anything else is ignored. */
+	private setComponentChoice(
+		diagramId: string,
+		componentId: string,
+		key: string,
+		value: string | null,
+		allowed: readonly string[]
+	): void {
+		if (value !== null && !allowed.includes(value)) return;
+		const component = this.nodeMap(diagramId).get(componentId);
+		if (component?.get('type') !== 'component') return;
+		if (value === null) component.delete(key);
+		else if (component.get(key) !== value) component.set(key, value);
+	}
+
 	private nodeMap(diagramId: string): Y.Map<Fields> {
 		return this.requireDiagram(diagramId).get('nodes') as Y.Map<Fields>;
 	}
@@ -715,16 +756,23 @@ const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
 	!a.identifier && a.type.kind !== 'serial';
 
 /**
- * A node as the app reads it: old Attributes completed, and a Hosting this
- * version does not know (a newer file or peer) read as unspecified.
+ * A node as the app reads it: old Attributes completed, and a Hosting or a
+ * Provider this version does not know (a newer file or peer) read as unspecified.
  */
+/** Component fields that take one of a list; a value this version does not know reads as unspecified. */
+const COMPONENT_CHOICES: [string, readonly string[]][] = [
+	['hosting', HOSTINGS],
+	['provider', PROVIDERS]
+];
+
 function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
 	const attributes = node.attributes as Partial<Attribute>[] | undefined;
 	const read: Record<string, unknown> = attributes
 		? { ...node, attributes: completeAttributes(attributes) }
 		: { ...node };
-	if (read.hosting !== undefined && !HOSTINGS.includes(read.hosting as Hosting))
-		delete read.hosting;
+	for (const [key, allowed] of COMPONENT_CHOICES) {
+		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
+	}
 	return read as DiagramNode;
 }
 
@@ -781,9 +829,8 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 		return (
 			node.type === 'component' &&
 			COMPONENT_TYPE_IDS.includes(node.componentType as ComponentType) &&
-			(node.skin === null || isString(node.skin)) &&
-			// An unknown Hosting is read as unspecified rather than refusing the file.
-			(node.hosting === undefined || node.hosting === null || isString(node.hosting))
+			// An unknown Hosting or Provider is read as unspecified rather than refusing the file.
+			(node.skin === null || isString(node.skin))
 		);
 	}
 	const attributes = node.attributes as Attribute[] | undefined;

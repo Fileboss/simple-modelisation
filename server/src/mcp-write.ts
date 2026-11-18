@@ -3,6 +3,7 @@ import {
 	CARDINALITIES,
 	COMPONENT_TYPE_IDS,
 	HOSTINGS,
+	PROVIDERS,
 	type Attribute,
 	ZONE_DEFAULT,
 	ZONE_PADDING,
@@ -36,6 +37,11 @@ const hostingArgument = z
 	.enum(HOSTINGS)
 	.describe(
 		'Where the Component runs: bare-metal, vm (a VM or VPS we run), docker (containers on our servers), kubernetes, managed (a cloud service), serverless (functions), external (a third-party service).'
+	);
+const providerArgument = z
+	.enum(PROVIDERS)
+	.describe(
+		`Whose infrastructure the Component runs on: ${PROVIDERS.join(', ')}. It goes with any Hosting.`
 	);
 // Bounds on what an agent sends, on top of the document size limit.
 const name = () => z.string().min(1).max(200);
@@ -240,9 +246,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.optional()
 				.describe('A market product, e.g. postgresql, redis, kafka, nginx.'),
 			hosting: hostingArgument.optional(),
+			provider: providerArgument.optional(),
 			zone: zoneArgument.optional().describe('Zone id or exact name to place the Component in.')
 		},
-		({ project, diagram, type, name, skin, hosting, zone }) =>
+		({ project, diagram, type, name, skin, hosting, provider, zone }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				if (skin && !(SKIN_IDS[type] as readonly string[]).includes(skin)) {
@@ -256,6 +263,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const id = p.addComponent(d.id, type, name, x, y);
 				if (skin) p.setSkin(d.id, id, skin);
 				if (hosting) p.setHosting(d.id, id, hosting);
+				if (provider) p.setProvider(d.id, id, provider);
 				return { id };
 			})
 	);
@@ -387,6 +395,24 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
 				p.setHosting(d.id, target.id, hosting === 'none' ? null : hosting);
+				return { id: target.id };
+			})
+	);
+
+	tool(
+		'set_provider',
+		`Says whose infrastructure a Component runs on (${PROVIDERS.join(', ')}), or clears it with "none". It goes with any Hosting.`,
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			component: z.string().describe('Component id or exact name.'),
+			provider: z.enum([...PROVIDERS, 'none'])
+		},
+		({ project, diagram, component, provider }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
 				return { id: target.id };
 			})
 	);
