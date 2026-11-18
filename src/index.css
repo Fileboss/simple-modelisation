@@ -1058,3 +1058,17 @@ input {
 	border-color: var(--accent);
 	color: var(--accent);
 }
+
+.choice-search {
+	width: 100%;
+	margin-bottom: 6px;
+}
+
+.choice-more {
+	width: 100%;
+	margin-top: 6px;
+	border: none;
+	background: none;
+	color: var(--accent);
+	font-size: 0.8rem;
+}

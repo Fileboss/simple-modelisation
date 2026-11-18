@@ -24,7 +24,8 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 	const diskKind = component.componentType === 'disk' ? component.diskKind : undefined;
 	const kind = skin?.name ?? (diskKind && strings.disk.names[diskKind]) ?? info.label;
 	const hosting = hostingLook(component.hosting);
-	const provider = providerLook(component.provider);
+	// An External service is its own provider: a Provider set before stays stored, unshown.
+	const provider = component.hosting === 'external' ? undefined : providerLook(component.provider);
 	const selectedCount = useStore((state) => {
 		let count = 0;
 		for (const node of state.nodeLookup.values()) if (node.selected) count++;

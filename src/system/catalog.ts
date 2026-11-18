@@ -119,5 +119,17 @@ export function findSkin(type: ComponentType, skinId: string | null): Skin | und
 	return componentTypeInfo(type).skins.find((s) => s.id === skinId);
 }
 
+/**
+ * The Skins the panel shows first, the most common, for the types with many;
+ * the others are one click away. A type not listed shows all its Skins.
+ */
+const RECOMMENDED: { [T in ComponentType]?: readonly (typeof SKIN_IDS)[T][number][] } = {
+	service: ['nodejs', 'go', 'python', 'spring-boot', 'bun'],
+	gateway: ['nginx', 'traefik', 'caddy', 'kong', 'tailscale']
+};
+
+export const recommendedSkins = (type: ComponentType): readonly string[] =>
+	RECOMMENDED[type] ?? SKIN_IDS[type];
+
 /** What the palette drags to draw a Zone, beside the Component types. */
 export const ZONE_ITEM = 'zone';

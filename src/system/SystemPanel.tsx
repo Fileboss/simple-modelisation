@@ -7,7 +7,8 @@ import type {
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
-import { componentTypeInfo, findSkin } from './catalog';
+import { componentTypeInfo, findSkin, recommendedSkins } from './catalog';
+import { ChoiceGrid } from './ChoiceGrid';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { DiskKindPicker } from './DiskKindPicker';
 import { HostingPicker } from './HostingPicker';
@@ -34,8 +35,17 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				/>
 				<h3>{strings.hosting.title}</h3>
 				<HostingPicker labelled componentId={component.id} current={component.hosting} />
-				<h3>{strings.provider.title}</h3>
-				<ProviderPicker componentId={component.id} current={component.provider} />
+				{/* An External service is its own provider. */}
+				{component.hosting !== 'external' && (
+					<>
+						<h3>{strings.provider.title}</h3>
+						<ProviderPicker
+							key={component.id}
+							componentId={component.id}
+							current={component.provider}
+						/>
+					</>
+				)}
 				{component.componentType === 'disk' && (
 					<>
 						<h3>{strings.disk.title}</h3>
@@ -46,25 +56,22 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				{info.skins.length > 0 && (
 					<>
 						<h3>{strings.system.skin}</h3>
-						<div className="skin-grid">
-							<button
-								className={`skin ${current ? '' : 'skin-current'}`}
-								onClick={() => choose(null)}
-							>
-								<GenericIcon type={info.type} color={info.color} />
-								{strings.system.generic}
-							</button>
-							{info.skins.map((skin) => (
-								<button
-									key={skin.id}
-									className={`skin ${current?.id === skin.id ? 'skin-current' : ''}`}
-									onClick={() => choose(skin.id)}
-								>
-									<SkinLogo skin={skin} />
-									{skin.name}
-								</button>
-							))}
-						</div>
+						{/* Keyed by Component and type: each list starts folded, without search. */}
+						<ChoiceGrid
+							key={`${component.id}:${info.type}`}
+							none={{
+								label: strings.system.generic,
+								icon: <GenericIcon type={info.type} color={info.color} />
+							}}
+							choices={info.skins.map((skin) => ({
+								id: skin.id,
+								label: skin.name,
+								icon: <SkinLogo skin={skin} />
+							}))}
+							recommended={recommendedSkins(info.type)}
+							current={current?.id}
+							onChoose={choose}
+						/>
 					</>
 				)}
 			</>
