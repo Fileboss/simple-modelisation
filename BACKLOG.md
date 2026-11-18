@@ -17,12 +17,13 @@ tags: [backlog]
 - A Provider on a Zone (a region at AWS), its Components taking it by default
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
-- Stop sharing a Project (back to Local)
+- Revoke a Share link for everyone (needs Project owners)
 - End-to-end tests in CI (Playwright), once the product settles; until then they are run by hand per item
 - Canvas performance on large Diagrams: keep unchanged node and edge objects between updates instead of rebuilding them all
 
 ## Done
 
+- [stop-sharing](docs/specs/stop-sharing/): stop sharing a Project on this device, keeping a Local copy
 - [hosting-provider](docs/specs/hosting-provider/): Provider (AWS, OVHcloud, Hetzner…) as a second badge on Components
 - [grouping-zones](docs/specs/grouping-zones/): Zones (region, VPC, subnet) grouping Components in System design diagrams
 - [image-export](docs/specs/image-export/): a Diagram as a PNG or SVG image

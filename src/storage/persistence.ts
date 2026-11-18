@@ -45,6 +45,27 @@ export async function renameStoredProject(id: string, name: string): Promise<voi
 	close();
 }
 
+/**
+ * Stores a copy of a Project document under a new Project id (stopping
+ * sharing): taken once the new storage is open, so it holds every change made
+ * until then; a failed copy leaves nothing behind. Its undo history is empty.
+ */
+export async function storeCopy(id: string, source: Y.Doc): Promise<void> {
+	const doc = new Y.Doc();
+	const persistence = new IndexeddbPersistence(projectDbName(id), doc);
+	try {
+		await persistence.whenSynced;
+		Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+	} catch (error) {
+		await persistence.clearData();
+		throw error;
+	} finally {
+		// Closing waits for the copy's write to finish.
+		void persistence.destroy();
+		doc.destroy();
+	}
+}
+
 /** Stores a Project document built in memory (an import) under a new Project id. */
 export async function saveProjectDoc(id: string, doc: Y.Doc): Promise<void> {
 	const persistence = new IndexeddbPersistence(projectDbName(id), doc);

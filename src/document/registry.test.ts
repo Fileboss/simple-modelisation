@@ -20,4 +20,13 @@ describe('ProjectRegistry', () => {
 		const project = registry.create('   ');
 		expect(project.name).toBe(DEFAULT_PROJECT_NAME);
 	});
+
+	it('lists a Local copy of a Shared Project with its name and creation date', () => {
+		const registry = new ProjectRegistry();
+		const shared = registry.create('Shop', 1);
+		registry.setShared(shared.id, true);
+		const copy = registry.addLocalCopy(shared.id, 'copy', 5);
+		expect(copy).toEqual({ id: 'copy', name: 'Shop', createdAt: 1, updatedAt: 5, shared: false });
+		expect(registry.get(shared.id)?.shared).toBe(true);
+	});
 });
