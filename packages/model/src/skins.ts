@@ -5,12 +5,23 @@ import type { ComponentType } from './project.ts';
  * names, colors and logos; tools that only validate (the MCP server) use this.
  */
 export const SKIN_IDS = {
-	client: ['react', 'vue', 'android'],
-	service: ['nodejs', 'spring-boot', 'go'],
+	client: ['react', 'vue', 'android', 'apple'],
+	service: [
+		'nodejs',
+		'spring-boot',
+		'go',
+		'bun',
+		'python',
+		'rust',
+		'caddy',
+		'vaultwarden',
+		'kiwix',
+		'github'
+	],
 	database: ['postgresql', 'mysql', 'mongodb'],
 	cache: ['redis', 'valkey', 'memcached'],
 	queue: ['kafka', 'rabbitmq', 'nats'],
-	gateway: ['nginx', 'traefik', 'kong'],
+	gateway: ['nginx', 'traefik', 'kong', 'caddy', 'tailscale', 'adguard'],
 	storage: ['s3', 'minio', 'gcs', 'ceph']
 } as const satisfies Record<ComponentType, readonly string[]>;
 
