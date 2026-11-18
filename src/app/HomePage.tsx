@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router';
 import { EditableText } from '../canvas/EditableText';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import type { ProjectSummary } from '../document/registry';
-import { deleteProjectDoc, renameStoredProject, saveProjectDoc } from '../storage/persistence';
+import { renameStoredProject, saveProjectDoc } from '../storage/persistence';
 import { strings } from '../ui/strings';
+import { forgetProject } from './project-storage';
 import { useProjects, useRegistry } from './registry-context';
 
 export function HomePage() {
@@ -77,10 +78,7 @@ function ProjectRow({ project }: { project: ProjectSummary }) {
 	const registry = useRegistry();
 	const [mode, setMode] = useState<'view' | 'rename' | 'delete'>('view');
 
-	const remove = () => {
-		registry.remove(project.id);
-		void deleteProjectDoc(project.id);
-	};
+	const remove = () => forgetProject(registry, project.id);
 
 	return (
 		<li className="project-row">

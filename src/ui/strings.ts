@@ -40,7 +40,11 @@ export const strings = {
 			offline: 'Offline',
 			full: 'Too large: changes stay on this device'
 		},
-		copyFailed: 'Copy this link:'
+		copyFailed: 'Copy this link:',
+		stopSharing: 'Stop sharing',
+		confirmStopSharing:
+			'Stop sharing on this device? You keep a local copy; others keep the shared Project.',
+		stopSharingFailed: 'Could not make the local copy'
 	},
 	sql: {
 		tabs: { mld: 'MLD', sql: 'PostgreSQL' },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Diagram, DiagramKind, ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { DiagramCanvas, type CanvasKind } from '../canvas/DiagramCanvas';
 import { EditableText } from '../canvas/EditableText';
@@ -15,6 +15,7 @@ import { Avatars } from '../presence/Avatars';
 import { reportPresence, usePresence } from '../presence/presence-context';
 import { PresenceProvider } from '../presence/PresenceProvider';
 import { useProjectDocument, useProjectVersion, useSync } from './project-hooks';
+import { forgetProject, makeLocalCopy } from './project-storage';
 import { useProjects, useRegistry } from './registry-context';
 
 const KINDS: Record<DiagramKind, CanvasKind> = {
@@ -27,6 +28,22 @@ export function ProjectPage() {
 	const summary = useProjects().find((p) => p.id === projectId);
 	const project = useProjectDocument(summary ? projectId : null);
 	const { status, awareness } = useSync(projectId, project, summary?.shared ?? false);
+	const registry = useRegistry();
+	const navigate = useNavigate();
+
+	// Stopping sharing opens the Local copy; the Shared Project is dropped once its page
+	// has closed (its document, sync and list subscriptions gone), not before.
+	const retired = useRef<string | null>(null);
+	useEffect(() => {
+		const old = retired.current;
+		if (!old || old === projectId) return;
+		retired.current = null;
+		forgetProject(registry, old);
+	}, [projectId, registry]);
+	const openCopy = (copyId: string) => {
+		retired.current = projectId;
+		void navigate(`/p/${copyId}`, { replace: true });
+	};
 
 	if (!summary) {
 		return (
@@ -51,7 +68,14 @@ export function ProjectPage() {
 					</h1>
 					<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
 					{project && <Avatars project={project} />}
-					{project && <ProjectActions project={project} projectId={projectId} status={status} />}
+					{project && (
+						<ProjectActions
+							project={project}
+							projectId={projectId}
+							status={status}
+							onCopied={openCopy}
+						/>
+					)}
 				</header>
 				{project ? (
 					<ProjectWorkspace project={project} />
@@ -63,9 +87,14 @@ export function ProjectPage() {
 	);
 }
 
-type ActionsProps = { project: ProjectDocument; projectId: string; status: SyncStatus };
+type ActionsProps = {
+	project: ProjectDocument;
+	projectId: string;
+	status: SyncStatus;
+	onCopied: (copyId: string) => void;
+};
 
-function ProjectActions({ project, projectId, status }: ActionsProps) {
+function ProjectActions({ project, projectId, status, onCopied }: ActionsProps) {
 	useUndoShortcuts(project);
 	const registry = useRegistry();
 	const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -100,12 +129,63 @@ function ProjectActions({ project, projectId, status }: ActionsProps) {
 						? strings.project.share
 						: strings.project.copyLink}
 			</button>
+			{status !== 'local' && (
+				<StopSharing project={project} projectId={projectId} onCopied={onCopied} />
+			)}
 			<button onClick={() => project.undo()}>{strings.project.undo}</button>
 			<button onClick={() => project.redo()}>{strings.project.redo}</button>
 			<ExportMenu project={project} />
 		</div>
 	);
 }
+
+/**
+ * Stops sharing on this device: stores and lists a Local copy under a new id,
+ * so that sharing it again gives a new link; `onCopied` then opens it. Others
+ * keep the Shared Project.
+ */
+function StopSharing({ projectId, project, onCopied }: StopSharingProps) {
+	const registry = useRegistry();
+	const [step, setStep] = useState<'idle' | 'confirm' | 'copying' | 'failed'>('idle');
+
+	const stop = async () => {
+		setStep('copying');
+		try {
+			onCopied(await makeLocalCopy(registry, projectId, project.doc));
+		} catch (error) {
+			console.error('Stop sharing failed', error);
+			setStep('failed');
+		}
+	};
+
+	if (step === 'idle' || step === 'failed') {
+		return (
+			<>
+				{step === 'failed' && (
+					<span className="export-note">{strings.project.stopSharingFailed}</span>
+				)}
+				<button onClick={() => setStep('confirm')}>{strings.project.stopSharing}</button>
+			</>
+		);
+	}
+	return (
+		<span className="confirm-inline">
+			<span>{strings.project.confirmStopSharing}</span>
+			<button className="danger" disabled={step === 'copying'} onClick={() => void stop()}>
+				{strings.project.stopSharing}
+			</button>
+			<button disabled={step === 'copying'} onClick={() => setStep('idle')}>
+				{strings.home.cancel}
+			</button>
+		</span>
+	);
+}
+
+type StopSharingProps = {
+	projectId: string;
+	project: ProjectDocument;
+	onCopied: (copyId: string) => void;
+};
 
 /** Export: the Project as JSON, the open Diagram as an image. */
 function ExportMenu({ project }: { project: ProjectDocument }) {

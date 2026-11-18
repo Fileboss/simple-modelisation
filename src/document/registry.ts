@@ -50,6 +50,13 @@ export class ProjectRegistry {
 		return project;
 	}
 
+	/** Lists a Local copy of a Project under `copyId`, with its name and creation date. */
+	addLocalCopy(id: string, copyId: string, now: number = Date.now()): ProjectSummary {
+		const copy = { ...this.require(id), id: copyId, updatedAt: now, shared: false };
+		this.projects.set(copyId, copy);
+		return copy;
+	}
+
 	rename(id: string, name: string, now: number = Date.now()): void {
 		const project = this.require(id);
 		if (project.name === cleanName(name)) return;

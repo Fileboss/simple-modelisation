@@ -1035,3 +1035,10 @@ input {
 	letter-spacing: -0.02em;
 	line-height: 1;
 }
+
+.confirm-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.85rem;
+}
