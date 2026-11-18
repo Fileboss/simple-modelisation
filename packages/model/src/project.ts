@@ -60,8 +60,12 @@ export const HOSTINGS = [
 ] as const;
 export type Hosting = (typeof HOSTINGS)[number];
 
-/** Whose infrastructure a Component runs on: the hyperscalers, then European, then other clouds and platforms. */
+/**
+ * Whose infrastructure a Component runs on: one's own machines, the
+ * hyperscalers, then European, then other clouds and platforms.
+ */
 export const PROVIDERS = [
+	'self-hosted',
 	'aws',
 	'google-cloud',
 	'azure',

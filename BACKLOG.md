@@ -23,6 +23,7 @@ tags: [backlog]
 
 ## Done
 
+- [skin-picker](docs/specs/skin-picker/): recommended Skins and Providers first, show all, search; Self-hosted Provider
 - [disk-component](docs/specs/disk-component/): Disk Component type (HDD, SSD, NVMe, USB)
 - [more-skins](docs/specs/more-skins/): Caddy, Bun, Python, Rust, Vaultwarden, Tailscale, AdGuard… Skins
 - [stop-sharing](docs/specs/stop-sharing/): stop sharing a Project on this device, keeping a Local copy

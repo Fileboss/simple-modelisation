@@ -374,8 +374,10 @@ describe('Provider', () => {
 		expect(provider()).toBe('ovhcloud');
 		project.setProvider(d, db, 'aws');
 		expect(provider()).toBe('aws');
+		project.setProvider(d, db, 'self-hosted');
+		expect(provider()).toBe('self-hosted');
 		project.setProvider(d, db, 'my-garage' as never);
-		expect(provider()).toBe('aws');
+		expect(provider()).toBe('self-hosted');
 		project.setProvider(d, db, null);
 		expect(provider()).toBeUndefined();
 	});

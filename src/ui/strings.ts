@@ -75,6 +75,7 @@ export const strings = {
 		title: 'Provider',
 		unset: 'Not specified',
 		names: {
+			'self-hosted': 'Self-hosted',
 			aws: 'AWS',
 			'google-cloud': 'Google Cloud',
 			azure: 'Azure',
@@ -94,6 +95,12 @@ export const strings = {
 			render: 'Render',
 			railway: 'Railway'
 		}
+	},
+	choices: {
+		showAll: (count: number) => `Show all (${count})`,
+		showLess: 'Show less',
+		search: 'Search',
+		noMatch: 'Nothing matches.'
 	},
 	disk: {
 		title: 'Kind',
