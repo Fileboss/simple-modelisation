@@ -1,6 +1,7 @@
 import { Handle, NodeToolbar, Position, useStore, type NodeProps } from '@xyflow/react';
 import type { ReactNode } from 'react';
 import { useCanvas } from '../canvas/canvas-context';
+import { inheritedProvider } from './inherited-provider';
 import { EditableText } from '../canvas/EditableText';
 import type { ComponentNode as ComponentData } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
@@ -25,7 +26,15 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 	const kind = skin?.name ?? (diskKind && strings.disk.names[diskKind]) ?? info.label;
 	const hosting = hostingLook(component.hosting);
 	// An External service is its own provider: a Provider set before stays stored, unshown.
-	const provider = component.hosting === 'external' ? undefined : providerLook(component.provider);
+	const inherited = inheritedProvider(component);
+	const provider =
+		component.hosting === 'external'
+			? undefined
+			: providerLook(component.provider ?? inherited?.provider);
+	const providerTitle =
+		provider &&
+		`${strings.provider.title}: ${provider.label}` +
+			(!component.provider && inherited ? ` (${strings.provider.from(inherited.zone)})` : '');
 	const selectedCount = useStore((state) => {
 		let count = 0;
 		for (const node of state.nodeLookup.values()) if (node.selected) count++;
@@ -55,7 +64,7 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 				// Read together, left to right: at whom, then how it runs.
 				<span className="component-badges">
 					{provider && (
-						<Badge title={`${strings.provider.title}: ${provider.label}`}>
+						<Badge title={providerTitle!}>
 							<ProviderIcon look={provider} />
 						</Badge>
 					)}

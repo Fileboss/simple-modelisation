@@ -1002,6 +1002,11 @@ input {
 	pointer-events: all;
 }
 
+.zone-title .zone-provider {
+	display: inline-flex;
+	margin-right: 6px;
+}
+
 .zone-name {
 	overflow: hidden;
 	text-overflow: ellipsis;

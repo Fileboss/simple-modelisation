@@ -74,6 +74,9 @@ export const strings = {
 	provider: {
 		title: 'Provider',
 		unset: 'Not specified',
+		from: (zone: string) => `from ${zone}`,
+		zoneHint: 'Taken by the components inside that have none of their own.',
+		inherited: (zone: string, provider: string) => `From Zone ${zone}: ${provider}`,
 		names: {
 			'self-hosted': 'Self-hosted',
 			aws: 'AWS',

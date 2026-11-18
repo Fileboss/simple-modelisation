@@ -116,6 +116,11 @@ const nodesOf = (project: ProjectDocument, diagramId: string, type?: string) =>
 	project.nodes(diagramId).filter((n) => !type || n.type === type);
 
 const zoneArgument = z.string().describe('Zone id or exact name.');
+const zoneProviderArgument = z
+	.enum(PROVIDERS)
+	.describe(
+		`The Provider of everything in the Zone, taken by Components that have none of their own: ${PROVIDERS.join(', ')}.`
+	);
 
 /**
  * A free spot for an element of `size` among `nodes`: next to them, or under
@@ -288,20 +293,23 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			project: projectArgument,
 			diagram: diagramArgument,
 			name: name(),
-			zone: zoneArgument.optional().describe('The Zone to nest this one in.')
+			zone: zoneArgument.optional().describe('The Zone to nest this one in.'),
+			provider: zoneProviderArgument.optional()
 		},
-		({ project, diagram, name, zone }) =>
+		({ project, diagram, name, zone, provider }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const parent = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
 				const { x, y } = placeNew(p, d.id, ZONE_DEFAULT, parent);
-				return { id: p.addZone(d.id, x, y, ZONE_DEFAULT.width, ZONE_DEFAULT.height, name) };
+				const id = p.addZone(d.id, x, y, ZONE_DEFAULT.width, ZONE_DEFAULT.height, name);
+				if (provider) p.setProvider(d.id, id, provider);
+				return { id };
 			})
 	);
 
 	tool(
 		'set_zone',
-		'Renames, moves or resizes a Zone. Moving it takes along everything it holds; resizing leaves its content in place, so it may then hold more or less.',
+		'Renames, moves, resizes a Zone or sets its Provider ("none" clears it). Moving it takes along everything it holds; resizing leaves its content in place, so it may then hold more or less.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -310,9 +318,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			x: z.number().optional(),
 			y: z.number().optional(),
 			width: z.number().min(1).optional(),
-			height: z.number().min(1).optional()
+			height: z.number().min(1).optional(),
+			provider: z.enum([...PROVIDERS, 'none']).optional()
 		},
-		({ project, diagram, zone, name, x, y, width, height }) =>
+		({ project, diagram, zone, name, x, y, width, height, provider }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const nodes = nodesOf(p, d.id);
@@ -322,6 +331,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					'zone'
 				) as ZoneNode;
 				if (name) p.renameNode(d.id, target.id, name);
+				if (provider) p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
 				const to = { x: x ?? target.x, y: y ?? target.y };
 				if (to.x !== target.x || to.y !== target.y) {
 					const dx = Math.round(to.x) - target.x;
@@ -412,7 +422,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_provider',
-		`Says whose infrastructure a Component runs on (${PROVIDERS.join(', ')}), or clears it with "none". It goes with any Hosting.`,
+		`Says whose infrastructure a Component runs on (${PROVIDERS.join(', ')}), or clears it with "none", after which it takes its Zone's Provider if any. It goes with any Hosting.`,
 		{
 			project: projectArgument,
 			diagram: diagramArgument,

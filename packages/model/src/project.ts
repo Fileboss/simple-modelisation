@@ -102,7 +102,14 @@ export type Route = { points?: Point[] };
 export type ConnectionEdge = DiagramEdge & Route & { type: 'connection'; label: string };
 
 /** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
-export type ZoneNode = DiagramNode & { type: 'zone'; name: string; width: number; height: number };
+export type ZoneNode = DiagramNode & {
+	type: 'zone';
+	name: string;
+	width: number;
+	height: number;
+	/** Taken by the Components inside that have none of their own. */
+	provider?: Provider;
+};
 
 /** The smallest Zone, so that it still holds a title and a Component. */
 export const ZONE_MIN = { width: 160, height: 100 };
@@ -392,20 +399,23 @@ export class ProjectDocument {
 		this.nodeMap(diagramId).get(componentId)?.set('skin', skin);
 	}
 
-	/** Says whose infrastructure a Component runs on, or clears it with null; an unknown value is ignored. */
-	setProvider(diagramId: string, componentId: string, provider: Provider | null): void {
-		this.setComponentChoice(diagramId, componentId, 'provider', provider, PROVIDERS);
+	/**
+	 * Says whose infrastructure a Component, or everything in a Zone, runs on;
+	 * null clears it, an unknown value is ignored.
+	 */
+	setProvider(diagramId: string, nodeId: string, provider: Provider | null): void {
+		this.setNodeChoice(diagramId, nodeId, 'provider', provider, PROVIDERS, ['component', 'zone']);
 	}
 
 	/** Says what a Disk is, or clears it with null; ignored on other Components or for an unknown value. */
 	setDiskKind(diagramId: string, diskId: string, kind: DiskKind | null): void {
 		if (this.nodeMap(diagramId).get(diskId)?.get('componentType') !== 'disk') return;
-		this.setComponentChoice(diagramId, diskId, 'diskKind', kind, DISK_KINDS);
+		this.setNodeChoice(diagramId, diskId, 'diskKind', kind, DISK_KINDS);
 	}
 
 	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
 	setHosting(diagramId: string, componentId: string, hosting: Hosting | null): void {
-		this.setComponentChoice(diagramId, componentId, 'hosting', hosting, HOSTINGS);
+		this.setNodeChoice(diagramId, componentId, 'hosting', hosting, HOSTINGS);
 	}
 
 	/** Joins two different Components with a directed Connection; null otherwise (a Zone, say). */
@@ -692,19 +702,23 @@ export class ProjectDocument {
 		this.edgeMap(diagramId).set(edge.id, toFields(edge));
 	}
 
-	/** Sets a Component field to one of `allowed`, or clears it with null; anything else is ignored. */
-	private setComponentChoice(
+	/**
+	 * Sets a node field to one of `allowed`, or clears it with null, on the
+	 * node types given (Components by default); anything else is ignored.
+	 */
+	private setNodeChoice(
 		diagramId: string,
-		componentId: string,
+		nodeId: string,
 		key: string,
 		value: string | null,
-		allowed: readonly string[]
+		allowed: readonly string[],
+		types: readonly string[] = ['component']
 	): void {
 		if (value !== null && !allowed.includes(value)) return;
-		const component = this.nodeMap(diagramId).get(componentId);
-		if (component?.get('type') !== 'component') return;
-		if (value === null) component.delete(key);
-		else if (component.get(key) !== value) component.set(key, value);
+		const node = this.nodeMap(diagramId).get(nodeId);
+		if (!node || !types.includes(node.get('type') as string)) return;
+		if (value === null) node.delete(key);
+		else if (node.get(key) !== value) node.set(key, value);
 	}
 
 	private nodeMap(diagramId: string): Y.Map<Fields> {
@@ -776,8 +790,8 @@ const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
  * A node as the app reads it: old Attributes completed, and a Hosting or a
  * Provider or a Disk kind this version does not know (a newer file or peer) read as unspecified.
  */
-/** Component fields that take one of a list; a value this version does not know reads as unspecified. */
-const COMPONENT_CHOICES: [string, readonly string[]][] = [
+/** Node fields that take one of a list (on Components, Zones); a value this version does not know reads as unspecified. */
+const NODE_CHOICES: [string, readonly string[]][] = [
 	['hosting', HOSTINGS],
 	['provider', PROVIDERS],
 	['diskKind', DISK_KINDS]
@@ -788,7 +802,7 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	const read: Record<string, unknown> = attributes
 		? { ...node, attributes: completeAttributes(attributes) }
 		: { ...node };
-	for (const [key, allowed] of COMPONENT_CHOICES) {
+	for (const [key, allowed] of NODE_CHOICES) {
 		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
 	}
 	// Only a Disk has a kind, whatever a file or a peer sent.

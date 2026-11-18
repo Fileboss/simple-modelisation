@@ -1,5 +1,6 @@
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
+import { inheritedProvider } from './inherited-provider';
 import { PanelField } from '../canvas/PanelField';
 import type {
 	ComponentNode,
@@ -41,8 +42,9 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 						<h3>{strings.provider.title}</h3>
 						<ProviderPicker
 							key={component.id}
-							componentId={component.id}
+							nodeId={component.id}
 							current={component.provider}
+							inherited={inheritedProvider(component)}
 						/>
 					</>
 				)}
@@ -89,6 +91,14 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					onChange={(name) => project.renameNode(diagramId, zone.id, name)}
 				/>
 				<p className="panel-hint">{strings.system.zoneHint}</p>
+				<h3>{strings.provider.title}</h3>
+				<p className="panel-hint">{strings.provider.zoneHint}</p>
+				<ProviderPicker
+					key={zone.id}
+					nodeId={zone.id}
+					current={zone.provider}
+					inherited={inheritedProvider(zone)}
+				/>
 			</>
 		);
 	}

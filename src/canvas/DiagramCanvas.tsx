@@ -77,6 +77,11 @@ export type CanvasKind = {
 	 * document: the MCD's UML Notation. A hook, called on every render.
 	 */
 	useLayout: () => Layout;
+	/**
+	 * Adds to each node what it shows but does not store (a Component's
+	 * Provider taken from its Zone), each time the document changes.
+	 */
+	derive?: (nodes: DiagramNode[]) => DiagramNode[];
 	/** Shown under the canvas (the MCD's MLD and SQL). */
 	Footer?: ComponentType<{ diagram: Diagram }>;
 	drop: (project: ProjectDocument, diagramId: string, item: string, x: number, y: number) => void;
@@ -164,7 +169,7 @@ function Canvas({ project, diagram, kind }: Props) {
 			for (let at = parents.get(id); at; at = parents.get(at)) count++;
 			return count;
 		};
-		return all.map((n) =>
+		return (kind.derive?.(all) ?? all).map((n) =>
 			n.type === 'zone'
 				? {
 						id: n.id,
@@ -178,7 +183,7 @@ function Canvas({ project, diagram, kind }: Props) {
 					}
 				: { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n }
 		);
-	}, [project, diagram.id]);
+	}, [project, diagram.id, kind]);
 	const toEdges = useCallback((): Edge[] => {
 		const all = project.edges(diagram.id);
 		// Edges joining the same two nodes (a reflexive Association's Legs) are drawn apart.

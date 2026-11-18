@@ -342,6 +342,37 @@ describe('MCP endpoint', () => {
 		]);
 	});
 
+	it("gives Components their Zone's Provider unless they have their own", async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_zone', { ...at, name: 'VPS', provider: 'ovhcloud' });
+		await call(client, 'add_component', { ...at, type: 'gateway', name: 'Caddy', zone: 'VPS' });
+		await call(client, 'add_component', { ...at, type: 'service', name: 'App', zone: 'VPS' });
+		await call(client, 'set_provider', { ...at, component: 'App', provider: 'scaleway' });
+		const read = async () => {
+			const { zones, components } = await call(client, 'get_diagram', at);
+			return {
+				zone: zones[0].provider,
+				components: components.map(
+					(c: {
+						name: string;
+						provider: string | null;
+						provider_from: { name: string } | null;
+					}) => [c.name, c.provider, c.provider_from?.name ?? null]
+				)
+			};
+		};
+		expect(await read()).toEqual({
+			zone: 'ovhcloud',
+			components: [
+				['Caddy', 'ovhcloud', 'VPS'],
+				['App', 'scaleway', null]
+			]
+		});
+		await call(client, 'set_zone', { ...at, zone: 'VPS', provider: 'none' });
+		expect((await read()).components[0]).toEqual(['Caddy', null, null]);
+	});
+
 	it('says where Components run', async () => {
 		const { client, id } = await setup();
 		await call(client, 'add_component', {

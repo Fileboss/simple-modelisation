@@ -2,6 +2,9 @@ import { NodeResizer, type NodeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
 import { EditableText } from '../canvas/EditableText';
 import { ZONE_MIN, type ZoneNode as ZoneData } from '@simple-modelisation/model/project.ts';
+import { strings } from '../ui/strings';
+import { providerLook } from './provider-catalog';
+import { ProviderIcon } from './ProviderIcon';
 
 /**
  * A Zone: a dashed area under the Components. Only its title bar and, once
@@ -11,6 +14,7 @@ import { ZONE_MIN, type ZoneNode as ZoneData } from '@simple-modelisation/model/
 export function ZoneNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
 	const zone = data as ZoneData;
+	const provider = providerLook(zone.provider);
 
 	return (
 		<div className={`zone ${selected ? 'selected' : ''}`}>
@@ -24,6 +28,16 @@ export function ZoneNode({ id, data, selected }: NodeProps) {
 				onResizeEnd={(_event, box) => project.setZoneBox(diagramId, id, box)}
 			/>
 			<div className="zone-title">
+				{provider && (
+					<span
+						className="zone-provider"
+						role="img"
+						aria-label={`${strings.provider.title}: ${provider.label}`}
+						title={`${strings.provider.title}: ${provider.label}`}
+					>
+						<ProviderIcon look={provider} size={16} />
+					</span>
+				)}
 				<EditableText
 					className="zone-name"
 					value={zone.name}

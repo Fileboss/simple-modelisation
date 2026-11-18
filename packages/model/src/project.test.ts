@@ -427,6 +427,20 @@ describe('Zones', () => {
 		).toEqual([api, db].sort());
 	});
 
+	it('sets and clears a Zone Provider, ignoring unknown values', () => {
+		const { project, diagram, zone, node } = setup();
+		project.setProvider(diagram, zone, 'ovhcloud');
+		expect(node(zone).provider).toBe('ovhcloud');
+		project.setProvider(diagram, zone, 'my-garage' as never);
+		expect(node(zone).provider).toBe('ovhcloud');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		file.diagrams[0].nodes.find((n: { id: string }) => n.id === zone).provider = 'my-garage';
+		const imported = ProjectDocument.fromFile(file).nodes(diagram);
+		expect(imported.find((n) => n.id === zone)!.provider).toBeUndefined();
+		project.setProvider(diagram, zone, null);
+		expect(node(zone).provider).toBeUndefined();
+	});
+
 	it('refuses a Connection to or from a Zone', () => {
 		const { project, diagram, api, zone } = setup();
 		expect(project.addConnection(diagram, api, zone)).toBeNull();
