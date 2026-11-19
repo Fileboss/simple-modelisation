@@ -532,6 +532,19 @@ describe('Disk kind', () => {
 	});
 });
 
+describe('Skins read', () => {
+	it('reads a Skin the type does not offer as generic', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const db = project.addComponent(d, 'database', 'DB', 0, 0);
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		file.diagrams[0].nodes[0].skin = 'nginx';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].skin).toBeNull();
+		project.setSkin(d, db, 'postgresql');
+		expect(project.nodes(d)[0].skin).toBe('postgresql');
+	});
+});
+
 describe('Component type change', () => {
 	it('keeps what the new type allows, drops the rest', () => {
 		const project = new ProjectDocument();

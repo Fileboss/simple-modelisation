@@ -80,6 +80,14 @@ export function connectSync(
 				full = true;
 				report();
 			},
+			// 1009: a message past what the server takes at all (a Project far over the limit).
+			// Reconnecting would send it again for ever: stop, as for a full document.
+			onClose: ({ event }) => {
+				if (event.code !== 1009) return;
+				full = true;
+				report();
+				provider?.destroy();
+			},
 			onAuthenticationFailed: ({ reason }) => {
 				onRefused?.(reason);
 				if (intent !== 'share') return;

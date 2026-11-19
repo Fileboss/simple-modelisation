@@ -32,7 +32,7 @@ Two examples:
 - `docker-compose.yml`: Shared Projects stored in a volume, MCP on.
 - `docker-compose.public.yml`: a public relay, nothing stored, MCP off.
 
-Behind a reverse proxy, pass WebSocket upgrades on `/sync` through and set `TRUST_PROXY=true`.
+Behind a reverse proxy, pass WebSocket upgrades on `/sync` through, keep the `Host` header (or set `X-Forwarded-Host`), and set `TRUST_PROXY=true`: the server refuses WebSocket upgrades whose `Origin` names another host. Caddy's `reverse_proxy` does all of this by default.
 
 ### Relay mode (`STORAGE=none`)
 

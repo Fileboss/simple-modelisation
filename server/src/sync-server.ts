@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { DocumentStore } from './document-store.ts';
 import { createMcpHandler, MCP_PATH } from './mcp.ts';
 import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
-import { serveStatic } from './static-files.ts';
+import { SECURITY_HEADERS, serveStatic } from './static-files.ts';
 
 export type SyncServerOptions = {
 	port: number;
@@ -29,6 +29,8 @@ export type SyncServerOptions = {
 	maxNewDocumentsPerIpPerHour?: number;
 	/** Take the client address from X-Forwarded-For: only behind a reverse proxy that sets it. */
 	trustProxy?: boolean;
+	/** Messages one connection may send in 10 seconds before it is closed. */
+	maxMessagesPerWindow?: number;
 	/** Requests one address may make to the MCP endpoint per minute. */
 	maxMcpRequestsPerMinute?: number;
 	log?: (message: string) => void;
@@ -36,6 +38,8 @@ export type SyncServerOptions = {
 
 export type SyncServer = { port: number; stop: () => Promise<void> };
 
+/** Messages one connection may send in MESSAGE_WINDOW_MS before it is closed. */
+const MESSAGE_WINDOW_MS = 10_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HOUR = 60 * 60 * 1000;
 /** Carries the client address from the upgrade to the hooks that only see headers; any client value is overwritten. */
@@ -53,6 +57,7 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		maxConnectionsPerIp = 50,
 		maxNewDocumentsPerIpPerHour = 30,
 		trustProxy = false,
+		maxMessagesPerWindow = 1000,
 		log = console.log
 	} = options;
 	if (storage === 'none' && mcpOn) throw new Error('The MCP endpoint needs storage: set MCP=off.');
@@ -60,6 +65,14 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 	const store = storage === 'sqlite' && dataDir ? new DocumentStore(dataDir) : null;
 	const connectionsPerIp = new Map<string, number>();
 	const creationsPerIp = new Map<string, number[]>();
+	// Messages each socket sent in its current window (MESSAGE_WINDOW_MS).
+	const messageWindows = new Map<string, { start: number; count: number }>();
+	const forgetStaleWindows = (now: number) => {
+		if (messageWindows.size < 1000) return;
+		for (const [id, window] of messageWindows) {
+			if (now - window.start > MESSAGE_WINDOW_MS) messageWindows.delete(id);
+		}
+	};
 	// Documents allowed to open whose loading has not finished, so concurrent openings count.
 	const opening = new Map<string, number>();
 	const forgetStaleOpenings = () => {
@@ -78,6 +91,9 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 	const server = new Server({
 		port: options.port,
 		quiet: true,
+		// Room for a first sync well past the document limit, so it reaches the size check
+		// and the client is told the document is too large; beyond, ws closes it (1009).
+		websocketOptions: { maxPayload: maxDocumentBytes * 4 },
 		stopOnSignals: false,
 		extensions: store
 			? [
@@ -92,6 +108,8 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			: [],
 
 		async onRequest({ request, response }) {
+			// Every response of this origin, errors and MCP included.
+			for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.setHeader(name, value);
 			const isMcp = new URL(request.url ?? '/', 'http://local').pathname === MCP_PATH;
 			if (!isMcp && !staticDir) return;
 			try {
@@ -118,6 +136,10 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			if (new URL(request.url ?? '/', 'http://local').pathname !== SYNC_PATH) {
 				reject('404 Not Found', 'path');
 			}
+			// Only the app's own pages: another site must not drive a visitor's browser here,
+			// nor use this server as its sync backend. Clients without an Origin are not browsers
+			// and could send any header: the check is not for them.
+			if (!sameOrigin(request, trustProxy)) reject('403 Forbidden', 'origin');
 			const count = connectionsPerIp.get(ip) ?? 0;
 			if (count >= maxConnectionsPerIp) reject('429 Too Many Requests', 'connection limit');
 			connectionsPerIp.set(ip, count + 1);
@@ -170,7 +192,19 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		},
 
 		// A full document stays readable; its connections stop sending changes and are told why.
-		async beforeHandleMessage({ documentName, connection }) {
+		async beforeHandleMessage({ documentName, connection, socketId }) {
+			// A socket flooding messages is cut off: thrown, the error closes it and drops what it
+			// queued. Counted per socket, so re-authenticating or spreading over documents does
+			// not start a new count.
+			const now = Date.now();
+			const window = messageWindows.get(socketId);
+			if (!window || now - window.start > MESSAGE_WINDOW_MS) {
+				messageWindows.set(socketId, { start: now, count: 1 });
+				forgetStaleWindows(now);
+			} else if (++window.count > maxMessagesPerWindow) {
+				log(`refused message rate: ${documentName}`);
+				throw Object.assign(new Error(), { code: 1008, reason: 'message-rate' });
+			}
 			const size = sizes.get(documentName) ?? 0;
 			if (size <= maxDocumentBytes || connection.readOnly) return;
 			log(`refused document size: ${documentName} ${size} bytes`);
@@ -196,6 +230,12 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 				})
 			: null;
 
+	// Slow clients (headers sent a byte at a time) must not hold sockets for long.
+	server.httpServer.headersTimeout = 10_000;
+	server.httpServer.requestTimeout = 30_000;
+	// Node checks those every 30 s (an option of the HTTP server Hocuspocus creates): a slow
+	// client goes within about 40 s.
+	server.httpServer.keepAliveTimeout = 5_000;
 	await server.listen();
 	let stopping: Promise<void> | undefined;
 	return {
@@ -203,6 +243,24 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		// Stores pending documents, then closes; calling it again waits for the first call.
 		stop: () => (stopping ??= server.destroy().then(() => store?.close()))
 	};
+}
+
+/**
+ * A browser's request from the app's own pages: its Origin names the host it
+ * asks (the proxy's X-Forwarded-Host when trusted, else Host). Host names are
+ * compared, not ports: a proxy may add one. No Origin is no browser.
+ */
+function sameOrigin(request: IncomingMessage, trustProxy: boolean): boolean {
+	const origin = request.headers.origin;
+	if (!origin) return true;
+	const forwarded = request.headers['x-forwarded-host'];
+	const asked =
+		(trustProxy && (Array.isArray(forwarded) ? forwarded[0] : forwarded)) || request.headers.host;
+	try {
+		return new URL(origin).hostname === new URL(`http://${asked}`).hostname;
+	} catch {
+		return false;
+	}
 }
 
 function clientIp(request: IncomingMessage, trustProxy: boolean): string {
