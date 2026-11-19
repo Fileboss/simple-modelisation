@@ -529,6 +529,44 @@ export class ProjectDocument {
 		return id;
 	}
 
+	/**
+	 * Pastes a clip shifted by dx, dy, in one undo step: every element gets a new
+	 * id, edges follow their ends and keep their routes; what this Diagram's kind
+	 * does not take, or what does not hold together, is left out, with the edges
+	 * touching it. The new elements' ids.
+	 */
+	paste(
+		diagramId: string,
+		clip: { nodes: DiagramNode[]; edges: DiagramEdge[] },
+		dx: number,
+		dy: number
+	): string[] {
+		const kind = this.diagram(diagramId)?.kind;
+		if (!kind || !Number.isFinite(dx) || !Number.isFinite(dy)) return [];
+		const { nodes, edges } = pasteable(clip, kind);
+		const fresh = new Map(nodes.map((n) => [n.id, crypto.randomUUID()]));
+		const shift = (p: Point) => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) });
+		const pastedEdges: string[] = [];
+		this.doc.transact(() => {
+			for (const node of nodes) {
+				this.insertNode(diagramId, { ...node, id: fresh.get(node.id)!, ...shift(node) });
+			}
+			for (const edge of edges) {
+				const points = (edge as Route).points;
+				const id = crypto.randomUUID();
+				pastedEdges.push(id);
+				this.insertEdge(diagramId, {
+					...edge,
+					id,
+					source: fresh.get(edge.source)!,
+					target: fresh.get(edge.target)!,
+					...(points && { points: points.map(shift) })
+				});
+			}
+		});
+		return [...fresh.values(), ...pastedEdges];
+	}
+
 	/** Writes a Note at x, y, empty and yellow unless told otherwise. */
 	addNote(diagramId: string, x: number, y: number, text: string = ''): string {
 		const id = crypto.randomUUID();
@@ -953,6 +991,34 @@ function readEdge(edge: Record<string, unknown>): DiagramEdge {
 	const read = { ...edge };
 	if (read.type !== 'connection' || !FLOWS.includes(read.flow as Flow)) delete read.flow;
 	return read as DiagramEdge;
+}
+
+/**
+ * What of a clip a Diagram of `kind` takes, checked as an imported file is:
+ * valid elements of its kind (Notes go anywhere), read as the app reads them,
+ * edges between them, and no Association left with fewer than two Legs.
+ */
+export function pasteable(
+	clip: { nodes: unknown[]; edges: unknown[] },
+	kind: DiagramKind
+): { nodes: DiagramNode[]; edges: DiagramEdge[] } {
+	let nodes = (clip.nodes as (DiagramNode | null)[])
+		.filter((n): n is DiagramNode => isValidNode(n, kind))
+		.map((n) => withCompleteAttributes(n));
+	const types = new Map<string, unknown>(nodes.map((n) => [n.id, n.type]));
+	let edges = (clip.edges as (DiagramEdge | null)[]).filter((e): e is DiagramEdge =>
+		isValidEdge(e, kind, types)
+	);
+	const legs = new Map<string, number>();
+	for (const e of edges) if (e.type === 'leg') legs.set(e.source, (legs.get(e.source) ?? 0) + 1);
+	const lonely = new Set(
+		nodes.filter((n) => n.type === 'association' && (legs.get(n.id) ?? 0) < 2).map((n) => n.id)
+	);
+	if (lonely.size > 0) {
+		nodes = nodes.filter((n) => !lonely.has(n.id));
+		edges = edges.filter((e) => !lonely.has(e.source));
+	}
+	return { nodes, edges };
 }
 
 function toFields(element: Record<string, unknown>): Fields {

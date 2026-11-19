@@ -32,6 +32,13 @@ describe('selectionShortcut', () => {
 		expect(selectionShortcut(key('a', { metaKey: true }), true)).toBe('all');
 		expect(selectionShortcut(key('A', { ctrlKey: true }), true)).toBe('all');
 		expect(selectionShortcut(key('Escape'), true)).toBe('none');
+		expect(selectionShortcut(key('d', { metaKey: true }), true)).toBe('duplicate');
+		expect(selectionShortcut(key('d', { ctrlKey: true, shiftKey: true }), true)).toBeNull();
+		expect(selectionShortcut(key('d', { metaKey: true }), false)).toBeNull();
+		expect(selectionShortcut(key('c', { metaKey: true }), true)).toBe('copy');
+		expect(selectionShortcut(key('x', { ctrlKey: true }), true)).toBe('cut');
+		expect(selectionShortcut(key('v', { metaKey: true }), true)).toBe('paste');
+		expect(selectionShortcut(key('z', { metaKey: true }), true)).toBeNull();
 	});
 
 	it('leaves the keys alone off the canvas, in a field, or with other modifiers', () => {

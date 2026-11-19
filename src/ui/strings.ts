@@ -147,7 +147,7 @@ export const strings = {
 	canvas: {
 		tidyUp: 'Tidy up: arrange along the links',
 		gestures:
-			'Drag on the background to select, Shift+click to add, Cmd/Ctrl+A for all, Escape for none, Delete to remove. Pan with two fingers, a right-drag or Space+drag. Hold Alt while moving to place freely.'
+			'Drag on the background to select, Shift+click to add, Cmd/Ctrl+A for all, Escape for none, Delete to remove; Cmd/Ctrl+C, X, V copy, cut and paste, Cmd/Ctrl+D duplicates. Pan with two fingers, a right-drag or Space+drag. Hold Alt while moving to place freely.'
 	},
 	panel: {
 		name: 'Name',
