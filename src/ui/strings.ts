@@ -142,6 +142,7 @@ export const strings = {
 	},
 	panel: {
 		name: 'Name',
+		type: 'Type',
 		label: 'Label'
 	},
 	system: {
