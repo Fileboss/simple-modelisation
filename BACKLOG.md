@@ -7,8 +7,6 @@ tags: [backlog]
 
 ## In progress
 
-- [notes](docs/specs/notes/): v0.1, sticky Notes on the canvas in five colors, in System design diagrams and MCDs
-
 ## To do
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
@@ -36,6 +34,7 @@ After v0.1:
 
 ## Done
 
+- [notes](docs/specs/notes/): v0.1, sticky Notes on the canvas in five colors, in System design diagrams and MCDs
 - [people](docs/specs/people/): v0.1, a Person Component type drawn as a silhouette, with role Skins (Customer, Admin, Partner, Support)
 - selection-gestures: drag on the background selects, Shift+click adds, Delete, Cmd/Ctrl+A, Escape; Space+drag pans
 - [drag-and-snap](docs/specs/drag-and-snap/): drop where the preview shows, snap to neighbours with guides, straight Connections

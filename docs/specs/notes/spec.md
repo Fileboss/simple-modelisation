@@ -2,7 +2,7 @@
 title: notes - sticky Notes on the canvas, in five colors
 tags: [spec]
 date: 2026-11-19
-status: accepted
+status: done
 ---
 
 # notes
