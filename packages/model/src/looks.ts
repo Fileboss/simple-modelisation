@@ -3,6 +3,7 @@ import {
 	siAkamai,
 	siAlibabacloud,
 	siAndroid,
+	siAngular,
 	siApachekafka,
 	siApple,
 	siBun,
@@ -11,7 +12,12 @@ import {
 	siClevercloud,
 	siCloudflare,
 	siDigitalocean,
+	siDjango,
 	siDocker,
+	siDotnet,
+	siExpress,
+	siFastapi,
+	siFastify,
 	siFlydotio,
 	siGithub,
 	siGo,
@@ -22,24 +28,34 @@ import {
 	siKiwix,
 	siKong,
 	siKubernetes,
+	siLaravel,
 	siMinio,
 	siMongodb,
 	siMysql,
 	siNatsdotio,
+	siNestjs,
 	siNetlify,
+	siNextdotjs,
 	siNginx,
 	siNodedotjs,
+	siNuxt,
+	siOpenjdk,
 	siOvh,
+	siPhp,
 	siPostgresql,
 	siPython,
+	siQuarkus,
 	siRabbitmq,
 	siRailway,
 	siReact,
 	siRedis,
 	siRender,
+	siRuby,
+	siRubyonrails,
 	siRust,
 	siScaleway,
 	siSpringboot,
+	siSvelte,
 	siTailscale,
 	siTraefikproxy,
 	siVaultwarden,
@@ -49,7 +65,7 @@ import {
 	type SimpleIcon
 } from 'simple-icons';
 import type { ComponentType } from './component-types.ts';
-import type { Hosting, Provider } from './project.ts';
+import type { Hosting, Provider, Runtime } from './project.ts';
 import type { SkinId } from './skins.ts';
 
 /*
@@ -58,8 +74,11 @@ import type { SkinId } from './skins.ts';
  * Product names are brands; UI names (types, Hostings) stay in the app's strings.
  */
 
-/** A Skin's look: its product name, its color, and its logo (initials show without one). */
-export type SkinLook = { name: string; color: string; logo?: string };
+/**
+ * A Skin's or a Runtime's look: its name, its color, and its logo, or a line
+ * glyph for what no brand stands for (initials show without either).
+ */
+export type SkinLook = { name: string; color: string; logo?: string; glyph?: string };
 
 /** A Component type's generic look: its color and a line glyph. */
 export type TypeLook = { color: string; glyph: string };
@@ -76,7 +95,7 @@ export type ProviderMark = {
 		| { kind: 'monogram'; text: string; ink: string };
 };
 
-const fromIcon = (icon: SimpleIcon, name: string = icon.title): SkinLook => ({
+const fromIcon = (icon: SimpleIcon, name: string = icon.title): SkinLook & { logo: string } => ({
 	name,
 	color: `#${icon.hex}`,
 	logo: icon.path
@@ -84,16 +103,31 @@ const fromIcon = (icon: SimpleIcon, name: string = icon.title): SkinLook => ({
 
 // The look of every Skin the model knows; the type makes a missing one a compile error.
 export const SKIN_LOOKS: Record<SkinId, SkinLook> = {
+	browser: {
+		name: 'Web browser',
+		color: '#0284c7',
+		glyph:
+			'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9M12 3c-2.5 2.6-3.8 5.6-3.8 9s1.3 6.4 3.8 9'
+	},
+	android: fromIcon(siAndroid),
+	ios: fromIcon(siApple, 'iOS'),
+	desktop: { name: 'Desktop', color: '#475569', glyph: 'M5 5h14v10H5zM2 19h20' },
+	nextjs: fromIcon(siNextdotjs),
+	nuxt: fromIcon(siNuxt),
+	sveltekit: fromIcon(siSvelte, 'SvelteKit'),
+	svelte: fromIcon(siSvelte),
 	react: fromIcon(siReact),
 	vue: fromIcon(siVuedotjs),
-	android: fromIcon(siAndroid),
-	apple: fromIcon(siApple),
-	nodejs: fromIcon(siNodedotjs),
+	angular: fromIcon(siAngular),
+	nestjs: fromIcon(siNestjs),
+	express: fromIcon(siExpress),
+	fastify: fromIcon(siFastify),
 	'spring-boot': fromIcon(siSpringboot),
-	go: fromIcon(siGo),
-	bun: fromIcon(siBun),
-	python: fromIcon(siPython),
-	rust: fromIcon(siRust),
+	quarkus: fromIcon(siQuarkus),
+	django: fromIcon(siDjango),
+	fastapi: fromIcon(siFastapi),
+	laravel: fromIcon(siLaravel),
+	rails: fromIcon(siRubyonrails),
 	caddy: fromIcon(siCaddy),
 	vaultwarden: fromIcon(siVaultwarden),
 	kiwix: fromIcon(siKiwix),
@@ -116,6 +150,20 @@ export const SKIN_LOOKS: Record<SkinId, SkinLook> = {
 	minio: fromIcon(siMinio),
 	gcs: fromIcon(siGooglecloudstorage, 'Cloud Storage'),
 	ceph: fromIcon(siCeph)
+};
+
+// A Runtime is the Service's logo when it has no Skin, else a badge beside it.
+export const RUNTIME_LOOKS: Record<Runtime, SkinLook & { logo: string }> = {
+	nodejs: fromIcon(siNodedotjs),
+	bun: fromIcon(siBun),
+	// Java has left Simple Icons: OpenJDK's logo, in Java's orange.
+	java: { ...fromIcon(siOpenjdk, 'Java'), color: '#e76f00' },
+	dotnet: fromIcon(siDotnet),
+	python: fromIcon(siPython),
+	php: fromIcon(siPhp),
+	ruby: fromIcon(siRuby),
+	go: fromIcon(siGo),
+	rust: fromIcon(siRust)
 };
 
 /** Every Component type's generic look, in the palette's order. */

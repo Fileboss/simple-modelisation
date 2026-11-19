@@ -100,6 +100,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				hosting: c.hosting ?? null,
 				...providerOf(c.id),
 				...(c.componentType === 'disk' && { disk_kind: c.diskKind ?? null }),
+				...(c.componentType === 'service' && { runtime: c.runtime ?? null }),
 				zone: zoneOf(c.id)
 			})),
 			connections: only<ConnectionEdge>(edges, 'connection').map((c) => ({

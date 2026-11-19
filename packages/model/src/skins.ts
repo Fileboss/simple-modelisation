@@ -1,23 +1,34 @@
 import type { ComponentType } from './component-types.ts';
 
+/** The Service Skins that are frameworks, shown apart from the products. */
+export const SERVICE_FRAMEWORKS = [
+	'nextjs',
+	'nuxt',
+	'sveltekit',
+	'svelte',
+	'react',
+	'vue',
+	'angular',
+	'nestjs',
+	'express',
+	'fastify',
+	'spring-boot',
+	'quarkus',
+	'django',
+	'fastapi',
+	'laravel',
+	'rails'
+] as const;
+
 /**
  * The Skins each Component type can wear, by id. The app's catalog gives them
  * names, colors and logos; tools that only validate (the MCP server) use this.
  */
 export const SKIN_IDS = {
-	client: ['react', 'vue', 'android', 'apple'],
-	service: [
-		'nodejs',
-		'spring-boot',
-		'go',
-		'bun',
-		'python',
-		'rust',
-		'caddy',
-		'vaultwarden',
-		'kiwix',
-		'github'
-	],
+	// What the end user runs the system in; a web app is a Service.
+	client: ['browser', 'android', 'ios', 'desktop'],
+	// Frameworks, then products; what runs them is the Service's Runtime.
+	service: [...SERVICE_FRAMEWORKS, 'caddy', 'vaultwarden', 'kiwix', 'github'],
 	database: ['postgresql', 'mysql', 'mongodb'],
 	cache: ['redis', 'valkey', 'memcached'],
 	queue: ['kafka', 'rabbitmq', 'nats'],

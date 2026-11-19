@@ -78,6 +78,11 @@ export const strings = {
 		inherited: (zone: string, provider: string) => `From Zone ${zone}: ${provider}`,
 		names: ENGLISH_NAMES.providers
 	},
+	runtime: {
+		title: 'Runtime',
+		unset: 'Not specified',
+		hint: 'What runs it on the server, or its language for a native binary.'
+	},
 	choices: {
 		showAll: (count: number) => `Show all (${count})`,
 		showLess: 'Show less',
@@ -138,6 +143,7 @@ export const strings = {
 			'A Zone holds the components and zones drawn wholly inside it, and moves them with it. Drag a component in or out to change that.',
 		skin: 'Skin',
 		generic: 'Generic',
+		skinGroups: { frameworks: 'Frameworks', products: 'Products' },
 		connection: 'Connection'
 	},
 	mcd: {

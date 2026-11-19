@@ -532,6 +532,83 @@ describe('Disk kind', () => {
 	});
 });
 
+describe('Runtime', () => {
+	it('sets, changes and clears what runs a Service, only on Services', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const api = project.addComponent(d, 'service', 'API', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 300, 0);
+		const node = (id: string) => project.nodes(d).find((n) => n.id === id)!;
+		project.setRuntime(d, api, 'bun');
+		expect(node(api).runtime).toBe('bun');
+		project.setRuntime(d, api, 'cobol' as never);
+		expect(node(api).runtime).toBe('bun');
+		project.setRuntime(d, db, 'nodejs');
+		expect(node(db).runtime).toBeUndefined();
+		project.setRuntime(d, api, null);
+		expect(node(api).runtime).toBeUndefined();
+	});
+
+	it('goes when the Component is no longer a Service, Skin kept where it fits', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const web = project.addComponent(d, 'service', 'Web', 0, 0);
+		project.setSkin(d, web, 'caddy');
+		project.setRuntime(d, web, 'go');
+		project.setComponentType(d, web, 'gateway');
+		expect(project.nodes(d)[0]).toMatchObject({ componentType: 'gateway', skin: 'caddy' });
+		expect(project.nodes(d)[0].runtime).toBeUndefined();
+	});
+
+	it('does not bring back what the old type hid', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		// A Client wearing React, from before React became a Service framework; a Runtime a peer left on a Database.
+		file.diagrams[0].nodes = [
+			{
+				id: 'a',
+				type: 'component',
+				componentType: 'client',
+				name: 'Front',
+				skin: 'react',
+				x: 0,
+				y: 0
+			},
+			{
+				id: 'b',
+				type: 'component',
+				componentType: 'database',
+				name: 'DB',
+				skin: null,
+				runtime: 'go',
+				x: 300,
+				y: 0
+			}
+		];
+		const read = ProjectDocument.fromFile(file);
+		read.setComponentType(d, 'a', 'service');
+		read.setComponentType(d, 'b', 'service');
+		expect(read.nodes(d).map((n) => [n.skin, n.runtime])).toEqual([
+			[null, undefined],
+			[null, undefined]
+		]);
+	});
+
+	it('imports Runtimes, reading an unknown one or one off a Service as unspecified', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.setRuntime(d, project.addComponent(d, 'service', 'API', 0, 0), 'rust');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].runtime).toBe('rust');
+		file.diagrams[0].nodes[0].runtime = 'cobol';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].runtime).toBeUndefined();
+		file.diagrams[0].nodes[0].componentType = 'cache';
+		file.diagrams[0].nodes[0].runtime = 'go';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].runtime).toBeUndefined();
+	});
+});
+
 describe('Skins read', () => {
 	it('reads a Skin the type does not offer as generic', () => {
 		const project = new ProjectDocument();
@@ -539,6 +616,10 @@ describe('Skins read', () => {
 		const db = project.addComponent(d, 'database', 'DB', 0, 0);
 		const file = JSON.parse(JSON.stringify(project.toFile()));
 		file.diagrams[0].nodes[0].skin = 'nginx';
+		expect(ProjectDocument.fromFile(file).nodes(d)[0].skin).toBeNull();
+		// Runtimes were Service Skins once: such a Service reads as generic.
+		file.diagrams[0].nodes[0].componentType = 'service';
+		file.diagrams[0].nodes[0].skin = 'nodejs';
 		expect(ProjectDocument.fromFile(file).nodes(d)[0].skin).toBeNull();
 		project.setSkin(d, db, 'postgresql');
 		expect(project.nodes(d)[0].skin).toBe('postgresql');

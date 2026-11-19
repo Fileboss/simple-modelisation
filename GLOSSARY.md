@@ -52,13 +52,21 @@ _Avoid_: Node, block, service (a Service is one Component type)
 The generic role of a Component: Client, Service, Database, Cache, Message queue, Gateway, Object storage or Disk.
 _Avoid_: Category, kind
 
+**Service** and **Client**:
+Diagrams take the server's point of view. A Service is software the system runs, a web app included, even a front end; a Client is what the end user runs it in: a web browser, a phone, a desktop.
+_Avoid_: Front end, back end (a front end served by Node.js is a Service)
+
 **Disk**:
 A Component type for physical storage attached to a machine (an HDD, an SSD, an NVMe drive, a USB disk), as opposed to Object storage reached over the network; its Disk kind says which.
 _Avoid_: Volume, drive, storage (Object storage is another Component type)
 
 **Skin**:
-A market product applied to a Component (PostgreSQL on a Database, Redis on a Cache), changing its logo, color and displayed name but not its Component type.
+A product or a framework applied to a Component (PostgreSQL on a Database, Next.js or Vaultwarden on a Service, Android on a Client), changing its logo, color and displayed name but not its Component type.
 _Avoid_: Theme, technology, vendor
+
+**Runtime**:
+What executes a Service's code on the server: Node.js, Bun, Java, .NET, Python, PHP, Ruby, or the language for a native binary (Go, Rust). Shown as the Service's logo when it has no Skin, else as a badge beside its Skin (Next.js on Bun).
+_Avoid_: Language, platform, stack
 
 **Hosting**:
 Where a Component runs, from the most concrete to the most abstract: Bare metal, VM, Docker, Kubernetes, Managed, Serverless or External; shown as a badge on the Component.

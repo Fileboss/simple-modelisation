@@ -17,7 +17,11 @@ export const SVG_NAMES = {
 	diskKinds: strings.disk.names,
 	hostings: strings.hosting.names,
 	providers: strings.provider.names,
-	titles: { hosting: strings.hosting.title, provider: strings.provider.title }
+	titles: {
+		hosting: strings.hosting.title,
+		provider: strings.provider.title,
+		runtime: strings.runtime.title
+	}
 };
 
 export const systemKind: CanvasKind = {

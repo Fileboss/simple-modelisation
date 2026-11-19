@@ -311,8 +311,8 @@ export function estimatedSize(node: DiagramNode): Size {
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
 	if (node.type === 'component') {
-		// The Skin's product name, or a Disk's kind, shows under the name.
-		const subtitle = node.skin || node.diskKind ? 20 : 0;
+		// The Skin's name, a Service's Runtime or a Disk's kind shows under the name.
+		const subtitle = node.skin || node.runtime || node.diskKind ? 20 : 0;
 		return { width: Math.max(150, name.length * 8 + 80 + subtitle), height: 64 };
 	}
 	const merise = Math.max(...attributes.map((a) => a.name.length * CHAR.line));

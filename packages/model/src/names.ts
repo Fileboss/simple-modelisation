@@ -11,7 +11,7 @@ export const ENGLISH_NAMES: {
 	hostings: Record<Hosting, string>;
 	providers: Record<Provider, string>;
 	/** What badges are named by, before their value: "Hosting: Docker". */
-	titles: { hosting: string; provider: string };
+	titles: { hosting: string; provider: string; runtime: string };
 } = {
 	types: {
 		client: 'Client',
@@ -54,5 +54,5 @@ export const ENGLISH_NAMES: {
 		render: 'Render',
 		railway: 'Railway'
 	},
-	titles: { hosting: 'Hosting', provider: 'Provider' }
+	titles: { hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }
 };

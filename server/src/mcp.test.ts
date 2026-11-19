@@ -85,6 +85,7 @@ describe('MCP endpoint', () => {
 			'set_disk_kind',
 			'set_hosting',
 			'set_provider',
+			'set_runtime',
 			'set_skin',
 			'set_zone'
 		]);
@@ -293,7 +294,7 @@ describe('MCP endpoint', () => {
 		const at = { project: id, diagram: 'Architecture' };
 		await call(client, 'add_component', { ...at, type: 'gateway', name: 'Proxy', skin: 'caddy' });
 		await call(client, 'add_component', { ...at, type: 'service', name: 'Finance' });
-		await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'bun' });
+		await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'nextjs' });
 		const refused = await call(client, 'set_skin', {
 			...at,
 			component: 'Finance',
@@ -303,8 +304,48 @@ describe('MCP endpoint', () => {
 		const { components } = await call(client, 'get_diagram', at);
 		expect(components.map((c: { name: string; skin: string }) => [c.name, c.skin])).toEqual([
 			['Proxy', 'caddy'],
-			['Finance', 'bun']
+			['Finance', 'nextjs']
 		]);
+		// Runtimes are no longer Skins.
+		const runtime = await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'bun' });
+		expect(runtime.error).toMatch(
+			/No "bun" Skin for this Component\. "bun" is a service's runtime/
+		);
+	});
+
+	it('says what runs a service, only on services', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', {
+			...at,
+			type: 'service',
+			name: 'Web',
+			skin: 'nextjs',
+			runtime: 'bun'
+		});
+		await call(client, 'add_component', { ...at, type: 'service', name: 'Indexer' });
+		await call(client, 'set_runtime', { ...at, service: 'Indexer', runtime: 'rust' });
+		const onDatabase = await call(client, 'add_component', {
+			...at,
+			type: 'database',
+			name: 'DB',
+			runtime: 'nodejs'
+		});
+		expect(onDatabase.error).toBe('Only a service has a runtime.');
+		await call(client, 'add_component', { ...at, type: 'database', name: 'DB' });
+		const notAService = await call(client, 'set_runtime', { ...at, service: 'DB', runtime: 'go' });
+		expect(notAService.error).toBe('Only a service has a runtime.');
+		const read = async () =>
+			(await call(client, 'get_diagram', at)).components.map(
+				(c: { name: string; runtime?: string | null }) => [c.name, c.runtime]
+			);
+		expect(await read()).toEqual([
+			['Web', 'bun'],
+			['Indexer', 'rust'],
+			['DB', undefined]
+		]);
+		await call(client, 'set_runtime', { ...at, service: 'Web', runtime: 'none' });
+		expect((await read())[0]).toEqual(['Web', null]);
 	});
 
 	it('draws Disks with their kind', async () => {

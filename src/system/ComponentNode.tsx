@@ -5,13 +5,13 @@ import { inheritedProvider } from './inherited-provider';
 import { EditableText } from '../canvas/EditableText';
 import type { ComponentNode as ComponentData } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
-import { componentTypeInfo, findSkin } from './catalog';
+import { componentTypeInfo, findRuntime, findSkin } from './catalog';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { hostingLook } from './hosting-catalog';
 import { HostingIcon } from './HostingIcon';
 import { HostingPicker } from './HostingPicker';
 import { providerLook } from './provider-catalog';
-import { ProviderIcon } from './ProviderIcon';
+import { LogoBadge, ProviderIcon } from './ProviderIcon';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
@@ -20,10 +20,15 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 	const component = data as ComponentData;
 	const info = componentTypeInfo(component.componentType);
 	const skin = findSkin(component.componentType, component.skin);
-	const color = skin?.color ?? info.color;
+	const runtime =
+		component.componentType === 'service' ? findRuntime(component.runtime) : undefined;
+	// The Skin's logo, else the Runtime's: a Runtime beside a Skin is a badge.
+	const look = skin ?? runtime;
+	const color = look?.color ?? info.color;
 	// A Disk shows its kind (SSD…) where other Components show their Skin.
 	const diskKind = component.componentType === 'disk' ? component.diskKind : undefined;
-	const kind = skin?.name ?? (diskKind && strings.disk.names[diskKind]) ?? info.label;
+	const kind = look?.name ?? (diskKind && strings.disk.names[diskKind]) ?? info.label;
+	const runtimeBadge = skin && runtime;
 	const hosting = hostingLook(component.hosting);
 	// An External service is its own provider: a Provider set before stays stored, unshown.
 	const inherited = inheritedProvider(component);
@@ -43,8 +48,8 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 
 	return (
 		<div className={`component ${selected ? 'selected' : ''}`} style={{ borderColor: color }}>
-			{skin ? (
-				<SkinLogo skin={skin} />
+			{look ? (
+				<SkinLogo skin={look} />
 			) : (
 				<GenericIcon type={component.componentType} color={color} />
 			)}
@@ -60,9 +65,14 @@ export function ComponentNode({ id, data, selected }: NodeProps) {
 					</span>
 				)}
 			</div>
-			{(provider || hosting) && (
-				// Read together, left to right: at whom, then how it runs.
+			{(runtimeBadge || provider || hosting) && (
+				// Read together, left to right: on what, at whom, then how it runs.
 				<span className="component-badges">
+					{runtimeBadge && (
+						<Badge title={`${strings.runtime.title}: ${runtimeBadge.name}`}>
+							<LogoBadge color={runtimeBadge.color} path={runtimeBadge.logo} />
+						</Badge>
+					)}
 					{provider && (
 						<Badge title={providerTitle!}>
 							<ProviderIcon look={provider} />

@@ -1,19 +1,39 @@
 import type { ProviderLook } from './provider-catalog';
 
+/** A brand logo in white on its color, in a round badge of `size` px: a Provider's, a Runtime's. */
+export function LogoBadge({
+	color,
+	path,
+	size = 18
+}: {
+	color: string;
+	path: string;
+	size?: number;
+}) {
+	return (
+		<span
+			className="badge-icon"
+			style={{ background: color, width: size, height: size }}
+			aria-hidden="true"
+		>
+			<svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6} fill="#fff">
+				<path d={path} />
+			</svg>
+		</span>
+	);
+}
+
 /** A Provider's mark on its color, in a round badge of `size` px. */
 export function ProviderIcon({ look, size = 18 }: { look: ProviderLook; size?: number }) {
 	const { mark } = look;
+	if (mark.kind === 'logo') return <LogoBadge color={look.color} path={mark.path} size={size} />;
 	return (
 		<span
 			className="badge-icon"
 			style={{ background: look.color, width: size, height: size }}
 			aria-hidden="true"
 		>
-			{mark.kind === 'logo' ? (
-				<svg viewBox="0 0 24 24" width={size * 0.6} height={size * 0.6} fill="#fff">
-					<path d={mark.path} />
-				</svg>
-			) : mark.kind === 'line' ? (
+			{mark.kind === 'line' ? (
 				<svg
 					viewBox="0 0 24 24"
 					width={size * 0.62}

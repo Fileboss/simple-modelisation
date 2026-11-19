@@ -28,6 +28,7 @@ After v0.1:
 
 ## Done
 
+- [service-runtime](docs/specs/service-runtime/): a Runtime badge on Services, Service Skins as frameworks and products, Client Skins as devices
 - [image-hardening](docs/specs/image-hardening/): v0.1, a minimal runtime image pinned by digest, HEALTHCHECK on /health, the public compose hardened, a smoke test at the tag
 - [app-hardening](docs/specs/app-hardening/): v0.1, the exposed server hardened for a public relay
 - [relay-mode](docs/specs/relay-mode/): sharing without server storage, for a public deployment

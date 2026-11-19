@@ -6,10 +6,19 @@ import type {
 	ComponentNode,
 	ComponentType,
 	ConnectionEdge,
+	Runtime,
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
-import { COMPONENT_TYPES, componentTypeInfo, findSkin, recommendedSkins } from './catalog';
+import {
+	COMPONENT_TYPES,
+	componentTypeInfo,
+	findRuntime,
+	findSkin,
+	RECOMMENDED_RUNTIMES,
+	recommendedSkins,
+	RUNTIME_CHOICES
+} from './catalog';
 import { ChoiceGrid } from './ChoiceGrid';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { DiskKindPicker } from './DiskKindPicker';
@@ -51,6 +60,31 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 						))}
 					</select>
 				</label>
+				{/* Only a Service has a Runtime: what runs its code on the server. */}
+				{component.componentType === 'service' && (
+					<>
+						<h3>{strings.runtime.title}</h3>
+						<p className="panel-hint">{strings.runtime.hint}</p>
+						<ChoiceGrid
+							key={`${component.id}:runtime`}
+							none={{
+								label: strings.runtime.unset,
+								icon: <GenericIcon type={info.type} color={info.color} />
+							}}
+							choices={RUNTIME_CHOICES.map((runtime) => ({
+								id: runtime.id,
+								label: runtime.name,
+								icon: <SkinLogo skin={runtime} />
+							}))}
+							recommended={RECOMMENDED_RUNTIMES}
+							current={findRuntime(component.runtime)?.id}
+							onChoose={(runtime) => {
+								project.stopCapturing();
+								project.setRuntime(diagramId, component.id, runtime as Runtime | null);
+							}}
+						/>
+					</>
+				)}
 				<h3>{strings.hosting.title}</h3>
 				<HostingPicker labelled componentId={component.id} current={component.hosting} />
 				{/* An External service is its own provider. */}
@@ -85,7 +119,8 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 							choices={info.skins.map((skin) => ({
 								id: skin.id,
 								label: skin.name,
-								icon: <SkinLogo skin={skin} />
+								icon: <SkinLogo skin={skin} />,
+								group: skin.group
 							}))}
 							recommended={recommendedSkins(info.type)}
 							current={current?.id}
