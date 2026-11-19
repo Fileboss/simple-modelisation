@@ -55,7 +55,7 @@ import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
 import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
-import { captureViewport, drawnBounds, exportFrame } from './export-image';
+import { captureViewport, drawnBounds, exportFrame, rasterizeSvg } from './export-image';
 import { registerExporter } from './exporter';
 import type { Layout } from './layout';
 import type { Box } from './geometry';
@@ -101,7 +101,8 @@ export type CanvasKind = {
 	drawSvg?: (
 		nodes: DiagramNode[],
 		edges: DiagramEdge[],
-		sizeOf: (node: DiagramNode) => { width: number; height: number }
+		sizeOf: (node: DiagramNode) => { width: number; height: number },
+		legend: boolean
 	) => string;
 	/** Shown under the canvas (the MCD's MLD and SQL). */
 	Footer?: ComponentType<{ diagram: Diagram }>;
@@ -265,22 +266,37 @@ function Canvas({ project, diagram, kind }: Props) {
 	const exportBusy = useRef(false);
 	useEffect(
 		() =>
-			registerExporter(async (format) => {
+			registerExporter(async (format, { legend }) => {
 				const viewport = flowRef.current?.querySelector<HTMLElement>('.react-flow__viewport');
 				if (!viewport || exportBusy.current) return false;
-				if (format === 'svg' && kind.drawSvg) {
-					// The kind's plain SVG, at the sizes React Flow measured (the model's guess otherwise).
+				if (kind.drawSvg) {
+					// The kind's plain SVG, at the sizes React Flow measured (the model's guess otherwise);
+					// its PNG is that SVG rasterized, so both formats show the same image.
 					const nodes = project.nodes(diagram.id);
 					if (nodes.length === 0) return false;
 					const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
-					const svg = kind.drawSvg(nodes, project.edges(diagram.id), (node) => {
-						const size = measured.get(node.id);
-						return size?.width && size.height
-							? { width: size.width, height: size.height }
-							: estimatedSize(node);
-					});
-					downloadBlob(`${diagram.name}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
-					return true;
+					const svg = kind.drawSvg(
+						nodes,
+						project.edges(diagram.id),
+						(node) => {
+							const size = measured.get(node.id);
+							return size?.width && size.height
+								? { width: size.width, height: size.height }
+								: estimatedSize(node);
+						},
+						legend
+					);
+					if (format === 'svg') {
+						downloadBlob(`${diagram.name}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
+						return true;
+					}
+					exportBusy.current = true;
+					try {
+						downloadBlob(`${diagram.name}.png`, await rasterizeSvg(svg));
+						return true;
+					} finally {
+						exportBusy.current = false;
+					}
 				}
 				exportBusy.current = true;
 				setExporting(true);

@@ -36,6 +36,16 @@ export type SvgOptions = {
 	/** A Connection label's text width, as the canvas measures it. */
 	measure?: MeasureText;
 	margin?: number;
+	/** A Legend under the content, bottom right, naming the marks drawn; on by default. */
+	legend?: boolean;
+};
+
+/** The marks a drawn image shows that its Legend names. */
+type Shown = {
+	flows: Set<Flow>;
+	providers: Set<Provider>;
+	hostings: Set<Hosting>;
+	runtimes: Set<Runtime>;
 };
 
 // The canvas styles (index.css), so the image looks like the screen.
@@ -58,8 +68,14 @@ const NAME_CHAR = 8.6;
 export function systemSvg(
 	nodes: DiagramNode[],
 	edges: DiagramEdge[],
-	{ names, sizeOf = estimatedSize, measure = roughWidth, margin = 32 }: SvgOptions
+	{ names, sizeOf = estimatedSize, measure = roughWidth, margin = 32, legend = true }: SvgOptions
 ): string {
+	const shown: Shown = {
+		flows: new Set(),
+		providers: new Set(),
+		hostings: new Set(),
+		runtimes: new Set()
+	};
 	const boxes = new Map(nodes.map((n) => [n.id, nodeBox(n, sizeOf)]));
 	const parents = zoneParents(nodes, estimatedSize);
 	const providers = effectiveProviders(nodes, parents);
@@ -103,7 +119,7 @@ export function systemSvg(
 
 	const parts: string[] = [];
 	const extent: Box[] = [...boxes.values()];
-	for (const zone of zones) parts.push(zoneShape(zone, boxes.get(zone.id)!, names));
+	for (const zone of zones) parts.push(zoneShape(zone, boxes.get(zone.id)!, names, shown));
 	for (const edge of connections) {
 		const source = solid.get(edge.source);
 		const target = solid.get(edge.target);
@@ -114,6 +130,7 @@ export function systemSvg(
 		const { flow, text } = pills.get(edge.id)!;
 		const color = flow ? FLOW_COLORS[flow] : EDGE;
 		colors.add(color);
+		if (flow) shown.flows.add(flow);
 		parts.push(
 			`<path d="${routedPath(route)}" fill="none" stroke="${color}" stroke-width="1.5" marker-end="url(#${arrowId(color)})"/>`
 		);
@@ -141,11 +158,20 @@ export function systemSvg(
 				component,
 				boxes.get(component.id)!,
 				providers.get(component.id)?.provider,
-				names
+				names,
+				shown
 			)
 		);
 	}
 
+	const content = bounds(extent);
+	if (legend) {
+		const key = legendShape(shown, names, measure, content);
+		if (key) {
+			parts.push(key.svg);
+			extent.push(key.box);
+		}
+	}
 	const frame = bounds(extent);
 	const x = frame.x - margin;
 	const y = frame.y - margin - BADGE / 2;
@@ -165,8 +191,9 @@ export function systemSvg(
 	].join('\n');
 }
 
-function zoneShape(zone: DiagramNode, box: Box, names: SvgNames): string {
-	const provider = zone.provider as Provider | undefined;
+function zoneShape(zone: DiagramNode, box: Box, names: SvgNames, shown: Shown): string {
+	const provider = own(PROVIDER_MARKS, zone.provider) ? (zone.provider as Provider) : undefined;
+	if (provider) shown.providers.add(provider);
 	const logo = provider ? 20 : 0;
 	// As on the canvas: the title stays inside the Zone, cut with an ellipsis.
 	const room = Math.max(0, box.width - 16 - 16 - logo);
@@ -189,7 +216,8 @@ function componentShape(
 	component: DiagramNode,
 	box: Box,
 	provider: Provider | undefined,
-	names: SvgNames
+	names: SvgNames,
+	shown: Shown
 ): string {
 	const type = component.componentType as ComponentType;
 	// As the canvas: an unknown type looks like the first one, a Skin only on a type offering it.
@@ -201,6 +229,7 @@ function componentShape(
 			: undefined;
 	if (isPerson(known)) return personShape(component, box, skin, typeLook, names);
 	const runtime = known === 'service' ? own(RUNTIME_LOOKS, component.runtime) : undefined;
+	if (skin && runtime) shown.runtimes.add(component.runtime as Runtime);
 	// The Skin's logo, else the Runtime's: a Runtime beside a Skin is a badge.
 	const look = skin ?? runtime;
 	const color = look?.color ?? typeLook.color;
@@ -215,7 +244,7 @@ function componentShape(
 	const fit =
 		name.length * NAME_CHAR > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : '';
 	const hosting = component.hosting as Hosting | undefined;
-	const shown = hosting === 'external' ? undefined : provider;
+	const badged = hosting === 'external' ? undefined : provider;
 
 	const parts = [
 		`<rect x="${box.x + 1}" y="${box.y + 1}" width="${box.width - 2}" height="${box.height - 2}" rx="10" fill="#fff" stroke="${color}" stroke-width="2"/>`,
@@ -234,8 +263,14 @@ function componentShape(
 	// Badges in the top-right corner, read left to right: on what, at whom, then how it runs.
 	const badges: string[] = [];
 	if (skin && runtime) badges.push(runtimeBadge(runtime, names));
-	if (shown) badges.push(providerBadge(shown, 0, 0, BADGE, names));
-	if (hosting && own(HOSTING_MARKS, hosting)) badges.push(hostingBadge(hosting, 0, 0, names));
+	if (badged) {
+		badges.push(providerBadge(badged, 0, 0, BADGE, names));
+		shown.providers.add(badged);
+	}
+	if (hosting && own(HOSTING_MARKS, hosting)) {
+		badges.push(hostingBadge(hosting, 0, 0, names));
+		shown.hostings.add(hosting);
+	}
 	badges.forEach((badge, i) => {
 		const right = box.x + box.width + 9 - (badges.length - 1 - i) * (BADGE + 6);
 		parts.push(`<g transform="translate(${right - BADGE - 2} ${box.y - 11})">${badge}</g>`);
@@ -309,30 +344,44 @@ function logoShape(
 	return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${skin?.glyph ?? glyph}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
-/** A round badge with a white ring, its mark in white (or its ink) on its color. */
+/**
+ * A round badge with a white ring, its mark in white (or its ink) on its color;
+ * titled with what it stands for, except in the Legend, which prints it.
+ */
 function badge(color: string, inner: string, title: string, x: number, y: number, size: number) {
 	const r = size / 2;
-	return `<g><title>${escape(title)}</title><circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r + 2}" fill="#fff"/><circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r}" fill="${color}"/><svg x="${x + 2 + size * 0.19}" y="${y + 2 + size * 0.19}" width="${size * 0.62}" height="${size * 0.62}" viewBox="0 0 24 24">${inner}</svg></g>`;
+	return `<g>${title ? `<title>${escape(title)}</title>` : ''}<circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r + 2}" fill="#fff"/><circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r}" fill="${color}"/><svg x="${x + 2 + size * 0.19}" y="${y + 2 + size * 0.19}" width="${size * 0.62}" height="${size * 0.62}" viewBox="0 0 24 24">${inner}</svg></g>`;
 }
 
-function runtimeBadge(runtime: (typeof RUNTIME_LOOKS)[Runtime], names: SvgNames): string {
+function runtimeBadge(
+	runtime: (typeof RUNTIME_LOOKS)[Runtime],
+	names: SvgNames,
+	titled = true
+): string {
 	return badge(
 		runtime.color,
 		`<path d="${runtime.logo}" fill="#fff"/>`,
-		`${names.titles.runtime}: ${runtime.name}`,
+		titled ? `${names.titles.runtime}: ${runtime.name}` : '',
 		0,
 		0,
 		BADGE
 	);
 }
 
-function hostingBadge(hosting: Hosting, x: number, y: number, names: SvgNames): string {
+function hostingBadge(
+	hosting: Hosting,
+	x: number,
+	y: number,
+	names: SvgNames,
+	titled = true
+): string {
 	const { color, icon } = HOSTING_MARKS[hosting];
 	const inner =
 		icon.kind === 'logo'
 			? `<path d="${icon.path}" fill="#fff"/>`
 			: `<path d="${icon.path}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`;
-	return badge(color, inner, `${names.titles.hosting}: ${names.hostings[hosting]}`, x, y, BADGE);
+	const title = titled ? `${names.titles.hosting}: ${names.hostings[hosting]}` : '';
+	return badge(color, inner, title, x, y, BADGE);
 }
 
 function providerBadge(
@@ -340,7 +389,8 @@ function providerBadge(
 	x: number,
 	y: number,
 	size: number,
-	names: SvgNames
+	names: SvgNames,
+	titled = true
 ): string {
 	const { color, mark } = PROVIDER_MARKS[provider];
 	const inner =
@@ -349,7 +399,123 @@ function providerBadge(
 			: mark.kind === 'line'
 				? `<path d="${mark.path}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
 				: `<text x="12" y="12" text-anchor="middle" dy="0.35em" textLength="${mark.text.length > 2 ? 24 : 20}" lengthAdjust="spacingAndGlyphs" font-size="${mark.text.length > 2 ? 15 : 17}" font-weight="800" fill="${mark.ink}">${escape(mark.text)}</text>`;
-	return badge(color, inner, `${names.titles.provider}: ${names.providers[provider]}`, x, y, size);
+	const title = titled ? `${names.titles.provider}: ${names.providers[provider]}` : '';
+	return badge(color, inner, title, x, y, size);
+}
+
+// The Legend's layout: its padding, a heading's and an entry row's height, the gaps.
+const KEY_PAD = 12;
+const KEY_HEAD = 18;
+const KEY_ROW = 26;
+const KEY_GAP = 14;
+const KEY_ARROW = 24;
+// Its entries wrap past the content's width, but no narrower than this.
+const KEY_MIN_WIDTH = 280;
+
+type KeyEntry = { mark: (x: number, middle: number) => string; markWidth: number; label: string };
+
+/**
+ * The Legend: a framed box a gap under the content, its right edge on the
+ * content's, naming the marks drawn, a section per kind in badge order and the
+ * entries in each catalog's order; a Flow's arrowhead is already defined by
+ * the Connections drawn in it. Null with nothing to name.
+ */
+function legendShape(
+	shown: Shown,
+	names: SvgNames,
+	measure: MeasureText,
+	content: Box
+): { svg: string; box: Box } | null {
+	const ring = BADGE + 4;
+	const sections: { title: string; entries: KeyEntry[] }[] = [
+		{
+			title: names.titles.flow,
+			entries: (Object.keys(FLOW_COLORS) as Flow[])
+				.filter((flow) => shown.flows.has(flow))
+				.map((flow): KeyEntry => ({
+					// The arrow drawn on Connections, short.
+					mark: (x, middle) =>
+						`<path d="M${x} ${middle} L${x + KEY_ARROW} ${middle}" fill="none" stroke="${FLOW_COLORS[flow]}" stroke-width="1.5" marker-end="url(#${arrowId(FLOW_COLORS[flow])})"/>`,
+					markWidth: KEY_ARROW,
+					label: names.flows[flow]
+				}))
+		},
+		{
+			title: names.titles.provider,
+			entries: (Object.keys(PROVIDER_MARKS) as Provider[])
+				.filter((provider) => shown.providers.has(provider))
+				.map((provider): KeyEntry => ({
+					mark: (x, middle) => providerBadge(provider, x, middle - ring / 2, BADGE, names, false),
+					markWidth: ring,
+					label: names.providers[provider]
+				}))
+		},
+		{
+			title: names.titles.hosting,
+			entries: (Object.keys(HOSTING_MARKS) as Hosting[])
+				.filter((hosting) => shown.hostings.has(hosting))
+				.map((hosting): KeyEntry => ({
+					mark: (x, middle) => hostingBadge(hosting, x, middle - ring / 2, names, false),
+					markWidth: ring,
+					label: names.hostings[hosting]
+				}))
+		},
+		{
+			title: names.titles.runtime,
+			entries: (Object.keys(RUNTIME_LOOKS) as Runtime[])
+				.filter((runtime) => shown.runtimes.has(runtime))
+				.map((runtime): KeyEntry => ({
+					mark: (x, middle) =>
+						`<g transform="translate(${x} ${middle - ring / 2})">${runtimeBadge(RUNTIME_LOOKS[runtime], names, false)}</g>`,
+					markWidth: ring,
+					label: RUNTIME_LOOKS[runtime].name
+				}))
+		}
+	].filter((section) => section.entries.length > 0);
+	if (sections.length === 0) return null;
+
+	// Laid out from the box's top-left corner, then moved under the content.
+	const room = Math.max(KEY_MIN_WIDTH, content.width) - KEY_PAD * 2;
+	const parts: string[] = [];
+	let y = KEY_PAD;
+	let widest = 0;
+	for (const section of sections) {
+		// Headings are semibold: a little wider than the entries' text.
+		widest = Math.max(widest, measure(section.title) * 1.1);
+		parts.push(
+			`<text x="${KEY_PAD}" y="${y + KEY_HEAD / 2}" font-size="11.25" font-weight="600" fill="#475569" dy="0.35em">${escape(section.title)}</text>`
+		);
+		y += KEY_HEAD;
+		let x = 0;
+		for (const entry of section.entries) {
+			const width = entry.markWidth + 6 + measure(entry.label);
+			if (x > 0 && x + width > room) {
+				x = 0;
+				y += KEY_ROW;
+			}
+			const middle = y + KEY_ROW / 2;
+			parts.push(
+				entry.mark(KEY_PAD + x, middle),
+				`<text x="${KEY_PAD + x + entry.markWidth + 6}" y="${middle}" font-size="11.25" fill="${TEXT}" dy="0.35em">${escape(entry.label)}</text>`
+			);
+			x += width;
+			widest = Math.max(widest, x);
+			x += KEY_GAP;
+		}
+		y += KEY_ROW + 4;
+	}
+	const width = Math.ceil(widest + KEY_PAD * 2);
+	const height = Math.ceil(y - 4 + KEY_PAD);
+	const box = {
+		x: content.x + content.width - width,
+		y: content.y + content.height + 24,
+		width,
+		height
+	};
+	return {
+		svg: `<g transform="translate(${box.x} ${box.y})"><rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="#fff" stroke="${BORDER}"/>${parts.join('')}</g>`,
+		box
+	};
 }
 
 /**

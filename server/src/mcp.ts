@@ -136,10 +136,18 @@ export function createMcpHandler(options: Options) {
 			'A System design diagram drawn as an SVG image (plain shapes, opens in browsers, design tools and slides); without a diagram, every System design diagram of the Project. MCDs are not drawn yet.',
 			{
 				project: projectArgument,
-				diagram: z.string().optional().describe('Diagram id or exact name; omit for all.')
+				diagram: z.string().optional().describe('Diagram id or exact name; omit for all.'),
+				legend: z
+					.boolean()
+					.optional()
+					.describe(
+						'Draw a Legend under the diagram naming its Flows, Providers, Hostings and Runtimes (default true).'
+					)
 			},
-			async ({ project, diagram }) => {
-				const { images, skipped } = await access.read(project, (p) => exportDiagrams(p, diagram));
+			async ({ project, diagram, legend }) => {
+				const { images, skipped } = await access.read(project, (p) =>
+					exportDiagrams(p, diagram, legend)
+				);
 				const note = [
 					images.length
 						? `${images.map((i) => i.name).join(', ')} drawn as SVG.`
