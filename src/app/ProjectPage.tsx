@@ -8,7 +8,8 @@ import { systemKind } from '../system/system-kind';
 import type { ImageFormat } from '../canvas/export-image';
 import { exportOpenDiagram } from '../canvas/exporter';
 import { copyText } from '../ui/clipboard';
-import { downloadText } from '../ui/download';
+import { downloadBlob, downloadText } from '../ui/download';
+import { allDiagramsZip, fileName } from '../system/export-all';
 import { strings } from '../ui/strings';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
@@ -213,6 +214,18 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 		return () => clearTimeout(timer);
 	}, [note]);
 
+	const exportAll = async () => {
+		try {
+			const result = await allDiagramsZip(project);
+			if (!result) return setNote(strings.project.noSystemDiagram);
+			downloadBlob(`${fileName(project.name())}.zip`, result.zip);
+			if (result.skipped.length) setNote(strings.project.mcdsLeftOut(result.skipped.join(', ')));
+		} catch (error) {
+			console.error('Export failed', error);
+			setNote(strings.project.exportFailed);
+		}
+	};
+
 	const exportImage = async (format: ImageFormat) => {
 		try {
 			if (!(await exportOpenDiagram(format))) setNote(strings.project.nothingToExport);
@@ -244,6 +257,7 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 							{strings.project.exportImage[format]}
 						</button>
 					))}
+					<button onClick={() => void exportAll()}>{strings.project.exportAll}</button>
 				</div>
 			</details>
 		</>

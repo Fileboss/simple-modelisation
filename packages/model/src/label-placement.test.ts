@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Box } from '../canvas/geometry';
-import { labelBox, placeLabels, type LabelledConnection } from './label-placement';
+import type { Box } from './geometry.ts';
+import { labelBox, placeLabels, type LabelledConnection } from './label-placement.ts';
 
 const box = (x: number, y: number, width = 100, height = 40): Box => ({ x, y, width, height });
 const pill = (text: string, at: { x: number; y: number }) => labelBox(text, at);

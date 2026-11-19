@@ -1,39 +1,9 @@
-import {
-	siAdguard,
-	siAndroid,
-	siApachekafka,
-	siApple,
-	siBun,
-	siCaddy,
-	siCeph,
-	siGithub,
-	siGo,
-	siGooglecloudstorage,
-	siKiwix,
-	siKong,
-	siMinio,
-	siMongodb,
-	siMysql,
-	siNatsdotio,
-	siNginx,
-	siNodedotjs,
-	siPostgresql,
-	siPython,
-	siRabbitmq,
-	siReact,
-	siRedis,
-	siRust,
-	siSpringboot,
-	siTailscale,
-	siTraefikproxy,
-	siVaultwarden,
-	siVuedotjs,
-	type SimpleIcon
-} from 'simple-icons';
 import type { ComponentType } from '@simple-modelisation/model/project.ts';
-import { SKIN_IDS, type SkinId } from '@simple-modelisation/model/skins.ts';
+import { SKIN_LOOKS, TYPE_LOOKS } from '@simple-modelisation/model/looks.ts';
+import { strings } from '../ui/strings';
+import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
 
-/** A market product a Component can wear. Logos come from Simple Icons (CC0). */
+/** A market product a Component can wear; its look comes from the model's looks. */
 export type Skin = {
 	id: string;
 	name: string;
@@ -49,65 +19,21 @@ export type ComponentTypeInfo = {
 	skins: Skin[];
 };
 
-type Look = Omit<Skin, 'id'>;
-
-const fromIcon = (icon: SimpleIcon, name: string = icon.title): Look => ({
-	name,
-	color: `#${icon.hex}`,
-	logo: icon.path
-});
-
-// The look of every Skin the model knows; the type makes a missing one a compile error.
-const LOOKS: Record<SkinId, Look> = {
-	react: fromIcon(siReact),
-	vue: fromIcon(siVuedotjs),
-	android: fromIcon(siAndroid),
-	apple: fromIcon(siApple),
-	nodejs: fromIcon(siNodedotjs),
-	'spring-boot': fromIcon(siSpringboot),
-	go: fromIcon(siGo),
-	bun: fromIcon(siBun),
-	python: fromIcon(siPython),
-	rust: fromIcon(siRust),
-	caddy: fromIcon(siCaddy),
-	vaultwarden: fromIcon(siVaultwarden),
-	kiwix: fromIcon(siKiwix),
-	github: fromIcon(siGithub),
-	postgresql: fromIcon(siPostgresql),
-	mysql: fromIcon(siMysql),
-	mongodb: fromIcon(siMongodb),
-	redis: fromIcon(siRedis),
-	valkey: { name: 'Valkey', color: '#4a62d8' },
-	memcached: { name: 'Memcached', color: '#2a7a3b' },
-	kafka: fromIcon(siApachekafka, 'Kafka'),
-	rabbitmq: fromIcon(siRabbitmq),
-	nats: fromIcon(siNatsdotio, 'NATS'),
-	nginx: fromIcon(siNginx),
-	traefik: fromIcon(siTraefikproxy, 'Traefik'),
-	kong: fromIcon(siKong),
-	tailscale: fromIcon(siTailscale),
-	adguard: fromIcon(siAdguard, 'AdGuard'),
-	s3: { name: 'Amazon S3', color: '#569a31' },
-	minio: fromIcon(siMinio),
-	gcs: fromIcon(siGooglecloudstorage, 'Cloud Storage'),
-	ceph: fromIcon(siCeph)
-};
-
 const TYPES: { type: ComponentType; label: string; color: string }[] = [
-	{ type: 'client', label: 'Client', color: '#64748b' },
-	{ type: 'service', label: 'Service', color: '#2563eb' },
-	{ type: 'database', label: 'Database', color: '#0f766e' },
-	{ type: 'cache', label: 'Cache', color: '#b91c1c' },
-	{ type: 'queue', label: 'Message queue', color: '#9333ea' },
-	{ type: 'gateway', label: 'Gateway', color: '#ea580c' },
-	{ type: 'storage', label: 'Object storage', color: '#ca8a04' },
-	{ type: 'disk', label: 'Disk', color: '#57534e' }
+	{ type: 'client', label: strings.types.client, color: TYPE_LOOKS.client.color },
+	{ type: 'service', label: strings.types.service, color: TYPE_LOOKS.service.color },
+	{ type: 'database', label: strings.types.database, color: TYPE_LOOKS.database.color },
+	{ type: 'cache', label: strings.types.cache, color: TYPE_LOOKS.cache.color },
+	{ type: 'queue', label: strings.types.queue, color: TYPE_LOOKS.queue.color },
+	{ type: 'gateway', label: strings.types.gateway, color: TYPE_LOOKS.gateway.color },
+	{ type: 'storage', label: strings.types.storage, color: TYPE_LOOKS.storage.color },
+	{ type: 'disk', label: strings.types.disk, color: TYPE_LOOKS.disk.color }
 ];
 
 /** Each Component type with its Skins, in the model's order (packages/model skins.ts). */
 export const COMPONENT_TYPES: ComponentTypeInfo[] = TYPES.map((info) => ({
 	...info,
-	skins: SKIN_IDS[info.type].map((id) => ({ id, ...LOOKS[id] }))
+	skins: SKIN_IDS[info.type].map((id) => ({ id, ...SKIN_LOOKS[id] }))
 }));
 
 export function componentTypeInfo(type: ComponentType): ComponentTypeInfo {

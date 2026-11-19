@@ -1,3 +1,5 @@
+import { ENGLISH_NAMES } from '@simple-modelisation/model/names.ts';
+
 // Every UI string, in one place so a French translation can be added later.
 export const strings = {
 	appName: 'Simple Modelisation',
@@ -27,6 +29,9 @@ export const strings = {
 		export: 'Export',
 		exportProject: 'Project (JSON)',
 		exportImage: { png: 'Diagram as PNG', svg: 'Diagram as SVG' },
+		exportAll: 'All diagrams (SVG, .zip)',
+		mcdsLeftOut: (names: string) => `Not in the zip yet (MCDs): ${names}`,
+		noSystemDiagram: 'No System design diagram to export',
 		nothingToExport: 'Nothing to export: open a Diagram with something in it',
 		exportFailed: 'Image export failed',
 		undo: 'Undo',
@@ -61,15 +66,7 @@ export const strings = {
 		title: 'Hosting',
 		unset: 'Not specified',
 		clear: 'Click again to clear',
-		names: {
-			'bare-metal': 'Bare metal',
-			vm: 'VM',
-			docker: 'Docker',
-			kubernetes: 'Kubernetes',
-			managed: 'Managed (cloud)',
-			serverless: 'Serverless',
-			external: 'External service'
-		}
+		names: ENGLISH_NAMES.hostings
 	},
 	provider: {
 		title: 'Provider',
@@ -77,27 +74,7 @@ export const strings = {
 		from: (zone: string) => `from ${zone}`,
 		zoneHint: 'Taken by the components inside that have none of their own.',
 		inherited: (zone: string, provider: string) => `From Zone ${zone}: ${provider}`,
-		names: {
-			'self-hosted': 'Self-hosted',
-			aws: 'AWS',
-			'google-cloud': 'Google Cloud',
-			azure: 'Azure',
-			ovhcloud: 'OVHcloud',
-			scaleway: 'Scaleway',
-			hetzner: 'Hetzner',
-			ionos: 'IONOS',
-			'clever-cloud': 'Clever Cloud',
-			digitalocean: 'DigitalOcean',
-			vultr: 'Vultr',
-			akamai: 'Akamai (Linode)',
-			'alibaba-cloud': 'Alibaba Cloud',
-			cloudflare: 'Cloudflare',
-			vercel: 'Vercel',
-			netlify: 'Netlify',
-			fly: 'Fly.io',
-			render: 'Render',
-			railway: 'Railway'
-		}
+		names: ENGLISH_NAMES.providers
 	},
 	choices: {
 		showAll: (count: number) => `Show all (${count})`,
@@ -105,10 +82,11 @@ export const strings = {
 		search: 'Search',
 		noMatch: 'Nothing matches.'
 	},
+	types: ENGLISH_NAMES.types,
 	disk: {
 		title: 'Kind',
 		unset: 'Not specified',
-		names: { hdd: 'HDD', ssd: 'SSD', nvme: 'NVMe', usb: 'USB' }
+		names: ENGLISH_NAMES.diskKinds
 	},
 	dataTypes: {
 		label: 'Data type',

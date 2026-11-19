@@ -9,8 +9,8 @@ tags: [backlog]
 
 ## To do
 
-- Image export through MCP, and every Diagram at once
-- SVG export readable outside browsers (Figma, Inkscape, slides): plain SVG shapes instead of HTML in a foreignObject
+- MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
+- PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
 - Zone colors, and Zones in Tidy up options (direction, spacing)
@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [svg-export](docs/specs/svg-export/): System design diagrams as plain SVG, over MCP and in the app
 - [component-type-picker](docs/specs/component-type-picker/): change a Component's type in the panel
 - [set-component](docs/specs/set-component/): set_component MCP tool (type, name, place)
 - [zone-provider](docs/specs/zone-provider/): a Provider on a Zone, taken by the Components inside it

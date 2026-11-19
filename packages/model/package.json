@@ -8,6 +8,7 @@
 	},
 	"dependencies": {
 		"elkjs": "^0.12.1",
+		"simple-icons": "^16.37.0",
 		"yjs": "^13.6.33"
 	}
 }

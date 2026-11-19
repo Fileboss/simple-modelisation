@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import { z } from 'zod';
 import type { DocumentStore } from './document-store.ts';
 import { ToolError } from './mcp-error.ts';
-import { describeDiagram, describeProject, mcdSql } from './mcp-views.ts';
+import { describeDiagram, describeProject, exportDiagrams, mcdSql } from './mcp-views.ts';
 import { registerWriteTools } from './mcp-write.ts';
 
 /** The path of the MCP endpoint, beside the app and the sync. */
@@ -98,6 +98,7 @@ export function createMcpHandler(options: Options) {
 			server.registerTool(name, { description, inputSchema }, (async (args: never) => {
 				try {
 					const result = await run(args);
+					if (result instanceof ToolContent) return { content: result.content };
 					return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 				} catch (error) {
 					if (!(error instanceof ToolError)) throw error;
@@ -122,6 +123,37 @@ export function createMcpHandler(options: Options) {
 			"An MCD's MLD (Looping notation) and PostgreSQL script, with warnings.",
 			{ project: projectArgument, diagram: z.string().describe('MCD id or exact name.') },
 			({ project, diagram }) => access.read(project, (p) => mcdSql(p, diagram))
+		);
+		tool(
+			'export_diagram',
+			'A System design diagram drawn as an SVG image (plain shapes, opens in browsers, design tools and slides); without a diagram, every System design diagram of the Project. MCDs are not drawn yet.',
+			{
+				project: projectArgument,
+				diagram: z.string().optional().describe('Diagram id or exact name; omit for all.')
+			},
+			async ({ project, diagram }) => {
+				const { images, skipped } = await access.read(project, (p) => exportDiagrams(p, diagram));
+				const note = [
+					images.length
+						? `${images.map((i) => i.name).join(', ')} drawn as SVG.`
+						: 'No System design diagram to draw.',
+					skipped.length ? `Not drawn yet (MCDs): ${skipped.join(', ')}.` : ''
+				]
+					.filter(Boolean)
+					.join(' ');
+				// A note, then each image as its SVG resource.
+				return new ToolContent([
+					{ type: 'text', text: note },
+					...images.map((image) => ({
+						type: 'resource',
+						resource: {
+							uri: `diagram:///${image.id}.svg`,
+							mimeType: 'image/svg+xml',
+							text: image.svg
+						}
+					}))
+				]);
+			}
 		);
 		registerWriteTools(tool, access);
 		return server;
@@ -155,7 +187,15 @@ export function createMcpHandler(options: Options) {
 	};
 }
 
-/** Registers a tool whose JSON answer or ToolError message goes back to the agent. */
+/** A tool's answer as MCP content (a resource, say) rather than JSON text. */
+export class ToolContent {
+	readonly content: unknown[];
+	constructor(content: unknown[]) {
+		this.content = content;
+	}
+}
+
+/** Registers a tool whose JSON answer (or ToolContent) or ToolError message goes back to the agent. */
 export type RegisterTool = <Shape extends z.ZodRawShape>(
 	name: string,
 	description: string,

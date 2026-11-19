@@ -82,6 +82,15 @@ export type CanvasKind = {
 	 * Provider taken from its Zone), each time the document changes.
 	 */
 	derive?: (nodes: DiagramNode[]) => DiagramNode[];
+	/**
+	 * Draws the Diagram as plain SVG, at the sizes the canvas measured; kinds
+	 * without it export a capture of the canvas.
+	 */
+	drawSvg?: (
+		nodes: DiagramNode[],
+		edges: DiagramEdge[],
+		sizeOf: (node: DiagramNode) => { width: number; height: number }
+	) => string;
 	/** Shown under the canvas (the MCD's MLD and SQL). */
 	Footer?: ComponentType<{ diagram: Diagram }>;
 	drop: (project: ProjectDocument, diagramId: string, item: string, x: number, y: number) => void;
@@ -233,6 +242,20 @@ function Canvas({ project, diagram, kind }: Props) {
 			registerExporter(async (format) => {
 				const viewport = flowRef.current?.querySelector<HTMLElement>('.react-flow__viewport');
 				if (!viewport || exportBusy.current) return false;
+				if (format === 'svg' && kind.drawSvg) {
+					// The kind's plain SVG, at the sizes React Flow measured (the model's guess otherwise).
+					const nodes = project.nodes(diagram.id);
+					if (nodes.length === 0) return false;
+					const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
+					const svg = kind.drawSvg(nodes, project.edges(diagram.id), (node) => {
+						const size = measured.get(node.id);
+						return size?.width && size.height
+							? { width: size.width, height: size.height }
+							: estimatedSize(node);
+					});
+					downloadBlob(`${diagram.name}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
+					return true;
+				}
 				exportBusy.current = true;
 				setExporting(true);
 				try {
@@ -249,7 +272,7 @@ function Canvas({ project, diagram, kind }: Props) {
 					setExporting(false);
 				}
 			}),
-		[diagram.name, screenToFlowPosition]
+		[diagram.name, screenToFlowPosition, kind, project, diagram.id, getNodes]
 	);
 
 	// Dragging a Zone takes along what it holds when the drag starts.
