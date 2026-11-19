@@ -4,11 +4,12 @@ import { inheritedProvider } from './inherited-provider';
 import { PanelField } from '../canvas/PanelField';
 import type {
 	ComponentNode,
+	ComponentType,
 	ConnectionEdge,
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
-import { componentTypeInfo, findSkin, recommendedSkins } from './catalog';
+import { COMPONENT_TYPES, componentTypeInfo, findSkin, recommendedSkins } from './catalog';
 import { ChoiceGrid } from './ChoiceGrid';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
 import { DiskKindPicker } from './DiskKindPicker';
@@ -34,6 +35,22 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					value={component.name}
 					onChange={(name) => project.renameNode(diagramId, component.id, name)}
 				/>
+				<label className="panel-field">
+					<span>{strings.panel.type}</span>
+					<select
+						value={component.componentType}
+						onChange={(e) => {
+							project.stopCapturing();
+							project.setComponentType(diagramId, component.id, e.target.value as ComponentType);
+						}}
+					>
+						{COMPONENT_TYPES.map((t) => (
+							<option key={t.type} value={t.type}>
+								{t.label}
+							</option>
+						))}
+					</select>
+				</label>
 				<h3>{strings.hosting.title}</h3>
 				<HostingPicker labelled componentId={component.id} current={component.hosting} />
 				{/* An External service is its own provider. */}

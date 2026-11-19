@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [component-type-picker](docs/specs/component-type-picker/): change a Component's type in the panel
 - [set-component](docs/specs/set-component/): set_component MCP tool (type, name, place)
 - [zone-provider](docs/specs/zone-provider/): a Provider on a Zone, taken by the Components inside it
 - [skin-picker](docs/specs/skin-picker/): recommended Skins and Providers first, show all, search; Self-hosted Provider

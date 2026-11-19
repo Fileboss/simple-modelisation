@@ -70,6 +70,15 @@ input {
 	border-radius: 4px;
 }
 
+select {
+	font: inherit;
+	padding: 3px 4px;
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	background: var(--surface);
+	color: var(--text);
+}
+
 .status {
 	padding: 24px;
 	color: var(--muted);
@@ -296,7 +305,8 @@ input {
 	color: var(--muted);
 }
 
-.panel-field input {
+.panel-field input,
+.panel-field select {
 	border-color: var(--border);
 	color: var(--text);
 }
