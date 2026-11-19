@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { dataType, isDataType, type DataType } from './data-types.ts';
-import { COMPONENT_TYPE_IDS, type ComponentType } from './component-types.ts';
+import { COMPONENT_TYPE_IDS, isPerson, type ComponentType } from './component-types.ts';
 import { skinFits } from './skins.ts';
 
 export type DiagramKind = 'system' | 'mcd';
@@ -421,7 +421,8 @@ export class ProjectDocument {
 	/**
 	 * Changes what a Component is, keeping its id, Connections, Hosting and
 	 * Provider: a Skin the new type does not offer goes back to Generic, a Disk
-	 * kind goes away unless it is still a Disk, a Runtime unless it is still a Service.
+	 * kind goes away unless it is still a Disk, a Runtime unless it is still a
+	 * Service, and Hosting and Provider when it becomes or stops being a Person.
 	 */
 	setComponentType(diagramId: string, componentId: string, componentType: ComponentType): void {
 		const component = this.nodeMap(diagramId).get(componentId);
@@ -443,6 +444,11 @@ export class ProjectDocument {
 				component.set('skin', null);
 			}
 			if (componentType !== 'disk' && component.has('diskKind')) component.delete('diskKind');
+			// Someone has no Hosting nor Provider, nor brings back one a peer left on it.
+			if (isPerson(before) || isPerson(componentType)) {
+				component.delete('hosting');
+				component.delete('provider');
+			}
 			if ((before !== 'service' || componentType !== 'service') && component.has('runtime')) {
 				component.delete('runtime');
 			}
@@ -459,6 +465,7 @@ export class ProjectDocument {
 	 * null clears it, an unknown value is ignored.
 	 */
 	setProvider(diagramId: string, nodeId: string, provider: Provider | null): void {
+		if (isPerson(this.nodeMap(diagramId).get(nodeId)?.get('componentType'))) return;
 		this.setNodeChoice(diagramId, nodeId, 'provider', provider, PROVIDERS, ['component', 'zone']);
 	}
 
@@ -476,6 +483,7 @@ export class ProjectDocument {
 
 	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
 	setHosting(diagramId: string, componentId: string, hosting: Hosting | null): void {
+		if (isPerson(this.nodeMap(diagramId).get(componentId)?.get('componentType'))) return;
 		this.setNodeChoice(diagramId, componentId, 'hosting', hosting, HOSTINGS);
 	}
 
@@ -887,8 +895,12 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	}
 	// Only a Disk has a kind, whatever a file or a peer sent.
 	if (read.componentType !== 'disk') delete read.diskKind;
-	// Only a Service has a Runtime.
+	// Only a Service has a Runtime; a Person has no Hosting nor Provider.
 	if (read.componentType !== 'service') delete read.runtime;
+	if (isPerson(read.componentType)) {
+		delete read.hosting;
+		delete read.provider;
+	}
 	return read as DiagramNode;
 }
 

@@ -150,6 +150,7 @@ export const strings = {
 		zoneHint:
 			'A Zone holds the components and zones drawn wholly inside it, and moves them with it. Drag a component in or out to change that.',
 		skin: 'Skin',
+		role: 'Role',
 		generic: 'Generic',
 		skinGroups: { frameworks: 'Frameworks', products: 'Products' },
 		connection: 'Connection'

@@ -56,6 +56,10 @@ _Avoid_: Category, kind
 Diagrams take the server's point of view. A Service is software the system runs, a web app included, even a front end; a Client is what the end user runs it in: a web browser, a phone, a desktop.
 _Avoid_: Front end, back end (a front end served by Node.js is a Service)
 
+**Person**:
+A Component type for someone who uses or runs the system (a customer, an admin, a partner, support), drawn as a silhouette rather than a box; its Skins are roles. A Person has no Hosting, Provider or Runtime; the device or software it uses is a Client.
+_Avoid_: User (also an account or a table), actor
+
 **Disk**:
 A Component type for physical storage attached to a machine (an HDD, an SSD, an NVMe drive, a USB disk), as opposed to Object storage reached over the network; its Disk kind says which.
 _Avoid_: Volume, drive, storage (Object storage is another Component type)

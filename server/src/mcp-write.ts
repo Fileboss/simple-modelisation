@@ -1,3 +1,4 @@
+import { isPerson } from '@simple-modelisation/model/component-types.ts';
 import { dataType, isDataType, type DataType } from '@simple-modelisation/model/data-types.ts';
 import {
 	CARDINALITIES,
@@ -45,6 +46,11 @@ const providerArgument = z
 	.enum(PROVIDERS)
 	.describe(
 		`Whose infrastructure the Component runs on: ${PROVIDERS.join(', ')}. It goes with any Hosting.`
+	);
+const componentTypeArgument = z
+	.enum(COMPONENT_TYPE_IDS)
+	.describe(
+		'person: someone who uses or runs the system (Skins: customer, admin, partner, support; no hosting or provider). client: what the end user runs it in (browser, phone). The others are software or storage.'
 	);
 const flowArgument = z
 	.enum(FLOWS)
@@ -278,7 +284,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
-			type: z.enum(COMPONENT_TYPE_IDS),
+			type: componentTypeArgument,
 			name: name(),
 			skin: z
 				.string()
@@ -304,6 +310,8 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				// Checked before anything is drawn: a refused call leaves the Diagram as it was.
 				if (disk_kind && type !== 'disk') throw new ToolError('Only a disk has a disk_kind.');
 				if (runtime && type !== 'service') throw new ToolError('Only a service has a runtime.');
+				if (isPerson(type) && hosting) throw new ToolError('A person has no hosting.');
+				if (isPerson(type) && provider) throw new ToolError('A person has no provider.');
 				const zoneId = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
 				const size = estimatedSize({
 					id: '',
@@ -311,6 +319,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					x: 0,
 					y: 0,
 					name,
+					componentType: type,
 					skin,
 					runtime,
 					diskKind: disk_kind
@@ -397,12 +406,12 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_component',
-		'Changes a Component in place, keeping its id and Connections: its type (a Skin the new type lacks goes back to generic), its name, and its place: x and y, or a zone to move it into (after its content, the Zone growing), or zone "none" to move it out of every Zone. Give a position or a zone, not both.',
+		'Changes a Component in place, keeping its id and Connections: its type (a Skin the new type lacks goes back to generic; becoming or leaving person drops hosting and provider), its name, and its place: x and y, or a zone to move it into (after its content, the Zone growing), or zone "none" to move it out of every Zone. Give a position or a zone, not both.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			component: z.string().describe('Component id or exact name.'),
-			type: z.enum(COMPONENT_TYPE_IDS).optional(),
+			type: componentTypeArgument.optional(),
 			name: name().optional(),
 			x: z.number().optional(),
 			y: z.number().optional(),
@@ -542,6 +551,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				// Clearing is harmless: an agent resetting every Component must not stop at a Person.
+				if (isPerson(target.componentType) && hosting !== 'none') {
+					throw new ToolError('A person has no hosting.');
+				}
 				p.setHosting(d.id, target.id, hosting === 'none' ? null : hosting);
 				return { id: target.id };
 			})
@@ -560,6 +573,9 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				if (isPerson(target.componentType) && provider !== 'none') {
+					throw new ToolError('A person has no provider.');
+				}
 				p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
 				return { id: target.id };
 			})

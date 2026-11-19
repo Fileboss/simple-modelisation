@@ -122,6 +122,21 @@ describe('systemSvg', () => {
 		expect(svg).not.toContain('<marker id="arrow"');
 	});
 
+	it('draws a Person as a silhouette: a disc in its role color, its name and role, no badges', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const zone = project.addZone(d, 0, 0, 400, 300, 'AWS');
+		project.setProvider(d, zone, 'aws');
+		project.setSkin(d, project.addComponent(d, 'person', 'Buyer', 40, 60), 'customer');
+		const svg = systemSvg(project.nodes(d), [], { names: ENGLISH_NAMES });
+		expect(svg).toContain('<circle');
+		expect(svg).toContain('fill="#db2777"');
+		expect(svg).toContain('>Buyer</text>');
+		expect(svg).toContain('>Customer</text>');
+		// The Zone's Provider is drawn on the Zone only: a Person takes none.
+		expect(svg.match(/<title>Provider: AWS<\/title>/g)).toHaveLength(1);
+	});
+
 	it('reads only catalog entries, whatever a peer writes', () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');

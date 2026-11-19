@@ -1,3 +1,4 @@
+import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
@@ -240,9 +241,11 @@ function zoneTree(
 /** The directed links ELK ranks along. */
 function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 	const present = new Set(nodes.map((n) => n.id));
-	const clients = new Set(
-		nodes.filter((n) => n.type === 'component' && n.componentType === 'client').map((n) => n.id)
+	// Where flows start: Persons, then the Clients they use; other Components after.
+	const origin = new Map(
+		nodes.map((n) => [n.id, isPerson(n.componentType) ? 2 : n.componentType === 'client' ? 1 : 0])
 	);
+	const level = (id: string) => origin.get(id) ?? 0;
 	const links: Link[] = [];
 	const firstLeg = new Set<string>();
 	// The link of each Connection by its ends, to spot the one going back the other way.
@@ -285,8 +288,9 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 			backwards.push(edge);
 			continue;
 		}
-		// Clients are where flows start: a Connection back to one (a push) ranks the other way.
-		const back = clients.has(edge.target) && !clients.has(edge.source);
+		// A Connection back towards where flows start (a push to a Client, a mail to a Person)
+		// ranks the other way.
+		const back = level(edge.target) > level(edge.source);
 		const link: Link = back
 			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true }
 			: { from: edge.source, to: edge.target, edge: edge.id };
@@ -326,6 +330,10 @@ export function estimatedSize(node: DiagramNode): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
+	if (node.type === 'component' && isPerson(node.componentType)) {
+		// A silhouette: the avatar over the name and the role (the longest role, Customer, fits in 100px).
+		return { width: Math.max(100, name.length * 9 + 20), height: 100 };
+	}
 	if (node.type === 'component') {
 		// The Skin's name, a Service's Runtime or a Disk's kind shows under the name.
 		const subtitle = node.skin || node.runtime || node.diskKind ? 20 : 0;

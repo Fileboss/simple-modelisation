@@ -1,3 +1,4 @@
+import { isPerson } from '@simple-modelisation/model/component-types.ts';
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
 import { inheritedProvider } from './inherited-provider';
@@ -87,18 +88,23 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 						/>
 					</>
 				)}
-				<h3>{strings.hosting.title}</h3>
-				<HostingPicker labelled componentId={component.id} current={component.hosting} />
-				{/* An External service is its own provider. */}
-				{component.hosting !== 'external' && (
+				{/* Someone runs on no infrastructure: no Hosting, no Provider. */}
+				{!isPerson(component.componentType) && (
 					<>
-						<h3>{strings.provider.title}</h3>
-						<ProviderPicker
-							key={component.id}
-							nodeId={component.id}
-							current={component.provider}
-							inherited={inheritedProvider(component)}
-						/>
+						<h3>{strings.hosting.title}</h3>
+						<HostingPicker labelled componentId={component.id} current={component.hosting} />
+						{/* An External service is its own provider. */}
+						{component.hosting !== 'external' && (
+							<>
+								<h3>{strings.provider.title}</h3>
+								<ProviderPicker
+									key={component.id}
+									nodeId={component.id}
+									current={component.provider}
+									inherited={inheritedProvider(component)}
+								/>
+							</>
+						)}
 					</>
 				)}
 				{component.componentType === 'disk' && (
@@ -119,7 +125,8 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				{/* Disks have no Skins: their kind is not a product. */}
 				{info.skins.length > 0 && (
 					<>
-						<h3>{strings.system.skin}</h3>
+						{/* A Person's Skins are roles. */}
+						<h3>{isPerson(info.type) ? strings.system.role : strings.system.skin}</h3>
 						{/* Keyed by Component and type: each list starts folded, without search. */}
 						<ChoiceGrid
 							key={`${component.id}:${info.type}`}

@@ -1,3 +1,4 @@
+import { isPerson } from './component-types.ts';
 import type { DiagramNode, Provider } from './project.ts';
 
 type Size = { width: number; height: number };
@@ -88,7 +89,13 @@ export function effectiveProviders(
 	const result = new Map<string, EffectiveProvider>();
 	for (const node of nodes) {
 		if (node.type !== 'component' && node.type !== 'zone') continue;
-		if (node.type === 'component' && node.hosting === 'external') continue;
+		// An External service is its own provider; a Person runs on no one's infrastructure.
+		if (
+			node.type === 'component' &&
+			(node.hosting === 'external' || isPerson(node.componentType))
+		) {
+			continue;
+		}
 		if (node.provider) {
 			result.set(node.id, { provider: node.provider as Provider, from: null });
 			continue;

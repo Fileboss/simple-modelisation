@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { DataType } from './data-types.ts';
+import { estimatedSize } from './layout.ts';
 import { ProjectDocument, type Attribute } from './project.ts';
+import { effectiveProviders, zoneParents } from './zones.ts';
 
 describe('ProjectDocument', () => {
 	it('keeps its name in the document, renames it and undoes the rename', () => {
@@ -561,6 +563,42 @@ describe('Flow', () => {
 		expect(ProjectDocument.fromFile(file).edges(d)[0].flow).toBe('write');
 		file.diagrams[0].edges[0].flow = 'stream';
 		expect(ProjectDocument.fromFile(file).edges(d)[0].flow).toBeUndefined();
+	});
+});
+
+describe('Person', () => {
+	it('has no Hosting nor Provider, set, kept from another type, read or taken from a Zone', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const buyer = project.addComponent(d, 'person', 'Buyer', 50, 60);
+		const node = (id: string) => project.nodes(d).find((n) => n.id === id)!;
+		project.setHosting(d, buyer, 'docker');
+		project.setProvider(d, buyer, 'aws');
+		expect(node(buyer)).not.toHaveProperty('hosting');
+		expect(node(buyer)).not.toHaveProperty('provider');
+		project.setSkin(d, buyer, 'customer');
+		expect(node(buyer).skin).toBe('customer');
+
+		const api = project.addComponent(d, 'service', 'API', 300, 0);
+		project.setHosting(d, api, 'docker');
+		project.setProvider(d, api, 'aws');
+		project.setComponentType(d, api, 'person');
+		expect(node(api)).not.toHaveProperty('hosting');
+		expect(node(api)).not.toHaveProperty('provider');
+
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		Object.assign(file.diagrams[0].nodes[0], { hosting: 'vm', provider: 'aws' });
+		const read = ProjectDocument.fromFile(file).nodes(d)[0];
+		expect(read).not.toHaveProperty('hosting');
+		expect(read).not.toHaveProperty('provider');
+
+		const zone = project.addZone(d, 0, 0, 600, 300, 'AWS');
+		project.setProvider(d, zone, 'aws');
+		const providers = effectiveProviders(
+			project.nodes(d),
+			zoneParents(project.nodes(d), estimatedSize)
+		);
+		expect(providers.has(buyer)).toBe(false);
 	});
 });
 

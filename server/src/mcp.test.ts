@@ -361,6 +361,56 @@ describe('MCP endpoint', () => {
 		);
 	});
 
+	it('draws Persons with a role, without hosting or provider', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'person', name: 'Buyer', skin: 'customer' });
+		const hosted = await call(client, 'add_component', {
+			...at,
+			type: 'person',
+			name: 'Ops',
+			hosting: 'docker'
+		});
+		expect(hosted.error).toBe('A person has no hosting.');
+		const provided = await call(client, 'add_component', {
+			...at,
+			type: 'person',
+			name: 'Ops',
+			provider: 'aws'
+		});
+		expect(provided.error).toBe('A person has no provider.');
+		const setHosting = await call(client, 'set_hosting', {
+			...at,
+			component: 'Buyer',
+			hosting: 'vm'
+		});
+		expect(setHosting.error).toBe('A person has no hosting.');
+		const setProvider = await call(client, 'set_provider', {
+			...at,
+			component: 'Buyer',
+			provider: 'aws'
+		});
+		expect(setProvider.error).toBe('A person has no provider.');
+		// Clearing is harmless and accepted.
+		const cleared = await call(client, 'set_hosting', {
+			...at,
+			component: 'Buyer',
+			hosting: 'none'
+		});
+		expect(cleared.error).toBeUndefined();
+		const wrongRole = await call(client, 'add_component', {
+			...at,
+			type: 'service',
+			name: 'API',
+			skin: 'admin'
+		});
+		expect(wrongRole.error).toMatch(/No "admin" Skin for a service/);
+		const { components } = await call(client, 'get_diagram', at);
+		expect(components).toEqual([
+			expect.objectContaining({ name: 'Buyer', type: 'person', skin: 'customer', hosting: null })
+		]);
+	});
+
 	it('says what runs a service, only on services', async () => {
 		const { client, id } = await setup();
 		const at = { project: id, diagram: 'Architecture' };

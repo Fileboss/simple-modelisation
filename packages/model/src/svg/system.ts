@@ -1,7 +1,7 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
 import { pillText, placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
 import { estimatedSize, type Size } from '../layout.ts';
-import { COMPONENT_TYPE_IDS } from '../component-types.ts';
+import { FALLBACK_COMPONENT_TYPE, isPerson } from '../component-types.ts';
 import {
 	FLOW_COLORS,
 	HOSTING_MARKS,
@@ -187,12 +187,13 @@ function componentShape(
 ): string {
 	const type = component.componentType as ComponentType;
 	// As the canvas: an unknown type looks like the first one, a Skin only on a type offering it.
-	const known = own(TYPE_LOOKS, type) ? type : COMPONENT_TYPE_IDS[0];
+	const known = own(TYPE_LOOKS, type) ? type : FALLBACK_COMPONENT_TYPE;
 	const typeLook = TYPE_LOOKS[known];
 	const skin =
 		typeof component.skin === 'string' && skinFits(known, component.skin)
 			? own(SKIN_LOOKS, component.skin)
 			: undefined;
+	if (isPerson(known)) return personShape(component, box, skin, typeLook, names);
 	const runtime = known === 'service' ? own(RUNTIME_LOOKS, component.runtime) : undefined;
 	// The Skin's logo, else the Runtime's: a Runtime beside a Skin is a badge.
 	const look = skin ?? runtime;
@@ -233,6 +234,36 @@ function componentShape(
 		const right = box.x + box.width + 9 - (badges.length - 1 - i) * (BADGE + 6);
 		parts.push(`<g transform="translate(${right - BADGE - 2} ${box.y - 11})">${badge}</g>`);
 	});
+	return parts.join('');
+}
+
+/** A Person as the canvas draws it: a disc in its role's color, its name and role under it, no badges. */
+function personShape(
+	person: DiagramNode,
+	box: Box,
+	role: SkinLook | undefined,
+	typeLook: (typeof TYPE_LOOKS)[ComponentType],
+	names: SvgNames
+): string {
+	const color = role?.color ?? typeLook.color;
+	const name = String(person.name ?? '');
+	const kind = role?.name ?? names.types.person;
+	const centre = box.x + box.width / 2;
+	const disc = box.y + 6 + 22;
+	// Sizes may be estimates (the server, the zip): a name wider than its box is narrowed to fit.
+	const room = box.width - 12;
+	const fit =
+		name.length * NAME_CHAR > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : '';
+	const parts = [
+		`<circle cx="${centre}" cy="${disc}" r="22" fill="${color}"/>`,
+		`<svg x="${centre - 13}" y="${disc - 13}" width="26" height="26" viewBox="0 0 24 24"><path d="${role?.glyph ?? typeLook.glyph}" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+		`<text x="${centre}" y="${disc + 22 + 16}" font-size="15" font-weight="600" fill="${TEXT}" text-anchor="middle" dy="0.35em"${fit}>${escape(name)}</text>`
+	];
+	if (kind !== name) {
+		parts.push(
+			`<text x="${centre}" y="${disc + 22 + 34}" font-size="11.25" fill="${color}" text-anchor="middle" dy="0.35em">${escape(kind)}</text>`
+		);
+	}
 	return parts.join('');
 }
 
