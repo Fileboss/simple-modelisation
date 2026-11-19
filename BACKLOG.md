@@ -11,10 +11,18 @@ tags: [backlog]
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
 
+- v0.1 people: a Person Component type (who uses the system), with role Skins (Customer, Admin, Partner, Support)
+- v0.1 notes: free text placed on the canvas to explain a diagram (a schedule, a constraint)
+- v0.1 copy-paste: Cmd/Ctrl+C, V and D on the canvas, Connections between copied elements kept
+- v0.1 export-legend: a legend in image exports for what the Diagram uses (Flows, Hostings, Providers, Runtimes)
 - v0.1 release: CHANGELOG, v0.1.0 tag, public ghcr package, GitHub rulesets on main and v* tags, Actions read-only by default
 
 After v0.1:
 
+- Numbered steps on Connections (1, 2, 3), to read a journey through the system
+- A Job Component type (cron, batch, worker)
+- Asynchronous Connections, drawn dashed (events, queues)
+- SaaS Skins for external services (Stripe, Auth0, SendGrid, Slack…)
 - MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
