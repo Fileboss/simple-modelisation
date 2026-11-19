@@ -89,6 +89,19 @@ export const strings = {
 		unset: 'Not specified',
 		hint: 'What runs it on the server, or its language for a native binary.'
 	},
+	note: {
+		title: 'Note',
+		text: 'Text',
+		empty: 'Double-click to write',
+		color: 'Color',
+		colors: {
+			yellow: 'Yellow',
+			pink: 'Pink',
+			green: 'Green',
+			blue: 'Blue',
+			purple: 'Purple'
+		}
+	},
 	choices: {
 		showAll: (count: number) => `Show all (${count})`,
 		showLess: 'Show less',

@@ -65,7 +65,7 @@ import {
 	type SimpleIcon
 } from 'simple-icons';
 import type { ComponentType } from './component-types.ts';
-import type { Flow, Hosting, Provider, Runtime } from './project.ts';
+import type { Flow, Hosting, NoteColor, Provider, Runtime } from './project.ts';
 import type { SkinId } from './skins.ts';
 
 /*
@@ -182,6 +182,15 @@ export const RUNTIME_LOOKS: Record<Runtime, SkinLook & { logo: string }> = {
 	ruby: fromIcon(siRuby),
 	go: fromIcon(siGo),
 	rust: fromIcon(siRust)
+};
+
+/** A Note's paper and its edge, by color. */
+export const NOTE_LOOKS: Record<NoteColor, { paper: string; edge: string }> = {
+	yellow: { paper: '#fef3c7', edge: '#f2c94c' },
+	pink: { paper: '#fce7f3', edge: '#f0a3c8' },
+	green: { paper: '#dcfce7', edge: '#8fd8a8' },
+	blue: { paper: '#dbeafe', edge: '#93bbf5' },
+	purple: { paper: '#ede9fe', edge: '#bdaef5' }
 };
 
 /** A Connection's color by Flow; one without a Flow is drawn in the neutral edge color. */

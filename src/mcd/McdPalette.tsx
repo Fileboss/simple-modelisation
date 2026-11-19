@@ -1,5 +1,5 @@
 import { useCanvas } from '../canvas/canvas-context';
-import { endPaletteDrag, startPaletteDrag } from '../canvas/palette-drag';
+import { endPaletteDrag, NOTE_ITEM, startPaletteDrag } from '../canvas/palette-drag';
 import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
 import { setNotation, useNotation } from './notation';
@@ -32,6 +32,15 @@ export function McdPalette() {
 			>
 				<span className="palette-entity" />
 				{strings.mcd.entity}
+			</div>
+			<div
+				className="palette-item"
+				draggable
+				onDragStart={(e) => startPaletteDrag(e, NOTE_ITEM)}
+				onDragEnd={endPaletteDrag}
+			>
+				<span className="palette-note" aria-hidden="true" />
+				{strings.note.title}
 			</div>
 			<p className="palette-hint">{strings.mcd.paletteHint}</p>
 			<GesturesHint />

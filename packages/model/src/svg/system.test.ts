@@ -137,6 +137,19 @@ describe('systemSvg', () => {
 		expect(svg.match(/<title>Provider: AWS<\/title>/g)).toHaveLength(1);
 	});
 
+	it('draws a Note as paper in its color, its text wrapped', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const note = project.addNote(d, 0, 0, 'Syncs every night at 2 a.m. from KDP & getImage');
+		project.setNoteColor(d, note, 'green');
+		const svg = systemSvg(project.nodes(d), [], { names: ENGLISH_NAMES });
+		expect(svg).toContain('fill="#dcfce7"');
+		// 22 characters a line at the Note's width.
+		expect(svg).toContain('>Syncs every night at 2</text>');
+		expect(svg).toContain('>a.m. from KDP &amp;</text>');
+		expect(svg).toContain('>getImage</text>');
+	});
+
 	it('reads only catalog entries, whatever a peer writes', () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');

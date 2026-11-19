@@ -7,6 +7,7 @@ import type {
 	DiagramNode,
 	EntityNode,
 	LegEdge,
+	NoteNode,
 	ProjectDocument,
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
@@ -33,7 +34,10 @@ export function pick<T extends { id: string; name?: unknown }>(
 			`Several ${what}s are named "${reference}": ${named.map((n) => n.id).join(', ')}. Use an id.`
 		);
 	}
-	const known = items.map((item) => `${String(item.name)} (${item.id})`).join(', ');
+	// A Note has no name: its type says what it is.
+	const known = items
+		.map((item) => `${String(item.name ?? (item as { type?: string }).type)} (${item.id})`)
+		.join(', ');
 	throw new ToolError(`No ${what} "${reference}". Known: ${known || 'none'}.`);
 }
 
@@ -62,6 +66,14 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	const edges = project.edges(diagram.id);
 	const nameOf = (id: string) => String(nodes.find((n) => n.id === id)?.name ?? id);
 	const base = { id: diagram.id, name: diagram.name, kind: kindName(diagram.kind) };
+	/** The Notes, with the Zone each lies in on a System design diagram. */
+	const notesOf = (zoneOf?: (id: string) => { id: string; name: string } | null) =>
+		only<NoteNode>(nodes, 'note').map((n) => ({
+			id: n.id,
+			text: n.text,
+			color: n.color ?? 'yellow',
+			...(zoneOf && { zone: zoneOf(n.id) })
+		}));
 
 	if (diagram.kind === 'system') {
 		// The innermost Zone each element lies in, as drawn.
@@ -103,6 +115,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				...(c.componentType === 'service' && { runtime: c.runtime ?? null }),
 				zone: zoneOf(c.id)
 			})),
+			notes: notesOf(zoneOf),
 			connections: only<ConnectionEdge>(edges, 'connection').map((c) => ({
 				id: c.id,
 				from: nameOf(c.source),
@@ -116,6 +129,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	const legs = only<LegEdge>(edges, 'leg');
 	return {
 		...base,
+		notes: notesOf(),
 		entities: only<EntityNode>(nodes, 'entity').map((e) => ({
 			id: e.id,
 			name: e.name,

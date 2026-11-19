@@ -135,6 +135,16 @@ export type ZoneNode = DiagramNode & {
 	provider?: Provider;
 };
 
+/** A Note's paper colors; absent means yellow. */
+export const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'purple'] as const;
+export type NoteColor = (typeof NOTE_COLORS)[number];
+
+/**
+ * Free text on a sticky note, on either kind of Diagram: it explains the
+ * Diagram and is not part of it (no Connections, left alone by Tidy up and the MLD).
+ */
+export type NoteNode = DiagramNode & { type: 'note'; text: string; color?: NoteColor };
+
 /** The smallest Zone, so that it still holds a title and a Component. */
 export const ZONE_MIN = { width: 160, height: 100 };
 /** A new Zone's size. */
@@ -519,6 +529,34 @@ export class ProjectDocument {
 		return id;
 	}
 
+	/** Writes a Note at x, y, empty and yellow unless told otherwise. */
+	addNote(diagramId: string, x: number, y: number, text: string = ''): string {
+		const id = crypto.randomUUID();
+		const note: NoteNode = {
+			id,
+			type: 'note',
+			x: Math.round(x),
+			y: Math.round(y),
+			text: noteText(text)
+		};
+		this.insertNode(diagramId, note);
+		return id;
+	}
+
+	/** Rewrites a Note's text; ignored on other elements. */
+	setNoteText(diagramId: string, noteId: string, text: string): void {
+		const note = this.nodeMap(diagramId).get(noteId);
+		if (note?.get('type') !== 'note' || note.get('text') === noteText(text)) return;
+		note.set('text', noteText(text));
+	}
+
+	/** Colors a Note, yellow with null; an unknown color is ignored. */
+	setNoteColor(diagramId: string, noteId: string, color: NoteColor | null): void {
+		this.setNodeChoice(diagramId, noteId, 'color', color === 'yellow' ? null : color, NOTE_COLORS, [
+			'note'
+		]);
+	}
+
 	/** Places and sizes a Zone, never smaller than ZONE_MIN; its content stays where it is. */
 	setZoneBox(
 		diagramId: string,
@@ -873,7 +911,8 @@ const NODE_CHOICES: [string, readonly string[]][] = [
 	['hosting', HOSTINGS],
 	['provider', PROVIDERS],
 	['diskKind', DISK_KINDS],
-	['runtime', RUNTIMES]
+	['runtime', RUNTIMES],
+	['color', NOTE_COLORS]
 ];
 
 /**
@@ -895,6 +934,10 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	}
 	// Only a Disk has a kind, whatever a file or a peer sent.
 	if (read.componentType !== 'disk') delete read.diskKind;
+	// A Note's text is bounded, whatever a file or a peer wrote.
+	if (read.type === 'note' && typeof read.text === 'string' && read.text.length > 2000) {
+		read.text = noteText(read.text);
+	}
 	// Only a Service has a Runtime; a Person has no Hosting nor Provider.
 	if (read.componentType !== 'service') delete read.runtime;
 	if (isPerson(read.componentType)) {
@@ -952,11 +995,16 @@ function parseFile(data: unknown): ProjectFile {
 }
 
 const isString = (value: unknown): value is string => typeof value === 'string';
+
+/** A Note's text as stored: no trailing blank lines or spaces, bounded like a name. */
+const noteText = (text: string) => text.trimEnd().slice(0, 2000);
 const isNumber = (value: unknown): value is number =>
 	typeof value === 'number' && Number.isFinite(value);
 
 function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 	if (!node || !isString(node.id) || !isNumber(node.x) || !isNumber(node.y)) return false;
+	// A Note, in either kind, has text (maybe empty) rather than a name.
+	if (node.type === 'note') return isString(node.text);
 	if (!isString(node.name) || !node.name.trim()) return false;
 	if (kind === 'system') {
 		if (node.type === 'zone') {

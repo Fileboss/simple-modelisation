@@ -1,5 +1,8 @@
 import type { DragEvent } from 'react';
 
+/** What both palettes drag to write a Note. */
+export const NOTE_ITEM = 'note';
+
 /** MIME type of what the palette drags onto the canvas. */
 export const PALETTE_MIME = 'application/x-simple-modelisation';
 
