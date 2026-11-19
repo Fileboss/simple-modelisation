@@ -15,6 +15,7 @@ export const ENGLISH_NAMES: {
 	titles: { hosting: string; provider: string; runtime: string };
 } = {
 	types: {
+		person: 'Person',
 		client: 'Client',
 		service: 'Service',
 		database: 'Database',

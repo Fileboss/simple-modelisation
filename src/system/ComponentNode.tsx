@@ -6,7 +6,8 @@ import { EditableText } from '../canvas/EditableText';
 import type { ComponentNode as ComponentData } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { componentTypeInfo, findRuntime, findSkin } from './catalog';
-import { GenericIcon, SkinLogo } from './ComponentIcon';
+import { isPerson } from '@simple-modelisation/model/component-types.ts';
+import { GenericIcon, LineGlyph, SkinLogo } from './ComponentIcon';
 import { hostingLook } from './hosting-catalog';
 import { HostingIcon } from './HostingIcon';
 import { HostingPicker } from './HostingPicker';
@@ -15,7 +16,46 @@ import { LogoBadge, ProviderIcon } from './ProviderIcon';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
-export function ComponentNode({ id, data, selected }: NodeProps) {
+export function ComponentNode(props: NodeProps) {
+	// Someone, not software: a silhouette rather than a box.
+	return isPerson((props.data as ComponentData).componentType) ? (
+		<PersonNode {...props} />
+	) : (
+		<SoftwareNode {...props} />
+	);
+}
+
+/** A Person: a round avatar in its role's color, its name and role under it; no badges. */
+function PersonNode({ id, data, selected }: NodeProps) {
+	const { project, diagramId } = useCanvas();
+	const person = data as ComponentData;
+	const info = componentTypeInfo(person.componentType);
+	const role = findSkin(person.componentType, person.skin);
+	const color = role?.color ?? info.color;
+	const kind = role?.name ?? info.label;
+	return (
+		<div className={`person ${selected ? 'selected' : ''}`}>
+			<span className="person-avatar" style={{ background: color }} aria-hidden="true">
+				<LineGlyph path={role?.glyph ?? info.glyph} color="#fff" size={26} />
+			</span>
+			<EditableText
+				className="component-name"
+				value={person.name}
+				onChange={(name) => project.renameNode(diagramId, id, name)}
+			/>
+			{kind !== person.name && (
+				<span className="component-kind" style={{ color }}>
+					{kind}
+				</span>
+			)}
+			{SIDES.map((side) => (
+				<Handle key={side} id={side} type="source" position={side} className="handle" />
+			))}
+		</div>
+	);
+}
+
+function SoftwareNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
 	const component = data as ComponentData;
 	const info = componentTypeInfo(component.componentType);

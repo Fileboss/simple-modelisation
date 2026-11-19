@@ -25,6 +25,8 @@ export const SERVICE_FRAMEWORKS = [
  * names, colors and logos; tools that only validate (the MCP server) use this.
  */
 export const SKIN_IDS = {
+	// Roles: who a Person is to the system.
+	person: ['customer', 'admin', 'partner', 'support'],
 	// What the end user runs the system in; a web app is a Service.
 	client: ['browser', 'android', 'ios', 'desktop'],
 	// Frameworks, then products; what runs them is the Service's Runtime.

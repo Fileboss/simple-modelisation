@@ -2,6 +2,7 @@ import { RUNTIMES, type ComponentType, type Runtime } from '@simple-modelisation
 import { RUNTIME_LOOKS, SKIN_LOOKS, TYPE_LOOKS } from '@simple-modelisation/model/looks.ts';
 import { strings } from '../ui/strings';
 import { SERVICE_FRAMEWORKS, SKIN_IDS } from '@simple-modelisation/model/skins.ts';
+import { FALLBACK_COMPONENT_TYPE } from '@simple-modelisation/model/component-types.ts';
 
 /** A product or framework a Component can wear, or a Runtime; its look comes from the model's looks. */
 export type Skin = {
@@ -20,10 +21,13 @@ export type ComponentTypeInfo = {
 	type: ComponentType;
 	label: string;
 	color: string;
+	/** The generic line glyph. */
+	glyph: string;
 	skins: Skin[];
 };
 
 const TYPES: { type: ComponentType; label: string; color: string }[] = [
+	{ type: 'person', label: strings.types.person, color: TYPE_LOOKS.person.color },
 	{ type: 'client', label: strings.types.client, color: TYPE_LOOKS.client.color },
 	{ type: 'service', label: strings.types.service, color: TYPE_LOOKS.service.color },
 	{ type: 'database', label: strings.types.database, color: TYPE_LOOKS.database.color },
@@ -37,6 +41,7 @@ const TYPES: { type: ComponentType; label: string; color: string }[] = [
 /** Each Component type with its Skins, in the model's order (packages/model skins.ts). */
 export const COMPONENT_TYPES: ComponentTypeInfo[] = TYPES.map((info) => ({
 	...info,
+	glyph: TYPE_LOOKS[info.type].glyph,
 	skins: SKIN_IDS[info.type].map((id) => ({
 		id,
 		...SKIN_LOOKS[id],
@@ -73,7 +78,10 @@ export const RECOMMENDED_RUNTIMES: readonly Runtime[] = [
 ];
 
 export function componentTypeInfo(type: ComponentType): ComponentTypeInfo {
-	return COMPONENT_TYPES.find((t) => t.type === type) ?? COMPONENT_TYPES[0];
+	return (
+		COMPONENT_TYPES.find((t) => t.type === type) ??
+		COMPONENT_TYPES.find((t) => t.type === FALLBACK_COMPONENT_TYPE)!
+	);
 }
 
 /** The Skin of a Component; an unknown id (e.g. from an imported file) means the generic look. */

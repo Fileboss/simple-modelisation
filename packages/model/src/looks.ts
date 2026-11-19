@@ -103,6 +103,24 @@ const fromIcon = (icon: SimpleIcon, name: string = icon.title): SkinLook & { log
 
 // The look of every Skin the model knows; the type makes a missing one a compile error.
 export const SKIN_LOOKS: Record<SkinId, SkinLook> = {
+	// Roles have no brand: line glyphs, drawn in white in the Person's avatar.
+	customer: { name: 'Customer', color: '#db2777', glyph: 'M6 8h12l-1 12H7zM9 8a3 3 0 0 1 6 0' },
+	admin: {
+		name: 'Admin',
+		color: '#4f46e5',
+		glyph: 'M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6zM9 12l2 2 4-4'
+	},
+	partner: {
+		name: 'Partner',
+		color: '#0d9488',
+		glyph:
+			'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M18 14.5a6 6 0 0 1 3 5.5'
+	},
+	support: {
+		name: 'Support',
+		color: '#ea580c',
+		glyph: 'M4 15v-3a8 8 0 0 1 16 0v3M4 14h3v5H4zM17 14h3v5h-3zM20 19a3 3 0 0 1-3 3h-3'
+	},
 	browser: {
 		name: 'Web browser',
 		color: '#0284c7',
@@ -175,6 +193,7 @@ export const FLOW_COLORS: Record<Flow, string> = {
 
 /** Every Component type's generic look, in the palette's order. */
 export const TYPE_LOOKS: Record<ComponentType, TypeLook> = {
+	person: { color: '#a21caf', glyph: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0' },
 	client: { color: '#64748b', glyph: 'M3 5h18v11H3zM8 20h8M12 16v4' },
 	service: { color: '#2563eb', glyph: 'M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01' },
 	database: {

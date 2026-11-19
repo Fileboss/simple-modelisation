@@ -249,6 +249,25 @@ describe('layoutDiagram, Clients', () => {
 });
 
 describe('layoutDiagram, two-way Connections', () => {
+	it('puts Persons first, before the Clients they use, even when a Connection goes back to them', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const app = project.addComponent(d, 'client', 'App', 0, 0);
+		const api = project.addComponent(d, 'service', 'API', 0, 0);
+		const buyer = project.addComponent(d, 'person', 'Buyer', 0, 0);
+		project.addConnection(d, app, api);
+		// The app notifies its user: a Connection towards the Person.
+		project.addConnection(d, app, buyer);
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		const x = (id: string) => positions.get(id)!.x;
+		expect(x(buyer) < x(app) && x(app) < x(api)).toBe(true);
+	});
+
 	it('routes A → B and B → A along one line, in opposite directions', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
