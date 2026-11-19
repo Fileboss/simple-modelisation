@@ -53,6 +53,7 @@ import {
 } from '@simple-modelisation/model/layout.ts';
 import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
+import { useTransientNote } from '../ui/transient-note';
 import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
 import { captureViewport, drawnBounds, exportFrame, rasterizeSvg } from './export-image';
@@ -488,6 +489,8 @@ function Canvas({ project, diagram, kind }: Props) {
 	const pointerAt = useRef<Point | null>(null);
 	// Whether the canvas was the last thing clicked: its shortcuts act only then.
 	const canvasActive = useRef(false);
+	// A short message over the canvas when the clipboard was refused.
+	const [clipboardNote, showClipboardNote] = useTransientNote();
 
 	// Keyboard and clipboard, while the canvas was the last thing clicked: Cmd/Ctrl+A selects
 	// everything, Escape nothing; copy, cut, paste and Cmd/Ctrl+D duplicate the selection.
@@ -517,19 +520,14 @@ function Canvas({ project, diagram, kind }: Props) {
 			setNodes((current) => current.map((n) => ({ ...n, selected: pasted.has(n.id) })));
 			setEdges((current) => current.map((e) => ({ ...e, selected: pasted.has(e.id) })));
 		};
-		/** Copies, and for a cut removes what was copied: a Zone goes with what it holds. */
-		const copyOut = (cut: boolean): string | null => {
-			const clip = copied();
-			if (!clip) return null;
-			if (cut) {
-				project.stopCapturing();
-				project.deleteElements(
-					diagram.id,
-					clip.nodes.map((n) => n.id),
-					clip.edges.map((e) => e.id)
-				);
-			}
-			return JSON.stringify(clip);
+		/** Removes what a cut copied: a Zone goes with what it holds. */
+		const remove = (clip: Clip) => {
+			project.stopCapturing();
+			project.deleteElements(
+				diagram.id,
+				clip.nodes.map((n) => n.id),
+				clip.edges.map((e) => e.id)
+			);
 		};
 		// Safari fires no copy or paste event without a text selection or a field: when the
 		// event has not come by the next task, the Clipboard API does the work instead.
@@ -539,17 +537,26 @@ function Canvas({ project, diagram, kind }: Props) {
 			setTimeout(() => {
 				if (pending !== action) return;
 				pending = null;
+				// The browser may refuse the Clipboard API out of the key press: say so, and lose nothing.
+				const clipboard = navigator.clipboard as Clipboard | undefined;
 				if (action === 'paste') {
-					void navigator.clipboard
-						?.readText()
+					if (!clipboard) return showClipboardNote(strings.clipboard.pasteFailed);
+					void clipboard
+						.readText()
 						.then((text) => {
 							const clip = readClip(text);
 							if (clip) pasteClip(clip, true);
 						})
-						.catch(() => {});
+						.catch(() => showClipboardNote(strings.clipboard.pasteFailed));
 				} else {
-					const text = copyOut(action === 'cut');
-					if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+					const clip = copied();
+					if (!clip) return;
+					if (!clipboard) return showClipboardNote(strings.clipboard.copyFailed);
+					// A cut removes only once the clipboard holds what it removes.
+					void clipboard.writeText(JSON.stringify(clip)).then(
+						() => action === 'cut' && remove(clip),
+						() => showClipboardNote(strings.clipboard.copyFailed)
+					);
 				}
 			});
 		};
@@ -576,10 +583,11 @@ function Canvas({ project, diagram, kind }: Props) {
 		const onCopy = (e: ClipboardEvent) => {
 			if (!isCanvasClipboard(e, canvasActive.current)) return;
 			pending = null;
-			const text = copyOut(e.type === 'cut');
-			if (!text) return;
+			const clip = copied();
+			if (!clip || !e.clipboardData) return;
 			e.preventDefault();
-			e.clipboardData?.setData('text/plain', text);
+			e.clipboardData.setData('text/plain', JSON.stringify(clip));
+			if (e.type === 'cut') remove(clip);
 		};
 		const onPaste = (e: ClipboardEvent) => {
 			if (!isCanvasClipboard(e, canvasActive.current)) return;
@@ -601,7 +609,7 @@ function Canvas({ project, diagram, kind }: Props) {
 			document.removeEventListener('cut', onCopy);
 			document.removeEventListener('paste', onPaste);
 		};
-	}, [getNodes, project, diagram.id, diagram.kind, screenToFlowPosition]);
+	}, [getNodes, project, diagram.id, diagram.kind, screenToFlowPosition, showClipboardNote]);
 
 	// A palette item dragged over the canvas: drawn where it will land, centred on the pointer, snapped.
 	const [preview, setPreview] = useState<(Box & { label: string }) | null>(null);
@@ -781,6 +789,11 @@ function Canvas({ project, diagram, kind }: Props) {
 							</ControlButton>
 						</Controls>
 					</ReactFlow>
+					{clipboardNote && (
+						<p className="canvas-note" role="status">
+							{clipboardNote}
+						</p>
+					)}
 				</div>
 				{kind.Footer && <kind.Footer diagram={diagram} />}
 			</div>

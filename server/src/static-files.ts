@@ -55,7 +55,8 @@ export async function serveStatic(
 	const inside = requested.startsWith(path.resolve(root) + path.sep);
 	const file = inside && (await isFile(requested)) ? requested : path.join(root, 'index.html');
 
-	const isAsset = file.includes(`${path.sep}assets${path.sep}`);
+	// Hashed bundles, under the served directory's own assets/: whatever the directory's path holds.
+	const isAsset = file.startsWith(path.join(path.resolve(root), 'assets') + path.sep);
 	const stream = createReadStream(file);
 	stream.once('open', () => {
 		// The security headers are already set (onRequest), for every response.

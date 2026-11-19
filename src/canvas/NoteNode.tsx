@@ -1,5 +1,5 @@
 import type { NodeProps } from '@xyflow/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { NOTE_LOOKS } from '@simple-modelisation/model/looks.ts';
 import { NOTE_WIDTH } from '@simple-modelisation/model/layout.ts';
 import { NOTE_COLORS, type NoteNode as NoteData } from '@simple-modelisation/model/project.ts';
@@ -16,6 +16,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 	const note = data as NoteData;
 	const look = NOTE_LOOKS[note.color ?? 'yellow'];
 	const [editing, setEditing] = useState(false);
+	// Escape removes the field, which may fire a blur: that blur must not save. Nor one that
+	// changed nothing: it would undo a change a peer or an agent made meanwhile.
+	const cancelled = useRef(false);
+	const started = useRef('');
 	return (
 		<div
 			className={`note ${selected ? 'selected' : ''}`}
@@ -28,15 +32,24 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 					autoFocus
 					defaultValue={note.text}
 					aria-label={strings.note.text}
+					onFocus={(e) => {
+						cancelled.current = false;
+						started.current = e.currentTarget.value;
+					}}
 					onBlur={(e) => {
-						project.stopCapturing();
-						project.setNoteText(diagramId, id, e.currentTarget.value);
+						if (!cancelled.current && e.currentTarget.value !== started.current) {
+							project.stopCapturing();
+							project.setNoteText(diagramId, id, e.currentTarget.value);
+						}
 						setEditing(false);
 					}}
 					onKeyDown={(e) => {
 						// The canvas shortcuts (Delete, Cmd+A…) are not for the text being written.
 						e.stopPropagation();
-						if (e.key === 'Escape') setEditing(false);
+						if (e.key === 'Escape') {
+							cancelled.current = true;
+							setEditing(false);
+						}
 						if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) e.currentTarget.blur();
 					}}
 				/>
@@ -53,18 +66,25 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 export function NotePanel({ note }: { note: NoteData }) {
 	const { project, diagramId } = useCanvas();
 	const current = note.color ?? 'yellow';
+	// While the field has the focus, a change from a peer or an agent waits: its key stays
+	// what it was at focus time, so what is being typed stays, and is saved on blur.
+	const [editedFrom, setEditedFrom] = useState<string | null>(null);
 	return (
 		<>
 			<h2>{strings.note.title}</h2>
 			<label className="panel-field">
 				<span>{strings.note.text}</span>
-				{/* Shown afresh when the text changes on the canvas, from a peer or an agent. */}
+				{/* Shown afresh when the text changes elsewhere, unless it is being edited here. */}
 				<textarea
-					key={note.text}
+					key={editedFrom ?? note.text}
 					className="note-panel-text"
 					defaultValue={note.text}
 					rows={5}
+					onFocus={() => setEditedFrom(note.text)}
 					onBlur={(e) => {
+						setEditedFrom(null);
+						// Unchanged, it would undo a change made meanwhile elsewhere.
+						if (e.currentTarget.value === editedFrom) return;
 						project.stopCapturing();
 						project.setNoteText(diagramId, note.id, e.currentTarget.value);
 					}}

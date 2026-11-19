@@ -13,6 +13,7 @@ import { downloadBlob, downloadText } from '../ui/download';
 import { allDiagramsZip, fileName } from '../system/export-all';
 import { readIncludeLegend, saveIncludeLegend } from './legend-preference';
 import { strings } from '../ui/strings';
+import { useTransientNote } from '../ui/transient-note';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
 import { reportPresence, usePresence } from '../presence/presence-context';
@@ -193,7 +194,7 @@ type StopSharingProps = {
 /** Export: the Project as JSON, the open Diagram as an image, with a Legend or not. */
 function ExportMenu({ project }: { project: ProjectDocument }) {
 	const menu = useRef<HTMLDetailsElement>(null);
-	const [note, setNote] = useState<string | null>(null);
+	const [note, setNote] = useTransientNote();
 	const [legend, setLegend] = useState(readIncludeLegend);
 	const toggleLegend = (include: boolean) => {
 		setLegend(include);
@@ -215,12 +216,6 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 			document.removeEventListener('keydown', close);
 		};
 	}, []);
-	useEffect(() => {
-		if (!note) return;
-		const timer = setTimeout(() => setNote(null), 3000);
-		return () => clearTimeout(timer);
-	}, [note]);
-
 	const exportAll = async () => {
 		try {
 			const result = await allDiagramsZip(project, { legend });

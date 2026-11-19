@@ -1,5 +1,5 @@
 import { Database } from '@hocuspocus/extension-database';
-import { Server } from '@hocuspocus/server';
+import { Server, type Document } from '@hocuspocus/server';
 import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import * as Y from 'yjs';
@@ -66,7 +66,7 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		maxDocumentBytes = 5 * 1024 * 1024,
 		maxConnectionsPerIp = 50,
 		maxNewDocumentsPerIpPerHour = 30,
-		maxDocumentsPerIp = 10,
+		maxDocumentsPerIp = 20,
 		maxPresenceBytes = 64 * 1024,
 		trustProxy = false,
 		maxMessagesPerWindow = 1000,
@@ -83,13 +83,6 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			if (now - (times.at(-1) ?? 0) >= HOUR) creationsPerIp.delete(ip);
 		}
 	};
-	// The address each document was loaded for, while it is loaded or opening.
-	const loadedFor = new Map<string, string>();
-	const forgetStaleLoads = (loaded: Map<string, unknown>) => {
-		for (const name of loadedFor.keys()) {
-			if (!loaded.has(name) && !opening.has(name)) loadedFor.delete(name);
-		}
-	};
 	// When and at what size each document was last measured: a full encode, so once a second,
 	// or once a tenth of the limit has come in since, at most.
 	const measured = new Map<string, { at: number; size: number }>();
@@ -101,10 +94,33 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			if (now - window.start > MESSAGE_WINDOW_MS) messageWindows.delete(id);
 		}
 	};
-	// Documents allowed to open whose loading has not finished, so concurrent openings count.
-	const opening = new Map<string, number>();
+	// Documents allowed to open whose loading has not finished, so concurrent openings count,
+	// with the address opening each.
+	const opening = new Map<string, { at: number; ip: string }>();
 	const forgetStaleOpenings = () => {
-		for (const [name, at] of opening) if (Date.now() - at > 30_000) opening.delete(name);
+		for (const [name, { at }] of opening) if (Date.now() - at > 30_000) opening.delete(name);
+	};
+	// The documents each address has open now, with its connections to each, kept by the
+	// connection hooks; and the address each document was loaded for, which it counts for
+	// while nobody has it open, until it is unloaded.
+	const openBy = new Map<string, Map<string, number>>();
+	const loadedBy = new Map<string, Set<string>>();
+	const loaderOf = new Map<string, string>();
+	/** Documents an address has open, is opening, or loaded and nobody has open. */
+	const documentsOf = (ip: string, loaded: Map<string, Document>) => {
+		const names = new Set(openBy.get(ip)?.keys());
+		for (const [name, by] of opening) if (by.ip === ip) names.add(name);
+		for (const name of loadedBy.get(ip) ?? []) {
+			if ((loaded.get(name)?.getConnectionsCount() ?? 0) === 0) names.add(name);
+		}
+		return names.size;
+	};
+	const forgetLoader = (name: string) => {
+		const ip = loaderOf.get(name);
+		if (ip === undefined) return;
+		loaderOf.delete(name);
+		loadedBy.get(ip)?.delete(name);
+		if (loadedBy.get(ip)?.size === 0) loadedBy.delete(ip);
 	};
 	// Size of each open document: its stored size plus the updates applied since.
 	const sizes = new Map<string, number>();
@@ -198,19 +214,20 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			}
 			// Opening one more document: memory is bounded, openings still loading included.
 			forgetStaleOpenings();
-			forgetStaleLoads(instance.documents);
 			const open = instance.documents.size + opening.size;
 			if (!opening.has(documentName) && open >= maxDocuments) {
 				refuse('document limit', `${open} open`, REFUSAL.full);
 			}
-			// And so is each address's share of it: one client must not take every slot.
+			// And so is each address's share of it: one client must not take every slot. A document
+			// counts for every address that has it open, not only for the one that loaded it.
 			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
-			if (!opening.has(documentName)) {
-				const held = [...loadedFor.values()].filter((by) => by === ip).length;
-				if (held >= maxDocumentsPerIp) refuse('address document limit', ip, REFUSAL.full);
-				loadedFor.set(documentName, ip);
+			const mine = !opening.has(documentName);
+			if (mine) {
+				if (documentsOf(ip, instance.documents) >= maxDocumentsPerIp) {
+					refuse('address document limit', ip, REFUSAL.full);
+				}
+				opening.set(documentName, { at: Date.now(), ip });
 			}
-			opening.set(documentName, Date.now());
 			if (stored) return;
 
 			// Creating a document: the self-declared intent proves nothing, so creations are rate
@@ -220,15 +237,36 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			const now = Date.now();
 			const recent = (creationsPerIp.get(ip) ?? []).filter((at) => now - at < HOUR);
 			if (recent.length >= maxNewDocumentsPerIpPerHour) {
-				opening.delete(documentName);
-				loadedFor.delete(documentName);
+				// Only this opening is undone: another client's of the same document stays counted.
+				if (mine) opening.delete(documentName);
 				refuse('creation limit', ip, REFUSAL.refused);
 			}
 			creationsPerIp.set(ip, [...recent, now]);
 			forgetOldCreations(now);
 		},
 
+		async connected({ documentName, requestHeaders }) {
+			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
+			const documents = openBy.get(ip) ?? new Map<string, number>();
+			documents.set(documentName, (documents.get(documentName) ?? 0) + 1);
+			openBy.set(ip, documents);
+		},
+
+		async onDisconnect({ documentName, requestHeaders }) {
+			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
+			const documents = openBy.get(ip);
+			const left = (documents?.get(documentName) ?? 1) - 1;
+			if (left > 0) documents?.set(documentName, left);
+			else documents?.delete(documentName);
+			if (documents?.size === 0) openBy.delete(ip);
+		},
+
 		async afterLoadDocument({ documentName, document }) {
+			const ip = opening.get(documentName)?.ip;
+			if (ip !== undefined) {
+				loaderOf.set(documentName, ip);
+				loadedBy.set(ip, (loadedBy.get(ip) ?? new Set()).add(documentName));
+			}
 			opening.delete(documentName);
 			sizes.set(documentName, Y.encodeStateAsUpdate(document).byteLength);
 			document.on('update', (update: Uint8Array) => {
@@ -292,7 +330,7 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		async afterUnloadDocument({ documentName }) {
 			sizes.delete(documentName);
 			measured.delete(documentName);
-			loadedFor.delete(documentName);
+			forgetLoader(documentName);
 		}
 	});
 

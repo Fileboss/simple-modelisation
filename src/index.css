@@ -238,8 +238,25 @@ select {
 }
 
 .flow {
+	position: relative;
 	flex: 1;
 	min-width: 0;
+}
+
+.canvas-note {
+	position: absolute;
+	top: 12px;
+	left: 50%;
+	z-index: 10;
+	transform: translateX(-50%);
+	margin: 0;
+	padding: 6px 12px;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 0.85rem;
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
 }
 
 .palette,

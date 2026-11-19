@@ -1,6 +1,6 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -34,8 +34,14 @@ function connect(
 	server: SyncServer,
 	name: string,
 	intent: SyncIntent,
-	options: { doc?: Y.Doc; onStateless?: (payload: string) => void } = {}
+	options: {
+		doc?: Y.Doc;
+		onStateless?: (payload: string) => void;
+		/** The address a trusted proxy would report for this client. */
+		from?: string;
+	} = {}
 ) {
+	const { from } = options;
 	const doc = options.doc ?? new Y.Doc();
 	return new Promise<{
 		doc: Y.Doc;
@@ -48,6 +54,17 @@ function connect(
 			name,
 			document: doc,
 			token: intent,
+			// Node's WebSocket takes headers: the client then comes "through a proxy". The option
+			// goes on to the provider's socket, which its own type does not say.
+			...(from
+				? {
+						WebSocketPolyfill: class extends WebSocket {
+							constructor(url: string) {
+								super(url, { headers: { 'X-Forwarded-For': from } } as unknown as string[]);
+							}
+						}
+					}
+				: {}),
 			onStateless: ({ payload }) => options.onStateless?.(payload),
 			onSynced: () => resolve({ doc, outcome: 'synced', provider }),
 			onAuthenticationFailed: ({ reason }) => resolve({ doc, outcome: 'refused', provider, reason })
@@ -343,6 +360,34 @@ describe('relay mode (no storage)', () => {
 		);
 	});
 
+	it('counts a document for the addresses that have it open now', async () => {
+		const { server, logs } = await start({
+			storage: 'none',
+			maxDocumentsPerIp: 1,
+			trustProxy: true
+		});
+		const shared = crypto.randomUUID();
+		const opener = await connect(server, shared, 'share', { from: '10.0.0.1' });
+		const colleague = await connect(server, shared, 'join', { from: '10.0.0.2' });
+		expect(colleague.outcome).toBe('synced');
+		// Both have it open: neither may load another.
+		for (const from of ['10.0.0.1', '10.0.0.2']) {
+			const other = await connect(server, crypto.randomUUID(), 'share', { from });
+			expect(other).toMatchObject({ outcome: 'refused', reason: REFUSAL.full });
+		}
+		expect(logs.join()).toContain('address document limit');
+		// The opener leaves; the colleague keeps it open: it no longer counts for the opener.
+		opener.provider.destroy();
+		await vi.waitFor(
+			async () => {
+				const next = await connect(server, crypto.randomUUID(), 'share', { from: '10.0.0.1' });
+				next.provider.destroy();
+				expect(next.outcome).toBe('synced');
+			},
+			{ timeout: 5000, interval: 100 }
+		);
+	});
+
 	it('has no MCP endpoint, and refuses to start with one', async () => {
 		const { server } = await start({ storage: 'none' });
 		const status = await new Promise<number>((resolve) => {
@@ -412,6 +457,21 @@ describe('hardening', () => {
 		const error = await fetch(`http://127.0.0.1:${server.port}/%E0%A4%A`);
 		expect(error.status).toBe(400);
 		expect(error.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+	});
+
+	it('caches only the hashed bundles, wherever the app is served from', async () => {
+		// A served directory whose own path holds an "assets" segment.
+		const parent = mkdtempSync(path.join(tmpdir(), 'sync-static-'));
+		cleanups.push(() => rmSync(parent, { recursive: true, force: true }));
+		const staticDir = path.join(parent, 'assets', 'app');
+		mkdirSync(path.join(staticDir, 'assets'), { recursive: true });
+		writeFileSync(path.join(staticDir, 'index.html'), '<title>app</title>');
+		writeFileSync(path.join(staticDir, 'assets', 'index-abc.js'), '');
+		const { server } = await start({ staticDir });
+		const page = await fetch(`http://127.0.0.1:${server.port}/`);
+		expect(page.headers.get('cache-control')).toBe('no-cache');
+		const bundle = await fetch(`http://127.0.0.1:${server.port}/assets/index-abc.js`);
+		expect(bundle.headers.get('cache-control')).toContain('immutable');
 	});
 
 	it('answers /health without storage or app, with the security headers', async () => {

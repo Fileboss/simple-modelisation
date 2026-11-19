@@ -10,6 +10,8 @@ const {
 	MCP,
 	// Documents held in memory at once.
 	MAX_DOCUMENTS = '500',
+	// Documents one address may have open at once.
+	MAX_DOCUMENTS_PER_IP = '20',
 	STATIC_DIR,
 	// Set to true only behind a reverse proxy that sets X-Forwarded-For.
 	TRUST_PROXY
@@ -21,10 +23,15 @@ if (STORAGE !== 'sqlite' && STORAGE !== 'none') {
 if (MCP !== undefined && MCP !== 'on' && MCP !== 'off') {
 	throw new Error(`MCP must be on or off, not ${MCP}`);
 }
-const maxDocuments = Number(MAX_DOCUMENTS);
-if (!Number.isInteger(maxDocuments) || maxDocuments < 1) {
-	throw new Error(`MAX_DOCUMENTS must be a positive integer, not ${MAX_DOCUMENTS}`);
-}
+const positive = (name: string, value: string) => {
+	const number = Number(value);
+	if (!Number.isInteger(number) || number < 1) {
+		throw new Error(`${name} must be a positive integer, not ${value}`);
+	}
+	return number;
+};
+const maxDocuments = positive('MAX_DOCUMENTS', MAX_DOCUMENTS);
+const maxDocumentsPerIp = positive('MAX_DOCUMENTS_PER_IP', MAX_DOCUMENTS_PER_IP);
 
 const server = await startSyncServer({
 	port: Number(PORT),
@@ -32,6 +39,7 @@ const server = await startSyncServer({
 	dataDir: STORAGE === 'sqlite' ? DATA_DIR : undefined,
 	mcp: MCP === undefined ? undefined : MCP === 'on',
 	maxDocuments,
+	maxDocumentsPerIp,
 	staticDir: STATIC_DIR,
 	trustProxy: TRUST_PROXY === 'true'
 });
