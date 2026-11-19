@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [set-component](docs/specs/set-component/): set_component MCP tool (type, name, place)
 - [zone-provider](docs/specs/zone-provider/): a Provider on a Zone, taken by the Components inside it
 - [skin-picker](docs/specs/skin-picker/): recommended Skins and Providers first, show all, search; Self-hosted Provider
 - [disk-component](docs/specs/disk-component/): Disk Component type (HDD, SSD, NVMe, USB)

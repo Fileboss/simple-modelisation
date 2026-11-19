@@ -80,6 +80,7 @@ describe('MCP endpoint', () => {
 			'layout_diagram',
 			'rename_element',
 			'set_cardinality',
+			'set_component',
 			'set_disk_kind',
 			'set_hosting',
 			'set_provider',
@@ -371,6 +372,66 @@ describe('MCP endpoint', () => {
 		});
 		await call(client, 'set_zone', { ...at, zone: 'VPS', provider: 'none' });
 		expect((await read()).components[0]).toEqual(['Caddy', null, null]);
+	});
+
+	it('changes a Component in place: type, name, position, Zone', async () => {
+		const { client, id, browser } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_zone', { ...at, name: 'Server' });
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
+		const { id: data } = await call(client, 'add_component', {
+			...at,
+			type: 'storage',
+			name: 'Data',
+			skin: 'minio',
+			hosting: 'bare-metal',
+			provider: 'hetzner'
+		});
+		await call(client, 'connect_components', { ...at, from: 'API', to: 'Data', label: 'files' });
+
+		await call(client, 'set_component', { ...at, component: 'Data', type: 'disk', name: 'SSD' });
+		await call(client, 'set_disk_kind', { ...at, disk: 'SSD', kind: 'ssd' });
+		const read = async () => {
+			const diagram = await call(client, 'get_diagram', at);
+			const ssd = diagram.components.find((c: { id: string }) => c.id === data);
+			return { ssd, connections: diagram.connections };
+		};
+		expect((await read()).ssd).toMatchObject({
+			name: 'SSD',
+			type: 'disk',
+			skin: null,
+			hosting: 'bare-metal',
+			provider: 'hetzner',
+			disk_kind: 'ssd',
+			zone: null
+		});
+		expect((await read()).connections).toMatchObject([{ from: 'API', to: 'SSD', label: 'files' }]);
+
+		await call(client, 'set_component', { ...at, component: data, zone: 'Server' });
+		expect((await read()).ssd.zone).toMatchObject({ name: 'Server' });
+		// A much longer name widens the box: its Zone grows rather than lose it.
+		await call(client, 'set_component', {
+			...at,
+			component: data,
+			name: 'SSD 2 To /mnt/data (photos, vidéos, Kiwix, cartes Europe)'
+		});
+		expect((await read()).ssd.zone).toMatchObject({ name: 'Server' });
+		await call(client, 'set_component', { ...at, component: data, zone: 'none' });
+		expect((await read()).ssd.zone).toBeNull();
+
+		const both = await call(client, 'set_component', {
+			...at,
+			component: data,
+			x: 0,
+			zone: 'Missing'
+		});
+		expect(both.error).toBe('Give a position or a zone, not both.');
+		await call(client, 'set_component', { ...at, component: data, x: 2000, y: 40 });
+		await call(client, 'set_component', { ...at, component: data, y: 90 });
+		const diagram = browser.diagrams()[0].id;
+		await vi.waitFor(() =>
+			expect(browser.nodes(diagram).find((n) => n.id === data)).toMatchObject({ x: 2000, y: 90 })
+		);
 	});
 
 	it('says where Components run', async () => {

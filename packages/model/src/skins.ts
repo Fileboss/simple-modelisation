@@ -1,4 +1,4 @@
-import type { ComponentType } from './project.ts';
+import type { ComponentType } from './component-types.ts';
 
 /**
  * The Skins each Component type can wear, by id. The app's catalog gives them
@@ -28,3 +28,7 @@ export const SKIN_IDS = {
 } as const satisfies Record<ComponentType, readonly string[]>;
 
 export type SkinId = (typeof SKIN_IDS)[ComponentType][number];
+
+/** Whether a Component type offers a Skin; a type from an older file offers none. */
+export const skinFits = (type: string, skin: string): boolean =>
+	((SKIN_IDS as Record<string, readonly string[]>)[type] ?? []).includes(skin);

@@ -531,3 +531,34 @@ describe('Disk kind', () => {
 		expect(ProjectDocument.fromFile(file).nodes(d)[0].diskKind).toBeUndefined();
 	});
 });
+
+describe('Component type change', () => {
+	it('keeps what the new type allows, drops the rest', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const store = project.addComponent(d, 'storage', 'Data', 0, 0);
+		const api = project.addComponent(d, 'service', 'API', 300, 0);
+		const connection = project.addConnection(d, api, store)!;
+		project.setSkin(d, store, 'minio');
+		project.setHosting(d, store, 'bare-metal');
+		const node = () => project.nodes(d).find((n) => n.id === store)!;
+
+		project.setComponentType(d, store, 'disk');
+		project.setDiskKind(d, store, 'ssd');
+		expect(node()).toMatchObject({
+			componentType: 'disk',
+			skin: null,
+			hosting: 'bare-metal',
+			diskKind: 'ssd'
+		});
+		expect(project.edges(d).map((e) => e.id)).toEqual([connection]);
+
+		project.setComponentType(d, store, 'database');
+		expect(node().diskKind).toBeUndefined();
+		project.setSkin(d, store, 'postgresql');
+		project.setComponentType(d, store, 'cache');
+		expect(node().skin).toBeNull();
+		project.setComponentType(d, store, 'mainframe' as never);
+		expect(node().componentType).toBe('cache');
+	});
+});
