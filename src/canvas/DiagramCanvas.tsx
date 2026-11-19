@@ -70,6 +70,9 @@ import {
 } from '@simple-modelisation/model/clipboard.ts';
 import { draggedPaletteItem, endPaletteDrag, PALETTE_MIME } from './palette-drag';
 
+/** The selected elements a Participant shows others, at most (Presence is bounded). */
+const MAX_SHARED_SELECTION = 500;
+
 export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
 
 /** Where an edge sits among the edges joining the same two nodes, for drawing them apart. */
@@ -387,8 +390,12 @@ function Canvas({ project, diagram, kind }: Props) {
 	// Presence: share the pointer and the selection; outline what others selected.
 	const { awareness } = usePresence();
 	const cursor = useCursorReporter();
+	// Bounded: the server closes a connection whose Presence passes 64 KB.
 	const selectionKey = JSON.stringify(
-		[...nodes, ...edges].filter((e) => e.selected).map((e) => e.id)
+		[...nodes, ...edges]
+			.filter((e) => e.selected)
+			.map((e) => e.id)
+			.slice(0, MAX_SHARED_SELECTION)
 	);
 	useEffect(() => {
 		reportPresence(awareness, { selection: JSON.parse(selectionKey) as string[] });

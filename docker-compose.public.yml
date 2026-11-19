@@ -4,8 +4,10 @@
 services:
   app:
     build: .
+    # Reachable from this host only: TRUST_PROXY believes X-Forwarded-For, so nothing
+    # but the proxy may connect, or a client would pick its own address.
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     environment:
       STORAGE: none
       MAX_DOCUMENTS: '80'

@@ -27,6 +27,10 @@ export type SyncServerOptions = {
 	maxConnectionsPerIp?: number;
 	/** Documents one address may create (share) per hour. */
 	maxNewDocumentsPerIpPerHour?: number;
+	/** Documents one address may have loaded into memory at once (joining an open one is free). */
+	maxDocumentsPerIp?: number;
+	/** The largest Presence message a connection may send before it is closed. */
+	maxPresenceBytes?: number;
 	/** Take the client address from X-Forwarded-For: only behind a reverse proxy that sets it. */
 	trustProxy?: boolean;
 	/** Messages one connection may send in 10 seconds before it is closed. */
@@ -45,6 +49,9 @@ export const HEALTH_PATH = '/health';
 const MESSAGE_WINDOW_MS = 10_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HOUR = 60 * 60 * 1000;
+// The y-protocols sync steps that carry changes.
+const SYNC_STEP_2 = 1;
+const SYNC_UPDATE = 2;
 /** Carries the client address from the upgrade to the hooks that only see headers; any client value is overwritten. */
 const CLIENT_IP_HEADER = 'x-simple-modelisation-client-ip';
 
@@ -59,6 +66,8 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		maxDocumentBytes = 5 * 1024 * 1024,
 		maxConnectionsPerIp = 50,
 		maxNewDocumentsPerIpPerHour = 30,
+		maxDocumentsPerIp = 10,
+		maxPresenceBytes = 64 * 1024,
 		trustProxy = false,
 		maxMessagesPerWindow = 1000,
 		log = console.log
@@ -68,6 +77,22 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 	const store = storage === 'sqlite' && dataDir ? new DocumentStore(dataDir) : null;
 	const connectionsPerIp = new Map<string, number>();
 	const creationsPerIp = new Map<string, number[]>();
+	const forgetOldCreations = (now: number) => {
+		if (creationsPerIp.size < 1000) return;
+		for (const [ip, times] of creationsPerIp) {
+			if (now - (times.at(-1) ?? 0) >= HOUR) creationsPerIp.delete(ip);
+		}
+	};
+	// The address each document was loaded for, while it is loaded or opening.
+	const loadedFor = new Map<string, string>();
+	const forgetStaleLoads = (loaded: Map<string, unknown>) => {
+		for (const name of loadedFor.keys()) {
+			if (!loaded.has(name) && !opening.has(name)) loadedFor.delete(name);
+		}
+	};
+	// When and at what size each document was last measured: a full encode, so once a second,
+	// or once a tenth of the limit has come in since, at most.
+	const measured = new Map<string, { at: number; size: number }>();
 	// Messages each socket sent in its current window (MESSAGE_WINDOW_MS).
 	const messageWindows = new Map<string, { start: number; count: number }>();
 	const forgetStaleWindows = (now: number) => {
@@ -173,24 +198,34 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			}
 			// Opening one more document: memory is bounded, openings still loading included.
 			forgetStaleOpenings();
+			forgetStaleLoads(instance.documents);
 			const open = instance.documents.size + opening.size;
 			if (!opening.has(documentName) && open >= maxDocuments) {
 				refuse('document limit', `${open} open`, REFUSAL.full);
+			}
+			// And so is each address's share of it: one client must not take every slot.
+			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
+			if (!opening.has(documentName)) {
+				const held = [...loadedFor.values()].filter((by) => by === ip).length;
+				if (held >= maxDocumentsPerIp) refuse('address document limit', ip, REFUSAL.full);
+				loadedFor.set(documentName, ip);
 			}
 			opening.set(documentName, Date.now());
 			if (stored) return;
 
 			// Creating a document: the self-declared intent proves nothing, so creations are rate
 			// limited. A relay re-creates a document each time someone reopens it, and its memory
-			// is bounded by the open documents and the connections per address instead.
+			// is bounded by the open documents, per address too, instead.
 			if (!store) return;
-			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
-			const recent = (creationsPerIp.get(ip) ?? []).filter((at) => Date.now() - at < HOUR);
+			const now = Date.now();
+			const recent = (creationsPerIp.get(ip) ?? []).filter((at) => now - at < HOUR);
 			if (recent.length >= maxNewDocumentsPerIpPerHour) {
 				opening.delete(documentName);
+				loadedFor.delete(documentName);
 				refuse('creation limit', ip, REFUSAL.refused);
 			}
-			creationsPerIp.set(ip, [...recent, Date.now()]);
+			creationsPerIp.set(ip, [...recent, now]);
+			forgetOldCreations(now);
 		},
 
 		async afterLoadDocument({ documentName, document }) {
@@ -201,11 +236,10 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 			});
 		},
 
-		// A full document stays readable; its connections stop sending changes and are told why.
-		async beforeHandleMessage({ documentName, connection, socketId }) {
-			// A socket flooding messages is cut off: thrown, the error closes it and drops what it
-			// queued. Counted per socket, so re-authenticating or spreading over documents does
-			// not start a new count.
+		// A socket flooding messages is cut off: thrown, the error closes it and drops what it
+		// queued. Counted per socket, so re-authenticating or spreading over documents does
+		// not start a new count.
+		async beforeHandleMessage({ documentName, socketId }) {
 			const now = Date.now();
 			const window = messageWindows.get(socketId);
 			if (!window || now - window.start > MESSAGE_WINDOW_MS) {
@@ -215,15 +249,50 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 				log(`refused message rate: ${documentName}`);
 				throw Object.assign(new Error(), { code: 1008, reason: 'message-rate' });
 			}
-			const size = sizes.get(documentName) ?? 0;
-			if (size <= maxDocumentBytes || connection.readOnly) return;
+		},
+
+		// A change that would take the document past its limit is not applied: the connection
+		// stays readable, stops sending changes and is told why. `payload` is the very update
+		// Hocuspocus applies next.
+		async beforeSync({ documentName, document, connection, type, payload }) {
+			if ((type !== SYNC_STEP_2 && type !== SYNC_UPDATE) || connection.readOnly) return;
+			const running = sizes.get(documentName) ?? 0;
+			let size = running + payload.byteLength;
+			if (size <= maxDocumentBytes) return;
+			// A client coming back resends what the server already has: count what it adds.
+			const adds = () => Y.diffUpdate(payload, Y.encodeStateVector(document)).byteLength;
+			size = running + adds();
+			// The running size grows with every update, even those that replace content: past the
+			// limit, the real size is measured, if not too lately.
+			const now = Date.now();
+			const last = measured.get(documentName);
+			const due = !last || now - last.at >= 1000 || running - last.size >= maxDocumentBytes / 10;
+			if (size > maxDocumentBytes && due) {
+				const real = Y.encodeStateAsUpdate(document).byteLength;
+				measured.set(documentName, { at: now, size: real });
+				sizes.set(documentName, real);
+				size = real + adds();
+			}
+			if (size <= maxDocumentBytes) return;
 			log(`refused document size: ${documentName} ${size} bytes`);
 			connection.readOnly = true;
 			connection.sendStateless(DOCUMENT_TOO_LARGE);
 		},
 
+		// The app's Presence is a name, a color, a cursor and a bounded selection: an update
+		// past the bound, however its bytes were framed, closes its connection.
+		async beforeHandleAwareness({ documentName, states }) {
+			let bytes = 0;
+			for (const state of states.values()) bytes += JSON.stringify(state).length + 8;
+			if (bytes <= maxPresenceBytes) return;
+			log(`refused presence size: ${documentName} ${bytes} bytes`);
+			throw Object.assign(new Error(), { code: 1008, reason: 'presence-size' });
+		},
+
 		async afterUnloadDocument({ documentName }) {
 			sizes.delete(documentName);
+			measured.delete(documentName);
+			loadedFor.delete(documentName);
 		}
 	});
 

@@ -4,6 +4,8 @@ import type { DataType } from './data-types.ts';
 import { estimatedSize } from './layout.ts';
 import { ProjectDocument, type Attribute } from './project.ts';
 import { effectiveProviders, zoneParents } from './zones.ts';
+import { systemSvg } from './svg/system.ts';
+import { ENGLISH_NAMES } from './names.ts';
 
 describe('ProjectDocument', () => {
 	it('keeps its name in the document, renames it and undoes the rename', () => {
@@ -226,6 +228,48 @@ describe('Local edits', () => {
 		theirs.addDiagram('mcd');
 		Y.applyUpdate(mine.doc, Y.encodeStateAsUpdate(theirs.doc), 'provider');
 		expect(edits).toBe(2);
+	});
+});
+
+describe('fields written by a peer', () => {
+	/** A node's or edge's shared map, as a peer holding the Share link can write it. */
+	const raw = (project: ProjectDocument, diagram: string, kind: 'nodes' | 'edges', id: string) =>
+		(project.doc.getMap('diagrams').get(diagram) as Y.Map<Y.Map<Y.Map<unknown>>>)
+			.get(kind)!
+			.get(id)!;
+
+	it('leaves out an element an imported file would be refused for, and its edges', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const api = project.addComponent(d, 'service', 'API', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 300, 0);
+		project.addConnection(d, api, db);
+		raw(project, d, 'nodes', api).set('x', '0" onload="alert(1)');
+		expect(project.nodes(d).map((n) => n.name)).toEqual(['DB']);
+		expect(project.edges(d)).toEqual([]);
+		expect(systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES })).not.toContain(
+			'onload'
+		);
+	});
+
+	it('keeps reading when attributes are no list, leaving that Entity out', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('mcd');
+		const customer = project.addEntity(d, 0, 0, 'Customer');
+		project.addEntity(d, 300, 0, 'Order');
+		raw(project, d, 'nodes', customer).set('attributes', 'oops');
+		expect(project.nodes(d).map((n) => n.name)).toEqual(['Order']);
+		expect(() => project.toFile()).not.toThrow();
+	});
+
+	it('leaves out an edge whose route holds anything but numbers', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 300, 0);
+		const connection = project.addConnection(d, a, b)!;
+		raw(project, d, 'edges', connection).set('points', [{ x: '1"/><script>', y: 0 }]);
+		expect(project.edges(d)).toEqual([]);
 	});
 });
 
