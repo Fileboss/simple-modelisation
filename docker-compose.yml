@@ -6,6 +6,10 @@ services:
       - '3000:3000'
     volumes:
       - data:/data
+    # The server needs no capability: it listens on an unprivileged port and
+    # writes only to /data, which belongs to its user.
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
     restart: unless-stopped
 
 volumes:

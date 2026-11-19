@@ -27,10 +27,12 @@ One Docker image serves the app, the sync of Shared Projects and the MCP endpoin
 | `MAX_DOCUMENTS` | `500`                            | Shared Projects held in memory at once; past it, a new share is refused and the app says the server is busy.         |
 | `TRUST_PROXY`   | unset                            | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so the per-address limits see real addresses. |
 
+The image runs as an unprivileged user, carries no package manager, and reports its health to Docker from `GET /health` (`200 ok`), which a proxy or an uptime check can use too.
+
 Two examples:
 
 - `docker-compose.yml`: Shared Projects stored in a volume, MCP on.
-- `docker-compose.public.yml`: a public relay, nothing stored, MCP off.
+- `docker-compose.public.yml`: a public relay, nothing stored, MCP off; read-only, no capabilities, memory and processes bounded.
 
 Behind a reverse proxy, pass WebSocket upgrades on `/sync` through, keep the `Host` header (or set `X-Forwarded-Host`), and set `TRUST_PROXY=true`: the server refuses WebSocket upgrades whose `Origin` names another host. Caddy's `reverse_proxy` does all of this by default.
 
