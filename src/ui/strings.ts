@@ -90,6 +90,10 @@ export const strings = {
 		unset: 'Not specified',
 		hint: 'What runs it on the server, or its language for a native binary.'
 	},
+	clipboard: {
+		copyFailed: 'Copy failed: the browser refused the clipboard. Nothing was removed.',
+		pasteFailed: 'Paste failed: the browser refused the clipboard. Try Edit > Paste.'
+	},
 	note: {
 		title: 'Note',
 		text: 'Text',

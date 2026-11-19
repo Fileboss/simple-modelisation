@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { dataType, isDataType, type DataType } from './data-types.ts';
+import { cleanDataType, dataType, isDataType, type DataType } from './data-types.ts';
 import { COMPONENT_TYPE_IDS, isPerson, type ComponentType } from './component-types.ts';
 import { skinFits } from './skins.ts';
 
@@ -861,8 +861,11 @@ export class ProjectDocument {
 				diagram.set('kind', d.kind);
 				diagram.set('name', d.name);
 				diagram.set('createdAt', d.createdAt);
-				diagram.set('nodes', toFieldsMap(d.nodes.map(withCompleteAttributes)));
-				diagram.set('edges', toFieldsMap(d.edges));
+				diagram.set(
+					'nodes',
+					toFieldsMap(d.nodes.map((n) => known(withCompleteAttributes(n), NODE_FIELDS)))
+				);
+				diagram.set('edges', toFieldsMap(d.edges.map((e) => known(readEdge(e), EDGE_FIELDS))));
 				project.diagramMap.set(d.id, diagram);
 			}
 		});
@@ -948,7 +951,9 @@ function samePoints(a: Point[] | undefined, b: Point[] | undefined): boolean {
 function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 	const loneIdentifier = attributes.filter((a) => a.identifier).length === 1;
 	return attributes.map((a, index) => {
-		const type = a.type ?? dataType(a.identifier && loneIdentifier ? 'serial' : 'text');
+		const type = a.type
+			? cleanDataType(a.type)
+			: dataType(a.identifier && loneIdentifier ? 'serial' : 'text');
 		return {
 			// Stable across reads, so the UI keeps its rows.
 			id: a.id ?? `attribute-${index}`,
@@ -1015,8 +1020,9 @@ function readEdge(edge: Record<string, unknown>): DiagramEdge {
 
 /**
  * What of a clip a Diagram of `kind` takes, checked as an imported file is:
- * valid elements of its kind (Notes go anywhere), read as the app reads them,
- * edges between them, and no Association left with fewer than two Legs.
+ * valid elements of its kind (Notes go anywhere), read as the app reads them
+ * and keeping only the fields the app writes, edges between them, and no
+ * Association left with fewer than two Legs.
  */
 export function pasteable(
 	clip: { nodes: unknown[]; edges: unknown[] },
@@ -1024,11 +1030,11 @@ export function pasteable(
 ): { nodes: DiagramNode[]; edges: DiagramEdge[] } {
 	let nodes = (clip.nodes as (DiagramNode | null)[])
 		.filter((n): n is DiagramNode => isValidNode(n, kind))
-		.map((n) => withCompleteAttributes(n));
+		.map((n) => known(withCompleteAttributes(n), NODE_FIELDS));
 	const types = new Map<string, unknown>(nodes.map((n) => [n.id, n.type]));
-	let edges = (clip.edges as (DiagramEdge | null)[]).filter((e): e is DiagramEdge =>
-		isValidEdge(e, kind, types)
-	);
+	let edges = (clip.edges as (DiagramEdge | null)[])
+		.filter((e): e is DiagramEdge => isValidEdge(e, kind, types))
+		.map((e) => known(readEdge(e), EDGE_FIELDS));
 	const legs = new Map<string, number>();
 	for (const e of edges) if (e.type === 'leg') legs.set(e.source, (legs.get(e.source) ?? 0) + 1);
 	const lonely = new Set(
@@ -1039,6 +1045,42 @@ export function pasteable(
 		edges = edges.filter((e) => !lonely.has(e.source));
 	}
 	return { nodes, edges };
+}
+
+// The fields the app writes, by element type, beyond `id` and `type`: a clip is text
+// anyone can craft, and whatever it carries besides would sync to every Participant.
+const NODE_FIELDS: Record<string, readonly string[]> = {
+	component: [
+		'x',
+		'y',
+		'name',
+		'componentType',
+		'skin',
+		'hosting',
+		'provider',
+		'diskKind',
+		'runtime'
+	],
+	zone: ['x', 'y', 'name', 'width', 'height', 'provider'],
+	note: ['x', 'y', 'text', 'color'],
+	entity: ['x', 'y', 'name', 'attributes'],
+	association: ['x', 'y', 'name', 'attributes']
+};
+const EDGE_FIELDS: Record<string, readonly string[]> = {
+	connection: ['source', 'target', 'label', 'flow', 'points'],
+	leg: ['source', 'target', 'cardinality', 'points']
+};
+
+/** An element with only its type's known fields (those it has). */
+function known<T extends { id: string; type: string }>(
+	element: T,
+	fields: Record<string, readonly string[]>
+): T {
+	const kept: Record<string, unknown> = { id: element.id, type: element.type };
+	for (const field of fields[element.type] ?? []) {
+		if (field in element) kept[field] = (element as Record<string, unknown>)[field];
+	}
+	return kept as T;
 }
 
 function toFields(element: Record<string, unknown>): Fields {

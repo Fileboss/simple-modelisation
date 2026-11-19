@@ -29,6 +29,14 @@ export const DATA_TYPE_KINDS: readonly DataTypeKind[] = [
 	'serial'
 ];
 
+/** A valid type with only its own fields: what a file, a clip or a peer adds is dropped. */
+export function cleanDataType(type: DataType): DataType {
+	if (type.kind === 'decimal')
+		return { kind: 'decimal', precision: type.precision, scale: type.scale };
+	if (type.kind === 'varchar') return { kind: 'varchar', length: type.length };
+	return { kind: type.kind };
+}
+
 /** A type of this kind, with default parameters where it has some. */
 export function dataType(kind: DataTypeKind): DataType {
 	if (kind === 'decimal') return { kind, precision: 10, scale: 2 };
