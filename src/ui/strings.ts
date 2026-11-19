@@ -78,6 +78,12 @@ export const strings = {
 		inherited: (zone: string, provider: string) => `From Zone ${zone}: ${provider}`,
 		names: ENGLISH_NAMES.providers
 	},
+	flow: {
+		title: 'Flow',
+		unset: 'Not specified',
+		hint: 'The arrow goes from who initiates; the Flow says what the data does.',
+		names: ENGLISH_NAMES.flows
+	},
 	runtime: {
 		title: 'Runtime',
 		unset: 'Not specified',

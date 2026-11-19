@@ -1,9 +1,12 @@
 import type { Edge } from '@xyflow/react';
 import {
+	pillText,
 	placeLabels,
 	roughWidth,
 	type MeasureText
 } from '@simple-modelisation/model/label-placement.ts';
+import type { ConnectionEdge } from '@simple-modelisation/model/project.ts';
+import { strings } from '../ui/strings';
 import type { Box, Point } from '../canvas/geometry';
 import type { Layout } from '../canvas/layout';
 
@@ -24,6 +27,15 @@ export const measureInPage: MeasureText = (text) => {
 	widths.set(text, width);
 	return width;
 };
+
+/** A Connection's pill text, its Flow's name first, as drawn and measured. */
+export const connectionPill = (connection: Partial<ConnectionEdge> | undefined) =>
+	pillText(
+		String(connection?.label ?? ''),
+		connection?.flow && Object.hasOwn(strings.flow.names, connection.flow)
+			? strings.flow.names[connection.flow]
+			: undefined
+	);
 
 // The edge drawn last time for an input edge and label position, so unchanged ones keep
 // their identity and React Flow can skip re-rendering them (during a drag, for instance).
@@ -49,7 +61,7 @@ export const placeConnectionLabels: Layout = (nodes, edges) => {
 			id: e.id,
 			source: e.source,
 			target: e.target,
-			label: String((e.data as { label?: string } | undefined)?.label ?? ''),
+			label: connectionPill(e.data as Partial<ConnectionEdge> | undefined),
 			points: (e.data as { points?: Point[] } | undefined)?.points
 		})),
 		measureInPage

@@ -81,8 +81,12 @@ A named area of a System design diagram grouping the Components drawn inside it,
 _Avoid_: Group, container, boundary, cluster (a Kubernetes cluster is one thing a Zone can stand for)
 
 **Connection**:
-A directed arrow between two Components, with an optional label such as the protocol.
-_Avoid_: Link, edge, flow
+A directed arrow between two Components, from the one that initiates (the caller, the client) to the one it reaches, with an optional label such as the protocol and an optional Flow.
+_Avoid_: Link, edge, flow (a Flow is what a Connection's data does)
+
+**Flow**:
+What a Connection's data does, seen from the initiator: Read (the data comes back), Write (the data goes to the target) or Read/Write; it colors the Connection and names it in its label.
+_Avoid_: Direction (the arrow's direction is always who initiates), access, mode
 
 ## Data modeling (Merise)
 

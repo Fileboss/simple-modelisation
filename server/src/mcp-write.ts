@@ -3,6 +3,7 @@ import {
 	CARDINALITIES,
 	COMPONENT_TYPE_IDS,
 	DISK_KINDS,
+	FLOWS,
 	HOSTINGS,
 	PROVIDERS,
 	RUNTIMES,
@@ -44,6 +45,11 @@ const providerArgument = z
 	.enum(PROVIDERS)
 	.describe(
 		`Whose infrastructure the Component runs on: ${PROVIDERS.join(', ')}. It goes with any Hosting.`
+	);
+const flowArgument = z
+	.enum(FLOWS)
+	.describe(
+		'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write.'
 	);
 const runtimeArgument = z
 	.enum(RUNTIMES)
@@ -440,15 +446,16 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'connect_components',
-		'Draws a directed Connection between two Components, with an optional label (HTTP, gRPC…).',
+		'Draws a directed Connection between two Components, from the one that initiates (the caller, the client) to the one it reaches, with an optional label (HTTP, gRPC…) and Flow.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			from: z.string().describe('Component id or exact name.'),
 			to: z.string().describe('Component id or exact name.'),
-			label: z.string().max(200).optional()
+			label: z.string().max(200).optional(),
+			flow: flowArgument.optional()
 		},
-		({ project, diagram, from, to, label }) =>
+		({ project, diagram, from, to, label, flow }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const components = nodesOf(p, d.id, 'component');
@@ -457,7 +464,44 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const id = p.addConnection(d.id, source.id, target.id);
 				if (!id) throw new ToolError('A Component cannot connect to itself.');
 				if (label) p.setEdgeLabel(d.id, id, label);
+				if (flow) p.setConnectionFlow(d.id, id, flow);
 				return { id };
+			})
+	);
+
+	tool(
+		'set_connection',
+		'Changes a Connection in place: its label ("" clears it) and its Flow ("none" clears it).',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			connection: z.string().describe('Connection id, from get_diagram.'),
+			label: z.string().max(200).optional(),
+			flow: z
+				.enum([...FLOWS, 'none'])
+				.optional()
+				.describe(
+					'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write; none clears it.'
+				)
+		},
+		({ project, diagram, connection, label, flow }) =>
+			access.write(project, (p) => {
+				if (label === undefined && !flow) throw new ToolError('Give a label or a flow.');
+				const d = pickDiagram(p, diagram, 'system');
+				const nodes = nodesOf(p, d.id);
+				const nameOf = (id: string) => String(nodes.find((n) => n.id === id)?.name ?? id);
+				const connections = p.edges(d.id).filter((e) => e.type === 'connection');
+				const target = connections.find((e) => e.id === connection);
+				if (!target) {
+					// Connections have no name: list them by their ends.
+					const known = connections
+						.map((e) => `${e.id} (${nameOf(e.source)} → ${nameOf(e.target)})`)
+						.join(', ');
+					throw new ToolError(`No connection "${connection}". Known: ${known || 'none'}.`);
+				}
+				if (label !== undefined) p.setEdgeLabel(d.id, target.id, label);
+				if (flow) p.setConnectionFlow(d.id, target.id, flow === 'none' ? null : flow);
+				return { id: target.id };
 			})
 	);
 

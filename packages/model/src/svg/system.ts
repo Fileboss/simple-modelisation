@@ -1,8 +1,9 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
-import { placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
+import { pillText, placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
 import { estimatedSize, type Size } from '../layout.ts';
 import { COMPONENT_TYPE_IDS } from '../component-types.ts';
 import {
+	FLOW_COLORS,
 	HOSTING_MARKS,
 	PROVIDER_MARKS,
 	RUNTIME_LOOKS,
@@ -16,6 +17,7 @@ import type {
 	DiagramEdge,
 	DiagramNode,
 	DiskKind,
+	Flow,
 	Hosting,
 	Provider,
 	Runtime
@@ -68,6 +70,14 @@ export function systemSvg(
 	const zones = nodes.filter((n) => n.type === 'zone').sort((a, b) => depth(a.id) - depth(b.id));
 	const components = nodes.filter((n) => n.type === 'component');
 	const connections = edges.filter((e) => e.type === 'connection');
+	// Each Connection's Flow and pill text, once: a Flow a newer file or peer wrote that this
+	// version does not know is drawn as none.
+	const pills = new Map(
+		connections.map((e) => {
+			const flow = own(FLOW_COLORS, e.flow) ? (e.flow as Flow) : undefined;
+			return [e.id, { flow, text: pillText(String(e.label ?? ''), flow && names.flows[flow]) }];
+		})
+	);
 
 	// Labels go where the canvas puts them: on their routes, clear of boxes and of each other.
 	const solid = new Map(components.map((n) => [n.id, boxes.get(n.id)!]));
@@ -77,11 +87,15 @@ export function systemSvg(
 			id: e.id,
 			source: e.source,
 			target: e.target,
-			label: String(e.label ?? ''),
+			label: pills.get(e.id)!.text,
 			points: e.points as Point[] | undefined
 		})),
 		measure
 	);
+	// One arrowhead per color drawn: the neutral one, and each Flow's.
+	const colors = new Set<string>();
+	// Pills go over every line, as on the canvas: a later line must not cross an earlier pill.
+	const pillShapes: string[] = [];
 
 	const parts: string[] = [];
 	const extent: Box[] = [...boxes.values()];
@@ -93,20 +107,28 @@ export function systemSvg(
 		const route = connectionRoute(source, target, edge.points as Point[] | undefined);
 		// A route may run outside the boxes (around them): the frame holds it too.
 		for (const p of route) extent.push({ x: p.x - 6, y: p.y - 6, width: 12, height: 12 });
+		const { flow, text } = pills.get(edge.id)!;
+		const color = flow ? FLOW_COLORS[flow] : EDGE;
+		colors.add(color);
 		parts.push(
-			`<path d="${routedPath(route)}" fill="none" stroke="${EDGE}" stroke-width="1.5" marker-end="url(#arrow)"/>`
+			`<path d="${routedPath(route)}" fill="none" stroke="${color}" stroke-width="1.5" marker-end="url(#${arrowId(color)})"/>`
 		);
 		const at = labels.get(edge.id);
-		const text = String(edge.label ?? '');
 		if (at && text) {
 			const width = measure(text) + 14;
 			extent.push({ x: at.x - width / 2, y: at.y - 9, width, height: 18 });
-			parts.push(
+			// The Flow's name in its color, then the rest of the pill text.
+			const name = flow ? names.flows[flow] : '';
+			const content = flow
+				? `<tspan fill="${color}">${escape(name)}</tspan>${escape(text.slice(name.length))}`
+				: escape(text);
+			pillShapes.push(
 				`<rect x="${at.x - width / 2}" y="${at.y - 9}" width="${width}" height="18" rx="4" fill="#fff" stroke="${BORDER}"/>`,
-				`<text x="${at.x}" y="${at.y}" font-size="11.25" fill="${TEXT}" text-anchor="middle" dy="0.35em">${escape(text)}</text>`
+				`<text x="${at.x}" y="${at.y}" font-size="11.25" fill="${TEXT}" text-anchor="middle" dy="0.35em">${content}</text>`
 			);
 		}
 	}
+	parts.push(...pillShapes);
 	for (const component of components) {
 		parts.push(
 			componentShape(
@@ -125,7 +147,12 @@ export function systemSvg(
 	const height = Math.ceil(frame.height + margin * 2 + BADGE / 2);
 	return [
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${width} ${height}" font-family="${FONT}">`,
-		`<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${EDGE}"/></marker></defs>`,
+		`<defs>${[...colors]
+			.map(
+				(color) =>
+					`<marker id="${arrowId(color)}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${color}"/></marker>`
+			)
+			.join('')}</defs>`,
 		`<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#fff"/>`,
 		...parts,
 		'</svg>'
@@ -148,6 +175,9 @@ function zoneShape(zone: DiagramNode, box: Box, names: SvgNames): string {
 		`<text x="${box.x + 16 + logo}" y="${box.y + 16}" font-size="12" font-weight="600" fill="#475569" dy="0.35em">${escape(name)}</text>`
 	].join('');
 }
+
+/** An arrowhead's marker id: "arrow" for the neutral color, else named after its color. */
+const arrowId = (color: string) => (color === EDGE ? 'arrow' : `arrow-${color.slice(1)}`);
 
 function componentShape(
 	component: DiagramNode,

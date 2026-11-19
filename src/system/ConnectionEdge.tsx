@@ -1,8 +1,10 @@
 import { BaseEdge, EdgeLabelRenderer, useInternalNode, type EdgeProps } from '@xyflow/react';
 import type { RemoteHighlight } from '../canvas/DiagramCanvas';
 import { boxOf, connectionRoute, labelPoint, routedPath } from '../canvas/geometry';
-import type { PlacedLabel } from './label-placement';
+import { connectionPill, type PlacedLabel } from './label-placement';
 import type { ConnectionEdge as ConnectionData } from '@simple-modelisation/model/project.ts';
+import { FLOW_COLORS } from '@simple-modelisation/model/looks.ts';
+import { strings } from '../ui/strings';
 
 /**
  * An arrow between two Components, with its label in the middle: along the
@@ -13,13 +15,20 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 	const targetNode = useInternalNode(target);
 	if (!sourceNode || !targetNode) return null;
 
-	const { label, points, labelAt } = data as ConnectionData & PlacedLabel;
+	const connection = data as ConnectionData & PlacedLabel;
+	const { points, labelAt, flow } = connection;
 	// The same route the label placement used: stored bends, else a right-angle step.
 	const route = connectionRoute(boxOf(sourceNode), boxOf(targetNode), points);
 	const path = routedPath(route);
 	const at = labelAt ?? labelPoint(route);
 	const { remoteColor } = data as RemoteHighlight;
-	const color = selected ? 'var(--accent)' : (remoteColor ?? '#475569');
+	// Read through the Project document, which drops a Flow it does not know; checked again
+	// so that a peer's "constructor" can never index the catalogs.
+	const known = flow && Object.hasOwn(FLOW_COLORS, flow) ? flow : undefined;
+	const flowColor = known && FLOW_COLORS[known];
+	const pill = connectionPill(connection);
+	const flowName = known ? strings.flow.names[known] : '';
+	const color = selected ? 'var(--accent)' : (remoteColor ?? flowColor ?? '#475569');
 	const arrow = `arrow-${id}`;
 
 	return (
@@ -43,7 +52,7 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 				markerEnd={`url(#${arrow})`}
 				style={{ stroke: color, strokeWidth: remoteColor && !selected ? 3 : 1.5 }}
 			/>
-			{label && (
+			{pill && (
 				<EdgeLabelRenderer>
 					<div
 						className="edge-label"
@@ -51,7 +60,8 @@ export function ConnectionEdge({ id, source, target, data, selected }: EdgeProps
 							transform: `translate(-50%, -50%) translate(${at.x}px, ${at.y}px)`
 						}}
 					>
-						{label}
+						{known && <span style={{ color: flowColor }}>{flowName}</span>}
+						{pill.slice(flowName.length)}
 					</div>
 				</EdgeLabelRenderer>
 			)}

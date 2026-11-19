@@ -82,6 +82,7 @@ describe('MCP endpoint', () => {
 			'rename_element',
 			'set_cardinality',
 			'set_component',
+			'set_connection',
 			'set_disk_kind',
 			'set_hosting',
 			'set_provider',
@@ -89,6 +90,53 @@ describe('MCP endpoint', () => {
 			'set_skin',
 			'set_zone'
 		]);
+	});
+
+	it('says what the data of a Connection does, and changes its label and Flow', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'service', name: 'platform' });
+		await call(client, 'add_component', { ...at, type: 'database', name: 'material' });
+		await call(client, 'add_component', { ...at, type: 'database', name: 'KDP' });
+		await call(client, 'connect_components', {
+			...at,
+			from: 'platform',
+			to: 'material',
+			flow: 'read-write'
+		});
+		const { id: kdp } = await call(client, 'connect_components', {
+			...at,
+			from: 'platform',
+			to: 'KDP',
+			label: 'SQL'
+		});
+		await call(client, 'set_connection', {
+			...at,
+			connection: kdp,
+			label: 'nightly',
+			flow: 'read'
+		});
+		const read = async () =>
+			(await call(client, 'get_diagram', at)).connections.map(
+				(c: { to: string; label: string; flow: string | null }) => [c.to, c.label, c.flow]
+			);
+		expect(await read()).toEqual([
+			['material', '', 'read-write'],
+			['KDP', 'nightly', 'read']
+		]);
+		await call(client, 'set_connection', { ...at, connection: kdp, label: '', flow: 'none' });
+		expect((await read())[1]).toEqual(['KDP', '', null]);
+		const { connections } = await call(client, 'get_diagram', at);
+		const unknown = await call(client, 'set_connection', {
+			...at,
+			connection: 'nope',
+			flow: 'read'
+		});
+		expect(unknown.error).toBe(
+			`No connection "nope". Known: ${connections[0].id} (platform → material), ${kdp} (platform → KDP).`
+		);
+		const empty = await call(client, 'set_connection', { ...at, connection: kdp });
+		expect(empty.error).toBe('Give a label or a flow.');
 	});
 
 	it('reads a Shared Project from its Share link', async () => {

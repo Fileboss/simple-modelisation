@@ -107,7 +107,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				id: c.id,
 				from: nameOf(c.source),
 				to: nameOf(c.target),
-				label: c.label
+				label: c.label,
+				flow: c.flow ?? null
 			}))
 		};
 	}

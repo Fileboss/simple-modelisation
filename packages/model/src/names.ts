@@ -1,5 +1,5 @@
 import type { ComponentType } from './component-types.ts';
-import type { DiskKind, Hosting, Provider } from './project.ts';
+import type { DiskKind, Flow, Hosting, Provider } from './project.ts';
 
 /**
  * The catalog's names in English: what the MCP server prints in images, and
@@ -10,6 +10,7 @@ export const ENGLISH_NAMES: {
 	diskKinds: Record<DiskKind, string>;
 	hostings: Record<Hosting, string>;
 	providers: Record<Provider, string>;
+	flows: Record<Flow, string>;
 	/** What badges are named by, before their value: "Hosting: Docker". */
 	titles: { hosting: string; provider: string; runtime: string };
 } = {
@@ -54,5 +55,6 @@ export const ENGLISH_NAMES: {
 		render: 'Render',
 		railway: 'Railway'
 	},
+	flows: { read: 'Read', write: 'Write', 'read-write': 'Read/Write' },
 	titles: { hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }
 };

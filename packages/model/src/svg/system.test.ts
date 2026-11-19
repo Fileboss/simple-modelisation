@@ -103,6 +103,25 @@ describe('systemSvg', () => {
 		expect(svg).toMatch(/<path d="M12 3a9 9[^"]*" fill="none" stroke="#0284c7"/);
 	});
 
+	it('colors a Connection by its Flow and names the Flow in its pill', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const app = project.addComponent(d, 'service', 'platform', 0, 0);
+		const images = project.addComponent(d, 'service', 'getImage', 400, 0);
+		const db = project.addComponent(d, 'database', 'material', 400, 200);
+		const rest = project.addConnection(d, app, images)!;
+		project.setEdgeLabel(d, rest, 'REST');
+		project.setConnectionFlow(d, rest, 'read');
+		project.setConnectionFlow(d, project.addConnection(d, app, db)!, 'read-write');
+		const svg = systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES });
+		expect(svg).toContain('stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-2563eb)"');
+		expect(svg).toContain('<marker id="arrow-2563eb"');
+		expect(svg).toContain('<tspan fill="#2563eb">Read</tspan> · REST');
+		// A Flow without a label still gets its pill.
+		expect(svg).toContain('<tspan fill="#7c3aed">Read/Write</tspan></text>');
+		expect(svg).not.toContain('<marker id="arrow"');
+	});
+
 	it('reads only catalog entries, whatever a peer writes', () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');

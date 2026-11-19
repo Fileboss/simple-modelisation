@@ -17,6 +17,7 @@ export const SVG_NAMES = {
 	diskKinds: strings.disk.names,
 	hostings: strings.hosting.names,
 	providers: strings.provider.names,
+	flows: strings.flow.names,
 	titles: {
 		hosting: strings.hosting.title,
 		provider: strings.provider.title,
