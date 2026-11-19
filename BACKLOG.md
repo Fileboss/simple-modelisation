@@ -11,7 +11,7 @@ tags: [backlog]
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
 
-- v0.1 release: CHANGELOG, v0.1.0 tag, public ghcr package, GitHub rulesets on main and v* tags, Actions read-only by default
+- v0.1 release with /sdlc:release (CHANGELOG, v0.1.0 tag), then the ghcr package made public
 
 After v0.1:
 
@@ -34,6 +34,7 @@ After v0.1:
 
 ## Done
 
+- github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only
 - [pre-release-fixes](docs/specs/pre-release-fixes/): v0.1, fixes from the global review: Safari cut, Note editing, static cache, documents per address, paste
 - [relay-limits](docs/specs/relay-limits/): v0.1, bound what one client can do to a public relay: documents per address, message and Presence size, true document size, malformed peer fields, proxy-only deployments
 - [export-legend](docs/specs/export-legend/): v0.1, a Legend in exported images of System design diagrams (Flows, Providers, Hostings, Runtimes), with a toggle
