@@ -1,12 +1,12 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
-import { DOCUMENT_TOO_LARGE, SYNC_PATH, type SyncIntent } from './protocol.ts';
+import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
 import { startSyncServer, type SyncServer, type SyncServerOptions } from './sync-server.ts';
 
 const cleanups: (() => unknown)[] = [];
@@ -17,6 +17,7 @@ afterEach(async () => {
 async function start(options: Partial<SyncServerOptions> = {}) {
 	const dataDir = options.dataDir ?? mkdtempSync(path.join(tmpdir(), 'sync-test-'));
 	const logs: string[] = [];
+	// A relay gets a data directory too: it must write nothing there.
 	const server = await startSyncServer({ port: 0, ...options, dataDir, log: (m) => logs.push(m) });
 	cleanups.push(() => server.stop());
 	if (!options.dataDir) cleanups.unshift(() => rmSync(dataDir, { recursive: true, force: true }));
@@ -31,20 +32,23 @@ function connect(
 	options: { doc?: Y.Doc; onStateless?: (payload: string) => void } = {}
 ) {
 	const doc = options.doc ?? new Y.Doc();
-	return new Promise<{ doc: Y.Doc; outcome: 'synced' | 'refused'; provider: HocuspocusProvider }>(
-		(resolve) => {
-			const provider: HocuspocusProvider = new HocuspocusProvider({
-				url: `ws://127.0.0.1:${server.port}${SYNC_PATH}`,
-				name,
-				document: doc,
-				token: intent,
-				onStateless: ({ payload }) => options.onStateless?.(payload),
-				onSynced: () => resolve({ doc, outcome: 'synced', provider }),
-				onAuthenticationFailed: () => resolve({ doc, outcome: 'refused', provider })
-			});
-			cleanups.push(() => provider.destroy());
-		}
-	);
+	return new Promise<{
+		doc: Y.Doc;
+		outcome: 'synced' | 'refused';
+		provider: HocuspocusProvider;
+		reason?: string;
+	}>((resolve) => {
+		const provider: HocuspocusProvider = new HocuspocusProvider({
+			url: `ws://127.0.0.1:${server.port}${SYNC_PATH}`,
+			name,
+			document: doc,
+			token: intent,
+			onStateless: ({ payload }) => options.onStateless?.(payload),
+			onSynced: () => resolve({ doc, outcome: 'synced', provider }),
+			onAuthenticationFailed: ({ reason }) => resolve({ doc, outcome: 'refused', provider, reason })
+		});
+		cleanups.push(() => provider.destroy());
+	});
 }
 
 const text = (doc: Y.Doc) => doc.getText('t').toString();
@@ -172,5 +176,65 @@ describe('sync server', () => {
 		const guest = await connect(second.server, id, 'join');
 		expect(guest.outcome).toBe('synced');
 		await vi.waitFor(() => expect(text(guest.doc)).toBe('kept'));
+	});
+});
+
+describe('relay mode (no storage)', () => {
+	it('relays a Shared Project while someone has it open, then forgets it', async () => {
+		const { server, dataDir } = await start({ storage: 'none' });
+		const id = crypto.randomUUID();
+		const owner = await connect(server, id, 'share');
+		owner.doc.getText('t').insert(0, 'hello');
+		const guest = await connect(server, id, 'join');
+		await vi.waitFor(() => expect(text(guest.doc)).toBe('hello'));
+
+		// Everyone leaves: the server keeps nothing, and joining says why.
+		owner.provider.destroy();
+		guest.provider.destroy();
+		// Until the server notices they left, a probe still gets in: it leaves at once.
+		await vi.waitFor(
+			async () => {
+				const late = await connect(server, id, 'join');
+				late.provider.destroy();
+				expect(late).toMatchObject({ outcome: 'refused', reason: REFUSAL.notOpen });
+			},
+			{ timeout: 5000, interval: 100 }
+		);
+		expect(readdirSync(dataDir)).toEqual([]);
+
+		// The owner comes back with their copy: the Project is shared again, content intact.
+		const back = await connect(server, id, 'share', { doc: owner.doc });
+		expect(back.outcome).toBe('synced');
+		const again = await connect(server, id, 'join');
+		await vi.waitFor(() => expect(text(again.doc)).toBe('hello'));
+	});
+
+	it('caps the documents in memory, refusing a new share with the full reason', async () => {
+		const { server } = await start({ storage: 'none', maxDocuments: 1 });
+		expect((await connect(server, crypto.randomUUID(), 'share')).outcome).toBe('synced');
+		const second = await connect(server, crypto.randomUUID(), 'share');
+		expect(second).toMatchObject({ outcome: 'refused', reason: REFUSAL.full });
+	});
+
+	it('keeps the cap when many shares arrive at once', async () => {
+		const { server } = await start({ storage: 'none', maxDocuments: 2 });
+		const outcomes = await Promise.all(
+			Array.from({ length: 6 }, () => connect(server, crypto.randomUUID(), 'share'))
+		);
+		expect(outcomes.filter((o) => o.outcome === 'synced')).toHaveLength(2);
+		expect(outcomes.filter((o) => o.reason === REFUSAL.full)).toHaveLength(4);
+	});
+
+	it('has no MCP endpoint, and refuses to start with one', async () => {
+		const { server } = await start({ storage: 'none' });
+		const status = await new Promise<number>((resolve) => {
+			request({ port: server.port, path: '/mcp', method: 'POST' }, (response) =>
+				resolve(response.statusCode ?? 0)
+			).end();
+		});
+		expect(status).toBe(404);
+		await expect(startSyncServer({ port: 0, storage: 'none', mcp: true })).rejects.toThrow(
+			/MCP endpoint needs storage/
+		);
 	});
 });

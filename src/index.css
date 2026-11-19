@@ -583,7 +583,9 @@ select {
 	color: #92400e;
 }
 
-.sync-full {
+.sync-full,
+.sync-busy,
+.sync-refused {
 	background: #fee2e2;
 	color: #991b1b;
 }

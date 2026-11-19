@@ -43,7 +43,9 @@ export const strings = {
 			local: 'Local',
 			synced: 'Synced',
 			offline: 'Offline',
-			full: 'Too large: changes stay on this device'
+			full: 'Too large: changes stay on this device',
+			busy: 'Sharing unavailable, the server is busy: changes stay on this device for now',
+			refused: 'Sharing refused by the server: changes stay on this device'
 		},
 		copyFailed: 'Copy this link:',
 		stopSharing: 'Stop sharing',
@@ -113,6 +115,9 @@ export const strings = {
 	join: {
 		joining: 'Opening the shared project…',
 		notFound: 'This shared project does not exist.',
+		notOpen:
+			'Nobody has this project open right now: this server keeps nothing. Ask whoever shared it to open it, then try again.',
+		busy: 'The server is busy: try again later.',
 		unreachable: 'The server cannot be reached. Try again later.'
 	},
 	canvas: {

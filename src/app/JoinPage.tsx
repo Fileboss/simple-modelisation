@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import * as Y from 'yjs';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { saveProjectDoc } from '../storage/persistence';
+import { REFUSAL } from '../../server/src/protocol.ts';
 import { connectSync } from '../storage/sync';
 import { strings } from '../ui/strings';
 import { useRegistry } from './registry-context';
@@ -12,7 +13,9 @@ export function JoinPage() {
 	const { projectId = '' } = useParams();
 	const registry = useRegistry();
 	const navigate = useNavigate();
-	const [problem, setProblem] = useState<'notFound' | 'unreachable' | null>(null);
+	const [problem, setProblem] = useState<'notFound' | 'notOpen' | 'busy' | 'unreachable' | null>(
+		null
+	);
 
 	useEffect(() => {
 		if (registry.get(projectId)) {
@@ -39,10 +42,13 @@ export function JoinPage() {
 					void navigate(`/p/${projectId}`, { replace: true });
 				});
 			},
-			onRefused: () => {
+			onRefused: (reason) => {
 				settle();
 				doc.destroy();
-				setProblem('notFound');
+				// A relay keeps a Project only while someone has it open.
+				setProblem(
+					reason === REFUSAL.notOpen ? 'notOpen' : reason === REFUSAL.full ? 'busy' : 'notFound'
+				);
 			}
 		});
 		const timeout = setTimeout(() => {
