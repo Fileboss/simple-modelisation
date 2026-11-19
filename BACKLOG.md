@@ -22,6 +22,7 @@ tags: [backlog]
 
 ## Done
 
+- [relay-mode](docs/specs/relay-mode/): sharing without server storage, for a public deployment
 - [svg-export](docs/specs/svg-export/): System design diagrams as plain SVG, over MCP and in the app
 - [component-type-picker](docs/specs/component-type-picker/): change a Component's type in the panel
 - [set-component](docs/specs/set-component/): set_component MCP tool (type, name, place)

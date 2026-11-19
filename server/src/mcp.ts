@@ -21,6 +21,8 @@ type Options = {
 	log: (message: string) => void;
 	maxRequestsPerMinute: number;
 	maxDocumentBytes: number;
+	/** Documents held in memory at once, as for the sync. */
+	maxDocuments: number;
 	clientIp: (request: IncomingMessage) => string;
 };
 
@@ -41,7 +43,8 @@ export const projectArgument = z
  * synced document, so open browsers see their edits live.
  */
 export function createMcpHandler(options: Options) {
-	const { instance, store, log, maxRequestsPerMinute, maxDocumentBytes, clientIp } = options;
+	const { instance, store, log, maxRequestsPerMinute, maxDocumentBytes, maxDocuments, clientIp } =
+		options;
 	const requests = new Map<string, number[]>();
 
 	const open = async (reference: string) => {
@@ -50,6 +53,10 @@ export function createMcpHandler(options: Options) {
 		// Only Shared Projects that exist: an agent never creates one by naming it.
 		if (!instance.documents.has(id) && !store.has(id)) {
 			throw new ToolError('No Shared Project has this link.');
+		}
+		// Loading it would take memory past what the server allows.
+		if (!instance.documents.has(id) && instance.documents.size >= maxDocuments) {
+			throw new ToolError('The server is busy: try again later.');
 		}
 		return instance.openDirectConnection(id, { agent: true });
 	};

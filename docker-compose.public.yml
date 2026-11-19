@@ -1,0 +1,14 @@
+# Example public deployment: a relay that stores nothing. Shared Projects live in
+# memory while someone has them open; no volume, no MCP endpoint. Put it behind a
+# reverse proxy that passes WebSocket upgrades on /sync and sets X-Forwarded-For.
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      STORAGE: none
+      MAX_DOCUMENTS: '500'
+      TRUST_PROXY: 'true'
+    read_only: true
+    restart: unless-stopped

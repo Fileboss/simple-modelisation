@@ -5,13 +5,22 @@ import type { Socket } from 'node:net';
 import * as Y from 'yjs';
 import { DocumentStore } from './document-store.ts';
 import { createMcpHandler, MCP_PATH } from './mcp.ts';
-import { DOCUMENT_TOO_LARGE, SYNC_PATH, type SyncIntent } from './protocol.ts';
+import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
 import { serveStatic } from './static-files.ts';
 
 export type SyncServerOptions = {
 	port: number;
-	/** Where the SQLite file lives. */
-	dataDir: string;
+	/**
+	 * `sqlite` keeps Shared Projects in a file; `none` makes the server a relay:
+	 * a document lives in memory only while someone has it open.
+	 */
+	storage?: 'sqlite' | 'none';
+	/** Where the SQLite file lives (sqlite storage only). */
+	dataDir?: string;
+	/** The MCP endpoint; it works on stored documents, so not without storage. */
+	mcp?: boolean;
+	/** Documents held in memory at once; past it, a new one is refused. */
+	maxDocuments?: number;
 	/** The built app to serve; without it, only the sync endpoint answers. */
 	staticDir?: string;
 	maxDocumentBytes?: number;
@@ -35,7 +44,10 @@ const CLIENT_IP_HEADER = 'x-simple-modelisation-client-ip';
 /** One Node process serving the app and syncing Shared Projects (ADR 0003). */
 export async function startSyncServer(options: SyncServerOptions): Promise<SyncServer> {
 	const {
+		storage = 'sqlite',
 		dataDir,
+		mcp: mcpOn = storage === 'sqlite',
+		maxDocuments = 500,
 		staticDir,
 		maxDocumentBytes = 5 * 1024 * 1024,
 		maxConnectionsPerIp = 50,
@@ -43,36 +55,48 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		trustProxy = false,
 		log = console.log
 	} = options;
-	const store = new DocumentStore(dataDir);
+	if (storage === 'none' && mcpOn) throw new Error('The MCP endpoint needs storage: set MCP=off.');
+	if (storage === 'sqlite' && !dataDir) throw new Error('SQLite storage needs a data directory.');
+	const store = storage === 'sqlite' && dataDir ? new DocumentStore(dataDir) : null;
 	const connectionsPerIp = new Map<string, number>();
 	const creationsPerIp = new Map<string, number[]>();
+	// Documents allowed to open whose loading has not finished, so concurrent openings count.
+	const opening = new Map<string, number>();
+	const forgetStaleOpenings = () => {
+		for (const [name, at] of opening) if (Date.now() - at > 30_000) opening.delete(name);
+	};
 	// Size of each open document: its stored size plus the updates applied since.
 	const sizes = new Map<string, number>();
 
-	const refuse = (reason: string, detail: string): never => {
-		log(`refused ${reason}: ${detail}`);
-		throw new Error(reason);
+	// `reason` reaches the client (REFUSAL); the log keeps what was refused, on one line. The
+	// error has no message: Hocuspocus then prints no stack trace, which anyone could trigger.
+	const refuse = (logged: string, detail: string, reason?: string): never => {
+		log(`refused ${logged}: ${detail}`);
+		throw Object.assign(new Error(), reason ? { reason } : {});
 	};
 
 	const server = new Server({
 		port: options.port,
 		quiet: true,
 		stopOnSignals: false,
-		extensions: [
-			new Database({
-				fetch: async ({ documentName }) => store.fetch(documentName),
-				store: async ({ documentName, state }) => {
-					store.store(documentName, state);
-					sizes.set(documentName, state.byteLength);
-				}
-			})
-		],
+		extensions: store
+			? [
+					new Database({
+						fetch: async ({ documentName }) => store.fetch(documentName),
+						store: async ({ documentName, state }) => {
+							store.store(documentName, state);
+							sizes.set(documentName, state.byteLength);
+						}
+					})
+				]
+			: [],
 
 		async onRequest({ request, response }) {
 			const isMcp = new URL(request.url ?? '/', 'http://local').pathname === MCP_PATH;
 			if (!isMcp && !staticDir) return;
 			try {
-				if (isMcp) await mcp(request, response);
+				if (isMcp && !mcp) response.writeHead(404).end();
+				else if (isMcp) await mcp!(request, response);
 				else await serveStatic(staticDir!, request, response);
 			} catch (error) {
 				// Hocuspocus rethrows hook errors from its HTTP handler, which would stop the process.
@@ -105,18 +129,40 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		},
 
 		async onAuthenticate({ documentName, token, instance, requestHeaders }) {
-			if (!UUID.test(documentName)) refuse('document name', documentName);
-			if (instance.documents.has(documentName) || store.has(documentName)) return;
-			if ((token as SyncIntent) !== 'share') refuse('unknown document', documentName);
+			if (!UUID.test(documentName)) refuse('document name', documentName, REFUSAL.refused);
+			const loaded = instance.documents.get(documentName);
+			const sharing = (token as SyncIntent) === 'share';
+			// A relay's document with nobody left is being forgotten: joining it would attach to
+			// what is about to go. The one who shares it brings it back.
+			if (loaded && (store || sharing || loaded.getConnectionsCount() > 0)) return;
+			const stored = store?.has(documentName) ?? false;
+			if (!stored && !sharing) {
+				refuse('unknown document', documentName, store ? undefined : REFUSAL.notOpen);
+			}
+			// Opening one more document: memory is bounded, openings still loading included.
+			forgetStaleOpenings();
+			const open = instance.documents.size + opening.size;
+			if (!opening.has(documentName) && open >= maxDocuments) {
+				refuse('document limit', `${open} open`, REFUSAL.full);
+			}
+			opening.set(documentName, Date.now());
+			if (stored) return;
 
-			// Creating a document: the self-declared intent proves nothing, so creations are rate limited.
+			// Creating a document: the self-declared intent proves nothing, so creations are rate
+			// limited. A relay re-creates a document each time someone reopens it, and its memory
+			// is bounded by the open documents and the connections per address instead.
+			if (!store) return;
 			const ip = requestHeaders.get(CLIENT_IP_HEADER) ?? 'unknown';
 			const recent = (creationsPerIp.get(ip) ?? []).filter((at) => Date.now() - at < HOUR);
-			if (recent.length >= maxNewDocumentsPerIpPerHour) refuse('creation limit', ip);
+			if (recent.length >= maxNewDocumentsPerIpPerHour) {
+				opening.delete(documentName);
+				refuse('creation limit', ip, REFUSAL.refused);
+			}
 			creationsPerIp.set(ip, [...recent, Date.now()]);
 		},
 
 		async afterLoadDocument({ documentName, document }) {
+			opening.delete(documentName);
 			sizes.set(documentName, Y.encodeStateAsUpdate(document).byteLength);
 			document.on('update', (update: Uint8Array) => {
 				sizes.set(documentName, (sizes.get(documentName) ?? 0) + update.byteLength);
@@ -137,21 +183,25 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		}
 	});
 
-	const mcp = createMcpHandler({
-		instance: server.hocuspocus,
-		store,
-		log,
-		maxRequestsPerMinute: options.maxMcpRequestsPerMinute ?? 120,
-		maxDocumentBytes,
-		clientIp: (request) => clientIp(request, trustProxy)
-	});
+	const mcp =
+		mcpOn && store
+			? createMcpHandler({
+					instance: server.hocuspocus,
+					store,
+					maxDocuments,
+					log,
+					maxRequestsPerMinute: options.maxMcpRequestsPerMinute ?? 120,
+					maxDocumentBytes,
+					clientIp: (request) => clientIp(request, trustProxy)
+				})
+			: null;
 
 	await server.listen();
 	let stopping: Promise<void> | undefined;
 	return {
 		port: server.address.port,
 		// Stores pending documents, then closes; calling it again waits for the first call.
-		stop: () => (stopping ??= server.destroy().then(() => store.close()))
+		stop: () => (stopping ??= server.destroy().then(() => store?.close()))
 	};
 }
 
