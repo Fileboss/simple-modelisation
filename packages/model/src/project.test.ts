@@ -566,6 +566,45 @@ describe('Flow', () => {
 	});
 });
 
+describe('Note', () => {
+	it('writes, rewrites and recolors a Note, in either kind of Diagram', () => {
+		const project = new ProjectDocument();
+		for (const kind of ['system', 'mcd'] as const) {
+			const d = project.addDiagram(kind);
+			const note = project.addNote(d, 10.4, 20.6, 'Nightly sync  \n\n');
+			const read = () => project.nodes(d).find((n) => n.id === note)!;
+			expect(read()).toMatchObject({ type: 'note', x: 10, y: 21, text: 'Nightly sync' });
+			expect(read()).not.toHaveProperty('color');
+			project.setNoteText(d, note, 'At 2 a.m.');
+			project.setNoteColor(d, note, 'green');
+			expect(read()).toMatchObject({ text: 'At 2 a.m.', color: 'green' });
+			project.setNoteColor(d, note, 'black' as never);
+			expect(read().color).toBe('green');
+			project.setNoteColor(d, note, 'yellow');
+			expect(read()).not.toHaveProperty('color');
+		}
+	});
+
+	it('is no end for a Connection and keeps through a file, an unknown color read as yellow', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const api = project.addComponent(d, 'service', 'API', 0, 0);
+		const note = project.addNote(d, 300, 0, 'Being replaced');
+		expect(project.addConnection(d, api, note)).toBeNull();
+		project.setNoteColor(d, note, 'blue');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).nodes(d)[1]).toMatchObject({
+			text: 'Being replaced',
+			color: 'blue'
+		});
+		file.diagrams[0].nodes[1].color = 'black';
+		expect(ProjectDocument.fromFile(file).nodes(d)[1]).not.toHaveProperty('color');
+		// An empty Note is a Note still.
+		file.diagrams[0].nodes[1].text = '';
+		expect(() => ProjectDocument.fromFile(file)).not.toThrow();
+	});
+});
+
 describe('Person', () => {
 	it('has no Hosting nor Provider, set, kept from another type, read or taken from a Zone', () => {
 		const project = new ProjectDocument();

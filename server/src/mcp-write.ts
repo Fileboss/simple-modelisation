@@ -6,6 +6,7 @@ import {
 	DISK_KINDS,
 	FLOWS,
 	HOSTINGS,
+	NOTE_COLORS,
 	PROVIDERS,
 	RUNTIMES,
 	type Attribute,
@@ -20,7 +21,8 @@ import {
 import {
 	estimatedSize,
 	layoutDiagram,
-	layoutFingerprint
+	layoutFingerprint,
+	noteSize
 } from '@simple-modelisation/model/layout.ts';
 import { SERVICE_FRAMEWORKS, SKIN_IDS, skinFits } from '@simple-modelisation/model/skins.ts';
 import {
@@ -621,6 +623,76 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	);
 
 	tool(
+		'add_note',
+		'Writes a Note on a Diagram (either kind): free text on a sticky note that explains the Diagram (a schedule, a constraint) without being part of it. Placed beside the element given in near, else in a free spot; Tidy up leaves it where it is.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			text: z.string().max(2000),
+			color: z
+				.enum(NOTE_COLORS)
+				.optional()
+				.describe('The paper: yellow (default), pink, green, blue, purple.'),
+			near: z.string().optional().describe('Element id or exact name to place the Note beside.')
+		},
+		({ project, diagram, text, color, near }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram);
+				const nodes = nodesOf(p, d.id);
+				let spot: { x: number; y: number };
+				if (near) {
+					const target = pick(
+						nodes.filter((n) => n.type !== 'note'),
+						near,
+						'element'
+					);
+					// Beside it in its Zone, room made as for any element; else to its right if free.
+					const zone = zoneParents(nodes, estimatedSize).get(target.id);
+					const box = nodeBox(target, estimatedSize);
+					const right = { x: box.x + box.width + 40, y: box.y, ...noteSize(text) };
+					const free = !nodes.some((n) => overlaps(nodeBox(n, estimatedSize), right));
+					spot = zone
+						? placeNew(p, d.id, noteSize(text), zone)
+						: free
+							? right
+							: spotAmong(nodes, noteSize(text));
+				} else {
+					spot = d.kind === 'system' ? spotAmong(nodes, noteSize(text)) : freeSpot(nodes);
+				}
+				const id = p.addNote(d.id, spot.x, spot.y, text);
+				if (color) p.setNoteColor(d.id, id, color);
+				return { id };
+			})
+	);
+
+	tool(
+		'set_note',
+		'Rewrites a Note and recolors it.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			note: z.string().describe('Note id, from get_diagram.'),
+			text: z.string().max(2000).optional(),
+			color: z.enum(NOTE_COLORS).optional()
+		},
+		({ project, diagram, note, text, color }) =>
+			access.write(project, (p) => {
+				if (text === undefined && !color) throw new ToolError('Give a text or a color.');
+				const d = pickDiagram(p, diagram);
+				const notes = nodesOf(p, d.id, 'note');
+				const target = notes.find((n) => n.id === note);
+				if (!target) {
+					throw new ToolError(
+						`No note "${note}". Known: ${notes.map((n) => n.id).join(', ') || 'none'}.`
+					);
+				}
+				if (text !== undefined) p.setNoteText(d.id, target.id, text);
+				if (color) p.setNoteColor(d.id, target.id, color);
+				return { id: target.id };
+			})
+	);
+
+	tool(
 		'add_entity',
 		'Adds an Entity to an MCD, placed next to the others. Without an identifier Attribute it gets an auto-increment id. After adding several, call layout_diagram.',
 		{
@@ -657,7 +729,12 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
 				if (attribute.type) parseDataType(attribute.type);
-				const target = pick(nodesOf(p, d.id), element, 'element');
+				// A Note has text, neither a name nor Attributes.
+				const target = pick(
+					nodesOf(p, d.id).filter((n) => n.type !== 'note'),
+					element,
+					'element'
+				);
 				if (attribute.identifier && target.type !== 'entity') {
 					throw new ToolError('Only an Entity has an Identifier.');
 				}
@@ -750,7 +827,12 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					p.renameDiagram(d.id, name);
 					return { id: d.id };
 				}
-				const target = pick(nodesOf(p, d.id), element, 'element');
+				// A Note has text, neither a name nor Attributes.
+				const target = pick(
+					nodesOf(p, d.id).filter((n) => n.type !== 'note'),
+					element,
+					'element'
+				);
 				p.renameNode(d.id, target.id, name);
 				return { id: target.id };
 			})

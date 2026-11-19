@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimatedSize, layoutDiagram } from './layout.ts';
+import { estimatedSize, noteLines, layoutDiagram } from './layout.ts';
 import { ProjectDocument } from './project.ts';
 
 const overlapping = (
@@ -249,6 +249,48 @@ describe('layoutDiagram, Clients', () => {
 });
 
 describe('layoutDiagram, two-way Connections', () => {
+	it("cuts a Note's text into lines at words, breaking only a word too long", () => {
+		expect(noteLines('Syncs every night at 2 a.m. from KDP')).toEqual([
+			'Syncs every night at 2',
+			'a.m. from KDP'
+		]);
+		expect(noteLines('a\n\nb')).toEqual(['a', '', 'b']);
+		expect(noteLines('x'.repeat(30))).toEqual(['x'.repeat(22), 'x'.repeat(8)]);
+	});
+
+	it('leaves Notes where they are', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 500, 500);
+		const b = project.addComponent(d, 'database', 'B', 500, 500);
+		project.addConnection(d, a, b);
+		const note = project.addNote(d, 37, 41, 'Nightly');
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		expect(positions.has(note)).toBe(false);
+		expect(positions.has(a)).toBe(true);
+	});
+
+	it('lays a Note in a Zone out with its content, so the Zone still holds it', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const zone = project.addZone(d, 0, 0, 600, 400, 'VPC');
+		project.addComponent(d, 'service', 'A', 40, 60);
+		const note = project.addNote(d, 300, 200, 'Nightly');
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		expect(positions.has(note)).toBe(true);
+		expect(positions.has(zone)).toBe(true);
+	});
+
 	it('puts Persons first, before the Clients they use, even when a Connection goes back to them', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');

@@ -71,6 +71,7 @@ describe('MCP endpoint', () => {
 			'add_component',
 			'add_diagram',
 			'add_entity',
+			'add_note',
 			'add_zone',
 			'connect_components',
 			'delete_elements',
@@ -85,6 +86,7 @@ describe('MCP endpoint', () => {
 			'set_connection',
 			'set_disk_kind',
 			'set_hosting',
+			'set_note',
 			'set_provider',
 			'set_runtime',
 			'set_skin',
@@ -359,6 +361,40 @@ describe('MCP endpoint', () => {
 		expect(runtime.error).toMatch(
 			/No "bun" Skin for this Component\. "bun" is a service's runtime/
 		);
+	});
+
+	it('writes Notes on both kinds of Diagram, beside an element or in a free spot', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'service', name: 'platform' });
+		const { id: note } = await call(client, 'add_note', {
+			...at,
+			text: 'Syncs every night at 2 a.m.',
+			near: 'platform'
+		});
+		await call(client, 'set_note', { ...at, note, color: 'pink' });
+		const system = await call(client, 'get_diagram', at);
+		expect(system.notes).toEqual([
+			{ id: note, text: 'Syncs every night at 2 a.m.', color: 'pink', zone: null }
+		]);
+		const unknown = await call(client, 'set_note', { ...at, note: 'nope', text: 'x' });
+		expect(unknown.error).toBe(`No note "nope". Known: ${note}.`);
+		const empty = await call(client, 'set_note', { ...at, note });
+		expect(empty.error).toBe('Give a text or a color.');
+
+		await call(client, 'add_diagram', { project: id, kind: 'mcd', name: 'Rules' });
+		const added = await call(client, 'add_note', {
+			project: id,
+			diagram: 'Rules',
+			text: 'GDPR: personal data'
+		});
+		expect(added.error).toBeUndefined();
+		const mcd = await call(client, 'get_diagram', { project: id, diagram: 'Rules' });
+		expect(mcd.notes).toEqual([
+			expect.objectContaining({ text: 'GDPR: personal data', color: 'yellow' })
+		]);
+		const sql = await call(client, 'get_mcd_sql', { project: id, diagram: 'Rules' });
+		expect(sql.warnings).toEqual([]);
 	});
 
 	it('draws Persons with a role, without hosting or provider', async () => {

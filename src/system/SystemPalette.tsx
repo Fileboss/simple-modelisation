@@ -1,4 +1,4 @@
-import { endPaletteDrag, startPaletteDrag } from '../canvas/palette-drag';
+import { endPaletteDrag, NOTE_ITEM, startPaletteDrag } from '../canvas/palette-drag';
 import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
 import { COMPONENT_TYPES, ZONE_ITEM } from './catalog';
@@ -30,6 +30,15 @@ export function SystemPalette() {
 					<rect x="2.5" y="4.5" width="19" height="15" rx="2" />
 				</svg>
 				{strings.system.zone}
+			</div>
+			<div
+				className="palette-item"
+				draggable
+				onDragStart={(e) => startPaletteDrag(e, NOTE_ITEM)}
+				onDragEnd={endPaletteDrag}
+			>
+				<span className="palette-note" aria-hidden="true" />
+				{strings.note.title}
 			</div>
 			<p className="palette-hint">{strings.system.paletteHint}</p>
 			<GesturesHint />

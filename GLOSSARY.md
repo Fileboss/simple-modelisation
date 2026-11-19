@@ -84,6 +84,10 @@ _Avoid_: Cloud, vendor, host
 A named area of a System design diagram grouping the Components drawn inside it, such as a region, a VPC or a subnet; Zones can nest, and a Component belongs to the innermost Zone its box lies in.
 _Avoid_: Group, container, boundary, cluster (a Kubernetes cluster is one thing a Zone can stand for)
 
+**Note**:
+Free text on a sticky note, placed anywhere on a Diagram to explain it (a schedule, a constraint), in one of five colors; not part of the system it describes: no Connections, left in place by Tidy up, ignored by the MLD.
+_Avoid_: Comment (a remark on a document), annotation, label (a Connection's text)
+
 **Connection**:
 A directed arrow between two Components, from the one that initiates (the caller, the client) to the one it reaches, with an optional label such as the protocol and an optional Flow.
 _Avoid_: Link, edge, flow (a Flow is what a Connection's data does)

@@ -1,3 +1,4 @@
+import { NotePanel } from './NoteNode';
 import {
 	applyEdgeChanges,
 	applyNodeChanges,
@@ -32,6 +33,7 @@ import type {
 	Diagram,
 	DiagramEdge,
 	DiagramNode,
+	NoteNode,
 	Point,
 	ProjectDocument,
 	Route
@@ -651,7 +653,12 @@ function Canvas({ project, diagram, kind }: Props) {
 				{kind.Footer && <kind.Footer diagram={diagram} />}
 			</div>
 			<aside className="panel">
-				<kind.Panel selection={selection} />
+				{/* A Note is the same in every kind of Diagram. */}
+				{selection.node?.type === 'note' ? (
+					<NotePanel key={selection.node.id} note={selection.node as NoteNode} />
+				) : (
+					<kind.Panel selection={selection} />
+				)}
 			</aside>
 		</div>
 	);

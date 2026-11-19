@@ -1,10 +1,11 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
 import { pillText, placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
-import { estimatedSize, type Size } from '../layout.ts';
+import { estimatedSize, noteLines, type Size } from '../layout.ts';
 import { FALLBACK_COMPONENT_TYPE, isPerson } from '../component-types.ts';
 import {
 	FLOW_COLORS,
 	HOSTING_MARKS,
+	NOTE_LOOKS,
 	PROVIDER_MARKS,
 	RUNTIME_LOOKS,
 	SKIN_LOOKS,
@@ -80,9 +81,12 @@ export function systemSvg(
 	);
 
 	// Labels go where the canvas puts them: on their routes, clear of boxes and of each other.
+	const notes = nodes.filter((n) => n.type === 'note');
 	const solid = new Map(components.map((n) => [n.id, boxes.get(n.id)!]));
+	// Notes block labels too, as on the canvas; they are no Connection's end.
+	const obstacles = new Map([...solid, ...notes.map((n) => [n.id, boxes.get(n.id)!] as const)]);
 	const labels = placeLabels(
-		solid,
+		obstacles,
 		connections.map((e) => ({
 			id: e.id,
 			source: e.source,
@@ -128,6 +132,8 @@ export function systemSvg(
 			);
 		}
 	}
+	// Notes over the lines, the pills over everything, as on the canvas.
+	for (const note of notes) parts.push(noteShape(note, boxes.get(note.id)!));
 	parts.push(...pillShapes);
 	for (const component of components) {
 		parts.push(
@@ -235,6 +241,19 @@ function componentShape(
 		parts.push(`<g transform="translate(${right - BADGE - 2} ${box.y - 11})">${badge}</g>`);
 	});
 	return parts.join('');
+}
+
+/** A Note as the canvas draws it: paper in its color, its text wrapped. */
+function noteShape(note: DiagramNode, box: Box): string {
+	const look = own(NOTE_LOOKS, note.color) ?? NOTE_LOOKS.yellow;
+	const lines = noteLines(String(note.text ?? ''));
+	return [
+		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${box.height - 1}" rx="4" fill="${look.paper}" stroke="${look.edge}"/>`,
+		...lines.map(
+			(line, i) =>
+				`<text x="${box.x + 12}" y="${box.y + 12 + 10 + i * 20}" font-size="14" fill="#3f3a2e" dy="0.35em">${escape(line)}</text>`
+		)
+	].join('');
 }
 
 /** A Person as the canvas draws it: a disc in its role's color, its name and role under it, no badges. */

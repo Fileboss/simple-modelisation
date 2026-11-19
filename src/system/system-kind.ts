@@ -1,6 +1,8 @@
 import type { CanvasKind } from '../canvas/DiagramCanvas';
 import { ZONE_DEFAULT, type ComponentType } from '@simple-modelisation/model/project.ts';
-import { estimatedSize } from '@simple-modelisation/model/layout.ts';
+import { estimatedSize, noteSize } from '@simple-modelisation/model/layout.ts';
+import { NoteNode } from '../canvas/NoteNode';
+import { NOTE_ITEM } from '../canvas/palette-drag';
 import { componentTypeInfo, ZONE_ITEM } from './catalog';
 import { ComponentNode } from './ComponentNode';
 import { ConnectionEdge } from './ConnectionEdge';
@@ -27,7 +29,7 @@ export const SVG_NAMES = {
 };
 
 export const systemKind: CanvasKind = {
-	nodeTypes: { component: ComponentNode, zone: ZoneNode },
+	nodeTypes: { component: ComponentNode, zone: ZoneNode, note: NoteNode },
 	edgeTypes: { connection: ConnectionEdge },
 	Palette: SystemPalette,
 	Panel: SystemPanel,
@@ -38,12 +40,14 @@ export const systemKind: CanvasKind = {
 		systemSvg(nodes, edges, { names: SVG_NAMES, sizeOf, measure: measureInPage }),
 	dropPreview: (item) => {
 		if (item === ZONE_ITEM) return { ...ZONE_DEFAULT, label: strings.system.zone };
+		if (item === NOTE_ITEM) return { ...noteSize(''), label: strings.note.title };
 		const type = item as ComponentType;
 		const label = componentTypeInfo(type).label;
 		const size = estimatedSize({ id: '', type: 'component', x: 0, y: 0, name: label, skin: null });
 		return { ...size, label };
 	},
 	drop: (project, diagramId, item, x, y) => {
+		if (item === NOTE_ITEM) return project.addNote(diagramId, x, y);
 		if (item === ZONE_ITEM) {
 			return project.addZone(diagramId, x, y);
 		}

@@ -54,6 +54,42 @@ function widestPill(edges: DiagramEdge[]): number {
 	return widest;
 }
 
+/** A Note's paper: 180px wide, its text wrapped (14px, about 7px a character), at least 80px high. */
+export const NOTE_WIDTH = 180;
+
+/** A Note's text cut into the lines it is drawn on, at word boundaries where it can. */
+export function noteLines(text: string): string[] {
+	const perLine = Math.floor((NOTE_WIDTH - 24) / 7);
+	return text.split('\n').flatMap((paragraph) => {
+		const lines: string[] = [];
+		let line = '';
+		for (const word of paragraph.split(' ')) {
+			for (let rest = word; ;) {
+				const joined = line ? `${line} ${rest}` : rest;
+				if (joined.length <= perLine) {
+					line = joined;
+					break;
+				}
+				if (line) {
+					lines.push(line);
+					line = '';
+					continue;
+				}
+				// A word longer than a line breaks anywhere.
+				lines.push(rest.slice(0, perLine));
+				rest = rest.slice(perLine);
+				if (!rest) break;
+			}
+		}
+		lines.push(line);
+		return lines;
+	});
+}
+
+export function noteSize(text: string): Size {
+	return { width: NOTE_WIDTH, height: Math.max(80, noteLines(text).length * 20 + 24) };
+}
+
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 type Elk = { layout(graph: ElkNode): Promise<ElkNode> };
@@ -93,7 +129,10 @@ export async function layoutDiagram(
 ): Promise<Layout> {
 	// Input order steers the layout: sort by id so peers that received the document
 	// in a different order still agree.
-	const nodes = [...allNodes].sort(byId);
+	// Notes explain the Diagram: Tidy up leaves them where they are, except those in a
+	// Zone, laid out with its content so that the Zone fitted around it still holds them.
+	const inZone = zoneParents(allNodes, estimatedSize);
+	const nodes = allNodes.filter((n) => n.type !== 'note' || inZone.has(n.id)).sort(byId);
 	const edges = [...allEdges].sort(byId);
 	const links = linksOf(nodes, edges);
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
@@ -102,7 +141,7 @@ export async function layoutDiagram(
 	const gaps = { ...GAPS[kind], layer: Math.max(GAPS[kind].layer, widestPill(edges) + 50) };
 	const hasZones = nodes.some((n) => n.type === 'zone');
 	// Membership at the model's sizes, as everywhere else.
-	const parents = hasZones ? zoneParents(nodes, estimatedSize) : new Map<string, string>();
+	const parents = hasZones ? inZone : new Map<string, string>();
 	// Elements without links and outside every Zone still go on the grid underneath.
 	const isLoose = (n: DiagramNode) => !linked.has(n.id) && n.type !== 'zone' && !parents.has(n.id);
 
@@ -330,6 +369,7 @@ export function estimatedSize(node: DiagramNode): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
+	if (node.type === 'note') return noteSize(String(node.text ?? ''));
 	if (node.type === 'component' && isPerson(node.componentType)) {
 		// A silhouette: the avatar over the name and the role (the longest role, Customer, fits in 100px).
 		return { width: Math.max(100, name.length * 9 + 20), height: 100 };

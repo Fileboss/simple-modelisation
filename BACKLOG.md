@@ -7,11 +7,12 @@ tags: [backlog]
 
 ## In progress
 
+- [notes](docs/specs/notes/): v0.1, sticky Notes on the canvas in five colors, in System design diagrams and MCDs
+
 ## To do
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
 
-- v0.1 notes: free text placed on the canvas to explain a diagram (a schedule, a constraint)
 - v0.1 copy-paste: Cmd/Ctrl+C, V and D on the canvas, Connections between copied elements kept
 - v0.1 export-legend: a legend in image exports for what the Diagram uses (Flows, Hostings, Providers, Runtimes)
 - v0.1 release: CHANGELOG, v0.1.0 tag, public ghcr package, GitHub rulesets on main and v* tags, Actions read-only by default
