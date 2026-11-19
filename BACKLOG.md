@@ -28,6 +28,7 @@ After v0.1:
 
 ## Done
 
+- selection-gestures: drag on the background selects, Shift+click adds, Delete, Cmd/Ctrl+A, Escape; Space+drag pans
 - [drag-and-snap](docs/specs/drag-and-snap/): drop where the preview shows, snap to neighbours with guides, straight Connections
 - [connection-flow](docs/specs/connection-flow/): a Flow on Connections (Read, Write, Read/Write), the arrow from who initiates
 - [service-runtime](docs/specs/service-runtime/): a Runtime badge on Services, Service Skins as frameworks and products, Client Skins as devices

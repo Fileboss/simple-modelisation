@@ -1,4 +1,5 @@
 import { endPaletteDrag, startPaletteDrag } from '../canvas/palette-drag';
+import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
 import { COMPONENT_TYPES, ZONE_ITEM } from './catalog';
 import { GenericIcon } from './ComponentIcon';
@@ -31,6 +32,7 @@ export function SystemPalette() {
 				{strings.system.zone}
 			</div>
 			<p className="palette-hint">{strings.system.paletteHint}</p>
+			<GesturesHint />
 		</aside>
 	);
 }

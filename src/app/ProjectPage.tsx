@@ -1,3 +1,4 @@
+import { isTypingTarget } from '../ui/typing';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Diagram, DiagramKind, ProjectDocument } from '@simple-modelisation/model/project.ts';
@@ -346,8 +347,7 @@ function useUndoShortcuts(project: ProjectDocument) {
 	useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
-			const target = e.target as HTMLElement;
-			if (target.closest('input, textarea, [contenteditable="true"]')) return;
+			if (isTypingTarget(e.target)) return;
 			e.preventDefault();
 			if (e.shiftKey) project.redo();
 			else project.undo();
