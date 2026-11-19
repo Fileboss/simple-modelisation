@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
 import { dataType, isDataType, type DataType } from './data-types.ts';
+import { COMPONENT_TYPE_IDS, type ComponentType } from './component-types.ts';
+import { skinFits } from './skins.ts';
 
 export type DiagramKind = 'system' | 'mcd';
 
@@ -22,17 +24,7 @@ export type DiagramEdge = { id: string; type: string; source: string; target: st
 	unknown
 >;
 
-export const COMPONENT_TYPE_IDS = [
-	'client',
-	'service',
-	'database',
-	'cache',
-	'queue',
-	'gateway',
-	'storage',
-	'disk'
-] as const;
-export type ComponentType = (typeof COMPONENT_TYPE_IDS)[number];
+export { COMPONENT_TYPE_IDS, type ComponentType };
 
 export type ComponentNode = DiagramNode & {
 	type: 'component';
@@ -392,6 +384,29 @@ export class ProjectDocument {
 		};
 		this.insertNode(diagramId, component);
 		return id;
+	}
+
+	/**
+	 * Changes what a Component is, keeping its id, Connections, Hosting and
+	 * Provider: a Skin the new type does not offer goes back to Generic, a Disk
+	 * kind goes away unless it is still a Disk.
+	 */
+	setComponentType(diagramId: string, componentId: string, componentType: ComponentType): void {
+		const component = this.nodeMap(diagramId).get(componentId);
+		if (!component) return;
+		this.doc.transact(() => {
+			this.setNodeChoice(
+				diagramId,
+				componentId,
+				'componentType',
+				componentType,
+				COMPONENT_TYPE_IDS
+			);
+			if (component.get('componentType') !== componentType) return;
+			const skin = component.get('skin') as string | null;
+			if (skin && !skinFits(componentType, skin)) component.set('skin', null);
+			if (componentType !== 'disk' && component.has('diskKind')) component.delete('diskKind');
+		});
 	}
 
 	/** Applies a Skin to a Component, or clears it with null (Generic). */

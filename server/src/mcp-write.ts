@@ -19,7 +19,7 @@ import {
 	layoutDiagram,
 	layoutFingerprint
 } from '@simple-modelisation/model/layout.ts';
-import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
+import { SKIN_IDS, skinFits } from '@simple-modelisation/model/skins.ts';
 import {
 	nodeBox,
 	overlaps,
@@ -147,9 +147,11 @@ function placeNew(
 	project: ProjectDocument,
 	diagramId: string,
 	size: { width: number; height: number },
-	zoneId?: string
+	zoneId?: string,
+	/** An element being moved, which does not count among the others. */
+	moving?: string
 ): { x: number; y: number } {
-	const nodes = nodesOf(project, diagramId);
+	const nodes = nodesOf(project, diagramId).filter((n) => n.id !== moving);
 	if (!zoneId) return spotAmong(nodes, size);
 	const parents = zoneParents(nodes, estimatedSize);
 	const zone = nodes.find((n) => n.id === zoneId)!;
@@ -166,7 +168,14 @@ function placeNew(
  * What lies across or beyond a growing edge moves by as much (a Zone with its
  * content), so that no Zone takes in an element it did not hold, nor loses one.
  */
-function growToHold(project: ProjectDocument, diagramId: string, zoneId: string, box: Box): void {
+function growToHold(
+	project: ProjectDocument,
+	diagramId: string,
+	zoneId: string,
+	box: Box,
+	/** The element the room is for, when it is already drawn: never pushed. */
+	keep?: string
+): void {
 	// Who holds what before anything moves: pushing must not change it.
 	const parents = zoneParents(nodesOf(project, diagramId), estimatedSize);
 	const ancestors = (id: string) => {
@@ -190,6 +199,7 @@ function growToHold(project: ProjectDocument, diagramId: string, zoneId: string,
 		const dy = Math.max(0, ...held.map((b) => b.y + b.height + ZONE_PADDING.side - bottom));
 		if (dx === 0 && dy === 0) continue;
 		const around = new Set([at, ...zoneContent(parents, at), ...ancestors(at)]);
+		if (keep) around.add(keep);
 		const own = new Map<string, Point>();
 		for (const n of nodes) {
 			if (around.has(n.id)) continue;
@@ -269,7 +279,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		({ project, diagram, type, name, skin, hosting, provider, disk_kind, zone }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
-				if (skin && !(SKIN_IDS[type] as readonly string[]).includes(skin)) {
+				if (skin && !skinFits(type, skin)) {
 					throw new ToolError(skinRefusal(skin, SKIN_IDS[type], `a ${type}`));
 				}
 				// Checked before anything is drawn: a refused call leaves the Diagram as it was.
@@ -356,6 +366,55 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	);
 
 	tool(
+		'set_component',
+		'Changes a Component in place, keeping its id and Connections: its type (a Skin the new type lacks goes back to generic), its name, and its place: x and y, or a zone to move it into (after its content, the Zone growing), or zone "none" to move it out of every Zone. Give a position or a zone, not both.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			component: z.string().describe('Component id or exact name.'),
+			type: z.enum(COMPONENT_TYPE_IDS).optional(),
+			name: name().optional(),
+			x: z.number().optional(),
+			y: z.number().optional(),
+			zone: z
+				.string()
+				.optional()
+				.describe('Zone id or exact name, or "none" for outside every Zone.')
+		},
+		({ project, diagram, component, type, name, x, y, zone }) =>
+			access.write(project, (p) => {
+				// Checked before anything changes: a refused call leaves the Diagram as it was.
+				if (zone !== undefined && (x !== undefined || y !== undefined)) {
+					throw new ToolError('Give a position or a zone, not both.');
+				}
+				const d = pickDiagram(p, diagram, 'system');
+				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				const zones = nodesOf(p, d.id, 'zone');
+				// A Zone really named "none" wins over the "outside every Zone" meaning.
+				const outside = zone === 'none' && !zones.some((z) => z.id === zone || z.name === zone);
+				const zoneId = zone !== undefined && !outside ? pick(zones, zone, 'zone').id : undefined;
+				const parentBefore = zoneParents(nodesOf(p, d.id), estimatedSize).get(target.id);
+
+				if (type) p.setComponentType(d.id, target.id, type);
+				if (name) p.renameNode(d.id, target.id, name);
+				const current = () => p.nodes(d.id).find((n) => n.id === target.id)!;
+
+				if (x !== undefined || y !== undefined) {
+					p.moveNode(d.id, target.id, x ?? target.x, y ?? target.y);
+				} else if (zoneId || outside) {
+					// Already where asked: nothing moves, so its routes stay.
+					if ((outside ? undefined : zoneId) === parentBefore) return { id: target.id };
+					const spot = placeNew(p, d.id, estimatedSize(current()), zoneId, target.id);
+					p.moveNode(d.id, target.id, spot.x, spot.y);
+				} else if (parentBefore) {
+					// A new name or type changes the box: its Zone grows rather than lose it.
+					growToHold(p, d.id, parentBefore, nodeBox(current(), estimatedSize), target.id);
+				}
+				return { id: target.id };
+			})
+	);
+
+	tool(
 		'connect_components',
 		'Draws a directed Connection between two Components, with an optional label (HTTP, gRPC…).',
 		{
@@ -391,10 +450,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
-				// A Component from an older file may have a type the catalog does not know.
-				const skins: readonly string[] =
-					SKIN_IDS[target.componentType as keyof typeof SKIN_IDS] ?? [];
-				if (skin !== 'generic' && !skins.includes(skin)) {
+				if (skin !== 'generic' && !skinFits(String(target.componentType), skin)) {
+					// A Component from an older file may have a type the catalog does not know.
+					const skins: readonly string[] =
+						SKIN_IDS[target.componentType as keyof typeof SKIN_IDS] ?? [];
 					throw new ToolError(skinRefusal(skin, ['generic', ...skins], 'this Component'));
 				}
 				p.setSkin(d.id, target.id, skin === 'generic' ? null : skin);
