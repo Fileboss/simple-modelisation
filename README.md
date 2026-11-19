@@ -18,21 +18,23 @@ make lint test
 
 One Docker image serves the app, the sync of Shared Projects and the MCP endpoint. A `vX.Y.Z` tag publishes it as `ghcr.io/fileboss/simple-modelisation:X.Y.Z`.
 
-| Setting         | Default                          | What it does                                                                                                         |
-| --------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `PORT`          | `3000`                           | The port the app, `/sync` and `/mcp` answer on.                                                                      |
-| `STORAGE`       | `sqlite`                         | `sqlite` keeps Shared Projects in `DATA_DIR`; `none` makes the server a relay that stores nothing (below).           |
-| `DATA_DIR`      | `/data`                          | Where the SQLite file lives (`sqlite` storage only): mount a volume there.                                           |
-| `MCP`           | `on` with storage, `off` without | The MCP endpoint on `/mcp`. It works on stored documents, so `STORAGE=none` with `MCP=on` refuses to start.          |
-| `MAX_DOCUMENTS` | `500`                            | Shared Projects held in memory at once; past it, a new share is refused and the app says the server is busy.         |
-| `TRUST_PROXY`   | unset                            | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so the per-address limits see real addresses. |
+| Setting         | Default                          | What it does                                                                                                                                                                                                                |
+| --------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`          | `3000`                           | The port the app, `/sync` and `/mcp` answer on.                                                                                                                                                                             |
+| `STORAGE`       | `sqlite`                         | `sqlite` keeps Shared Projects in `DATA_DIR`; `none` makes the server a relay that stores nothing (below).                                                                                                                  |
+| `DATA_DIR`      | `/data`                          | Where the SQLite file lives (`sqlite` storage only): mount a volume there.                                                                                                                                                  |
+| `MCP`           | `on` with storage, `off` without | The MCP endpoint on `/mcp`. It works on stored documents, so `STORAGE=none` with `MCP=on` refuses to start.                                                                                                                 |
+| `MAX_DOCUMENTS` | `500`                            | Shared Projects held in memory at once; past it, a new share is refused and the app says the server is busy.                                                                                                                |
+| `TRUST_PROXY`   | unset                            | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so the per-address limits see real addresses. Only when the proxy alone can reach the port: a client connecting directly would pick its own address. |
 
 The image runs as an unprivileged user, carries no package manager, and reports its health to Docker from `GET /health` (`200 ok`), which a proxy or an uptime check can use too.
 
 Two examples:
 
 - `docker-compose.yml`: Shared Projects stored in a volume, MCP on.
-- `docker-compose.public.yml`: a public relay, nothing stored, MCP off; read-only, no capabilities, memory and processes bounded.
+- `docker-compose.public.yml`: a public relay, nothing stored, MCP off; read-only, no capabilities, memory and processes bounded; its port is open to the host only, for the reverse proxy in front of it.
+
+With `TRUST_PROXY=true`, nothing but the proxy may reach the server: `docker-compose.public.yml` publishes its port on `127.0.0.1`, for a proxy on the host. A proxy in a container instead shares a network with the app's container alone, and the app publishes no port.
 
 Behind a reverse proxy, pass WebSocket upgrades on `/sync` through, keep the `Host` header (or set `X-Forwarded-Host`), and set `TRUST_PROXY=true`: the server refuses WebSocket upgrades whose `Origin` names another host. Caddy's `reverse_proxy` does all of this by default.
 
@@ -42,7 +44,7 @@ The server keeps nothing on disk. A Shared Project lives in its memory only whil
 
 What people see: a Share link opens only while someone has the Project open; otherwise the page says so. Local Projects are unchanged. Nothing is lost while one Participant still has their copy, but nobody but the Participants holds one: exporting a Project as JSON is the only backup.
 
-Limits that bound a public server: 5 MB per document, 50 connections and 30 new shares per hour per address, `MAX_DOCUMENTS` documents in memory.
+Limits that bound a public server: 5 MB per document (a change that would pass it is refused), 64 KB per Presence message, 50 connections and 10 documents in memory per address, 30 new shares per hour per address with storage, `MAX_DOCUMENTS` documents in memory.
 
 ## MCP
 

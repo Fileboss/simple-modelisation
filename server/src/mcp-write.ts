@@ -65,7 +65,8 @@ const runtimeArgument = z
 		`What runs a service's code on the server: ${RUNTIMES.join(', ')} (go and rust for native binaries). A service takes it whether or not it has a Skin.`
 	);
 // Bounds on what an agent sends, on top of the document size limit.
-const name = () => z.string().min(1).max(200);
+// Trimmed: a blank name would make an element no read shows.
+const name = () => z.string().trim().min(1).max(200);
 const cardinality = z
 	.enum(CARDINALITIES)
 	.describe('Merise Cardinality on the Leg next to this Entity.');

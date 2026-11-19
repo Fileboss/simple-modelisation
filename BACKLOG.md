@@ -15,6 +15,7 @@ Road to v0.1, the first public version (a relay, for a few people): security fir
 
 After v0.1:
 
+- MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
 - Numbered steps on Connections (1, 2, 3), to read a journey through the system
 - A Job Component type (cron, batch, worker)
 - Asynchronous Connections, drawn dashed (events, queues)
@@ -32,6 +33,7 @@ After v0.1:
 
 ## Done
 
+- [relay-limits](docs/specs/relay-limits/): v0.1, bound what one client can do to a public relay: documents per address, message and Presence size, true document size, malformed peer fields, proxy-only deployments
 - [export-legend](docs/specs/export-legend/): v0.1, a Legend in exported images of System design diagrams (Flows, Providers, Hostings, Runtimes), with a toggle
 - [copy-paste](docs/specs/copy-paste/): v0.1, copy, cut, paste and duplicate on the canvas, through the system clipboard
 - [notes](docs/specs/notes/): v0.1, sticky Notes on the canvas in five colors, in System design diagrams and MCDs

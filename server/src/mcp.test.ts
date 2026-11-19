@@ -610,6 +610,16 @@ describe('MCP endpoint', () => {
 		);
 	});
 
+	it('refuses a blank name, which no read would show', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		const blank = await call(client, 'add_component', { ...at, type: 'service', name: '   ' });
+		expect(blank.error).toBeTruthy();
+		await call(client, 'add_component', { ...at, type: 'service', name: '  API  ' });
+		const project = await call(client, 'get_diagram', at);
+		expect(JSON.stringify(project)).toContain('"API"');
+	});
+
 	it('exports System design diagrams as plain SVG, MCDs left out with a note', async () => {
 		const { client, id } = await setup();
 		const at = { project: id, diagram: 'Architecture' };

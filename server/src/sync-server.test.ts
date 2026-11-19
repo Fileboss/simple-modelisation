@@ -123,12 +123,58 @@ describe('sync server', () => {
 		const owner = await connect(server, id, 'share', { onStateless: (m) => messages.push(m) });
 		const guest = await connect(server, id, 'join');
 
-		owner.doc.getText('t').insert(0, 'x'.repeat(5000));
-		await vi.waitFor(() => expect(guest.doc.getText('t').length).toBe(5000));
-		owner.doc.getText('t').insert(0, 'more');
+		owner.doc.getText('t').insert(0, 'x'.repeat(1500));
+		await vi.waitFor(() => expect(guest.doc.getText('t').length).toBe(1500));
+		owner.doc.getText('t').insert(0, 'y'.repeat(1000));
 		await vi.waitFor(() => expect(messages).toContain(DOCUMENT_TOO_LARGE));
 		expect(logs.join()).toContain('document size');
-		expect(text(guest.doc).startsWith('more')).toBe(false);
+		expect(text(guest.doc).startsWith('y')).toBe(false);
+	});
+
+	it('refuses a single change that would take a document past its limit', async () => {
+		const { server } = await start({ maxDocumentBytes: 2000 });
+		const id = crypto.randomUUID();
+		const messages: string[] = [];
+		const owner = await connect(server, id, 'share', { onStateless: (m) => messages.push(m) });
+		const guest = await connect(server, id, 'join');
+
+		owner.doc.getText('t').insert(0, 'x'.repeat(5000));
+		await vi.waitFor(() => expect(messages).toContain(DOCUMENT_TOO_LARGE));
+		// Never applied: nobody else gets it.
+		await new Promise((resolve) => setTimeout(resolve, 200));
+		expect(text(guest.doc)).toBe('');
+	});
+
+	it('takes back a client that resends what the server already has', async () => {
+		const { server } = await start({ maxDocumentBytes: 2000 });
+		const id = crypto.randomUUID();
+		const owner = await connect(server, id, 'share');
+		owner.doc.getText('t').insert(0, 'x'.repeat(1200));
+		// A Participant with their own copy: their first sync carries all of it again.
+		const copy = new Y.Doc();
+		Y.applyUpdate(copy, Y.encodeStateAsUpdate(owner.doc));
+		await vi.waitFor(() => expect(text(owner.doc).length).toBe(1200));
+		const messages: string[] = [];
+		const back = await connect(server, id, 'join', {
+			doc: copy,
+			onStateless: (m) => messages.push(m)
+		});
+		back.doc.getText('t').insert(0, 'hi');
+		await vi.waitFor(() => expect(text(owner.doc).startsWith('hi')).toBe(true));
+		expect(messages).not.toContain(DOCUMENT_TOO_LARGE);
+	});
+
+	it('closes a connection that sends an oversized Presence', async () => {
+		const { server, logs } = await start({ maxPresenceBytes: 1000 });
+		const owner = await connect(server, crypto.randomUUID(), 'share');
+		const closed = new Promise<string>((resolve) =>
+			owner.provider.on('close', ({ event }: { event: { reason: string } }) =>
+				resolve(event.reason)
+			)
+		);
+		owner.provider.setAwarenessField('user', { name: 'x'.repeat(2000) });
+		expect(await closed).toBe('presence-size');
+		expect(logs.join()).toContain('presence size');
 	});
 
 	it('limits how many documents one address creates', async () => {
@@ -254,6 +300,47 @@ describe('relay mode (no storage)', () => {
 		);
 		expect(outcomes.filter((o) => o.outcome === 'synced')).toHaveLength(2);
 		expect(outcomes.filter((o) => o.reason === REFUSAL.full)).toHaveLength(4);
+	});
+
+	it('judges a full document by its real size, not by every update it took', async () => {
+		const { server } = await start({ storage: 'none', maxDocumentBytes: 2000 });
+		const id = crypto.randomUUID();
+		const messages: string[] = [];
+		const owner = await connect(server, id, 'share', { onStateless: (m) => messages.push(m) });
+		const guest = await connect(server, id, 'join');
+		// Each value replaces the last: the updates add up past the limit, the document does not.
+		for (let i = 0; i < 8; i++) {
+			owner.doc.getMap('m').set('note', `${i}`.repeat(500));
+			await vi.waitFor(() => expect(guest.doc.getMap('m').get('note')).toBe(`${i}`.repeat(500)));
+		}
+		expect(messages).not.toContain(DOCUMENT_TOO_LARGE);
+	});
+
+	it('bounds the documents one address loads, joining an open one being free', async () => {
+		const { server, logs } = await start({ storage: 'none', maxDocumentsPerIp: 2 });
+		const first = crypto.randomUUID();
+		const a = await connect(server, first, 'share');
+		expect((await connect(server, crypto.randomUUID(), 'share')).outcome).toBe('synced');
+		const joined = await connect(server, first, 'join');
+		expect(joined.outcome).toBe('synced');
+		const third = crypto.randomUUID();
+		expect(await connect(server, third, 'share')).toMatchObject({
+			outcome: 'refused',
+			reason: REFUSAL.full
+		});
+		expect(logs.join()).toContain('address document limit');
+
+		// Once a document is forgotten, its slot is free again.
+		a.provider.destroy();
+		joined.provider.destroy();
+		await vi.waitFor(
+			async () => {
+				const again = await connect(server, third, 'share');
+				again.provider.destroy();
+				expect(again.outcome).toBe('synced');
+			},
+			{ timeout: 5000, interval: 100 }
+		);
 	});
 
 	it('has no MCP endpoint, and refuses to start with one', async () => {

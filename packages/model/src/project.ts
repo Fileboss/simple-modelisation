@@ -278,12 +278,32 @@ export class ProjectDocument {
 
 	// Elements, shared by every Diagram kind
 
+	/**
+	 * The Diagram's nodes, read as an imported file is: a peer can write any field,
+	 * and an element a file would be refused for (a string `x`, attributes that are
+	 * no list) is left out rather than drawn, exported or read over MCP.
+	 */
 	nodes(diagramId: string): DiagramNode[] {
-		return [...this.nodeMap(diagramId).values()].map((n) => withCompleteAttributes(n.toJSON()));
+		const kind = this.requireDiagram(diagramId).get('kind') as DiagramKind;
+		return [...this.nodeMap(diagramId).values()]
+			.map((n) => n.toJSON() as DiagramNode)
+			.filter((n) => isValidNode(n, kind))
+			.map((n) => withCompleteAttributes(n));
 	}
 
+	/** The Diagram's edges, read as an imported file is, between the nodes read. */
 	edges(diagramId: string): DiagramEdge[] {
-		return [...this.edgeMap(diagramId).values()].map((e) => readEdge(e.toJSON()));
+		const kind = this.requireDiagram(diagramId).get('kind') as DiagramKind;
+		// The ends' types, from the nodes a read keeps (without completing them again).
+		const types = new Map<string, unknown>();
+		for (const n of this.nodeMap(diagramId).values()) {
+			const node = n.toJSON() as DiagramNode;
+			if (isValidNode(node, kind)) types.set(node.id, node.type);
+		}
+		return [...this.edgeMap(diagramId).values()]
+			.map((e) => e.toJSON() as DiagramEdge)
+			.filter((e) => isValidEdge(e, kind, types))
+			.map((e) => readEdge(e));
 	}
 
 	/** Moves a node; the routes of its Connections or Legs no longer fit and are dropped. */
