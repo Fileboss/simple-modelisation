@@ -532,6 +532,38 @@ describe('Disk kind', () => {
 	});
 });
 
+describe('Flow', () => {
+	it("sets, changes and clears what a Connection's data does", () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const app = project.addComponent(d, 'service', 'App', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 300, 0);
+		const c = project.addConnection(d, app, db)!;
+		const flow = () => project.edges(d)[0].flow;
+		expect(flow()).toBeUndefined();
+		project.setConnectionFlow(d, c, 'read');
+		expect(flow()).toBe('read');
+		project.setConnectionFlow(d, c, 'delete' as never);
+		expect(flow()).toBe('read');
+		project.setConnectionFlow(d, c, 'read-write');
+		expect(flow()).toBe('read-write');
+		project.setConnectionFlow(d, c, null);
+		expect(flow()).toBeUndefined();
+	});
+
+	it('keeps a Flow through a file, reading an unknown one as unspecified', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const app = project.addComponent(d, 'service', 'App', 0, 0);
+		const db = project.addComponent(d, 'database', 'DB', 300, 0);
+		project.setConnectionFlow(d, project.addConnection(d, app, db)!, 'write');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).edges(d)[0].flow).toBe('write');
+		file.diagrams[0].edges[0].flow = 'stream';
+		expect(ProjectDocument.fromFile(file).edges(d)[0].flow).toBeUndefined();
+	});
+});
+
 describe('Runtime', () => {
 	it('sets, changes and clears what runs a Service, only on Services', () => {
 		const project = new ProjectDocument();

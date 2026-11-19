@@ -110,7 +110,20 @@ export type Point = { x: number; y: number };
  */
 export type Route = { points?: Point[] };
 
-export type ConnectionEdge = DiagramEdge & Route & { type: 'connection'; label: string };
+/**
+ * What a Connection's data does, seen from the initiator the arrow starts at:
+ * it comes back (read), it goes to the target (write), or both.
+ */
+export const FLOWS = ['read', 'write', 'read-write'] as const;
+export type Flow = (typeof FLOWS)[number];
+
+export type ConnectionEdge = DiagramEdge &
+	Route & {
+		type: 'connection';
+		label: string;
+		/** Absent when unspecified. */
+		flow?: Flow;
+	};
 
 /** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
 export type ZoneNode = DiagramNode & {
@@ -260,7 +273,7 @@ export class ProjectDocument {
 	}
 
 	edges(diagramId: string): DiagramEdge[] {
-		return [...this.edgeMap(diagramId).values()].map((e) => e.toJSON() as DiagramEdge);
+		return [...this.edgeMap(diagramId).values()].map((e) => readEdge(e.toJSON()));
 	}
 
 	/** Moves a node; the routes of its Connections or Legs no longer fit and are dropped. */
@@ -515,6 +528,19 @@ export class ProjectDocument {
 
 	setEdgeLabel(diagramId: string, edgeId: string, label: string): void {
 		this.edgeMap(diagramId).get(edgeId)?.set('label', label.trim());
+	}
+
+	/** Says what a Connection's data does, or clears it with null; ignored on Legs or for an unknown value. */
+	setConnectionFlow(diagramId: string, connectionId: string, flow: Flow | null): void {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		if (
+			connection?.get('type') !== 'connection' ||
+			connection.get('flow') === (flow ?? undefined)
+		) {
+			return;
+		}
+		if (flow === null) connection.delete('flow');
+		else if (FLOWS.includes(flow)) connection.set('flow', flow);
 	}
 
 	// MCDs
@@ -864,6 +890,14 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	// Only a Service has a Runtime.
 	if (read.componentType !== 'service') delete read.runtime;
 	return read as DiagramNode;
+}
+
+/** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
+function readEdge(edge: Record<string, unknown>): DiagramEdge {
+	if (!('flow' in edge)) return edge as DiagramEdge;
+	const read = { ...edge };
+	if (read.type !== 'connection' || !FLOWS.includes(read.flow as Flow)) delete read.flow;
+	return read as DiagramEdge;
 }
 
 function toFields(element: Record<string, unknown>): Fields {

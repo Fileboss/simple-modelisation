@@ -76,6 +76,25 @@ describe('layoutDiagram', () => {
 		expect(overlapping(positions, sizeOf)).toBe(false);
 	});
 
+	it('leaves room between layers for the widest Connection pill', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const app = project.addComponent(d, 'service', 'platform', 0, 0);
+		const images = project.addComponent(d, 'service', 'getImage', 0, 0);
+		const c = project.addConnection(d, app, images)!;
+		const gap = async () => {
+			const nodes = project.nodes(d);
+			const { positions } = await layoutDiagram(nodes, project.edges(d), estimatedSize, 'system');
+			const appWidth = estimatedSize(nodes.find((n) => n.id === app)!).width;
+			return positions.get(images)!.x - positions.get(app)!.x - appWidth;
+		};
+		expect(await gap()).toBe(110);
+		project.setEdgeLabel(d, c, 'REST, nightly');
+		project.setConnectionFlow(d, c, 'read');
+		// "Read · REST, nightly": 20 characters at 6.5px, the pill's 14px, 50px for the routes.
+		expect(await gap()).toBe(20 * 6.5 + 14 + 50);
+	});
+
 	it('puts each Association between its two Entities in an MCD', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('mcd');

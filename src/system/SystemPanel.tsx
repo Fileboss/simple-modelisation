@@ -2,6 +2,8 @@ import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
 import { inheritedProvider } from './inherited-provider';
 import { PanelField } from '../canvas/PanelField';
+import { DISK_KINDS, FLOWS } from '@simple-modelisation/model/project.ts';
+import { FLOW_COLORS } from '@simple-modelisation/model/looks.ts';
 import type {
 	ComponentNode,
 	ComponentType,
@@ -21,7 +23,7 @@ import {
 } from './catalog';
 import { ChoiceGrid } from './ChoiceGrid';
 import { GenericIcon, SkinLogo } from './ComponentIcon';
-import { DiskKindPicker } from './DiskKindPicker';
+import { ChoiceRow } from './ChoiceRow';
 import { HostingPicker } from './HostingPicker';
 import { ProviderPicker } from './ProviderPicker';
 
@@ -102,7 +104,16 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				{component.componentType === 'disk' && (
 					<>
 						<h3>{strings.disk.title}</h3>
-						<DiskKindPicker diskId={component.id} current={component.diskKind} />
+						<ChoiceRow
+							label={strings.disk.title}
+							unset={strings.disk.unset}
+							choices={DISK_KINDS.map((kind) => ({ value: kind, label: strings.disk.names[kind] }))}
+							current={component.diskKind}
+							onChoose={(kind) => {
+								project.stopCapturing();
+								project.setDiskKind(diagramId, component.id, kind);
+							}}
+						/>
 					</>
 				)}
 				{/* Disks have no Skins: their kind is not a product. */}
@@ -166,6 +177,22 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					placeholder="HTTP, gRPC…"
 					allowBlank
 					onChange={(label) => project.setEdgeLabel(diagramId, connection.id, label)}
+				/>
+				<h3>{strings.flow.title}</h3>
+				<p className="panel-hint">{strings.flow.hint}</p>
+				<ChoiceRow
+					label={strings.flow.title}
+					unset={strings.flow.unset}
+					choices={FLOWS.map((flow) => ({
+						value: flow,
+						label: strings.flow.names[flow],
+						color: FLOW_COLORS[flow]
+					}))}
+					current={connection.flow}
+					onChoose={(flow) => {
+						project.stopCapturing();
+						project.setConnectionFlow(diagramId, connection.id, flow);
+					}}
 				/>
 			</>
 		);

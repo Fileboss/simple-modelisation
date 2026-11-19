@@ -46,6 +46,44 @@ describe('placeLabels', () => {
 		expect(after.get('2')).toEqual(before.get('2'));
 	});
 
+	it("keeps a label off the badges over a box's top-right corner", () => {
+		// A short horizontal Connection leaving A at mid-height: its label would sit on A's badges.
+		const near = new Map([
+			['a', box(0, 0, 100, 40)],
+			['b', box(300, 0, 100, 40)]
+		]);
+		const at = placeLabels(near, [{ id: '1', source: 'a', target: 'b', label: 'Read · REST' }]).get(
+			'1'
+		)!;
+		const badges = { x: 100 - 25, y: -11, width: 36, height: 18 };
+		expect(intersects(pill('Read · REST', at), badges)).toBe(false);
+	});
+
+	it('keeps a label off the arrowhead, centred when the line has room', () => {
+		// 194px between the boxes, as Tidy up leaves for "Read · REST, nightly".
+		const apart = new Map([
+			['a', box(0, 100, 100, 40)],
+			['b', box(294, 100, 100, 40)]
+		]);
+		const text = 'Read · REST, nightly';
+		const at = placeLabels(apart, [{ id: '1', source: 'a', target: 'b', label: text }]).get('1')!;
+		expect(at.x).toBe(197);
+		const arrow = { x: 284, y: 115, width: 10, height: 10 };
+		expect(intersects(pill(text, at), arrow)).toBe(false);
+	});
+
+	it('reads a straight line as one segment, whatever bend ELK left in its middle', () => {
+		const apart = new Map([
+			['a', box(0, 16, 164, 64)],
+			['b', box(358, 0, 150, 64)]
+		]);
+		const text = 'Read · REST, nightly';
+		const at = placeLabels(apart, [
+			{ id: '1', source: 'a', target: 'b', label: text, points: [{ x: 261, y: 32 }] }
+		]).get('1')!;
+		expect(at).toEqual({ x: 261, y: 32 });
+	});
+
 	it('leaves out unlabelled Connections and unmeasured boxes', () => {
 		const placed = placeLabels(new Map([...boxes, ['x', box(0, 0, 0, 0)]]), [
 			{ id: '3', source: 'a', target: 'd', label: '' },

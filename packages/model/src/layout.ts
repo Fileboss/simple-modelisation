@@ -2,6 +2,8 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
 import { ZONE_PADDING } from './project.ts';
+import { pillText, roughWidth } from './label-placement.ts';
+import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
 
 export type Size = { width: number; height: number };
@@ -37,6 +39,19 @@ const GAPS: Record<DiagramKind, { node: number; layer: number }> = {
 };
 /** Elements without any link go on a grid under the rest, this many per row. */
 const LOOSE_PER_ROW = 5;
+
+/** The widest Connection pill, in English at the rough width: the layout must not depend on the UI language. */
+function widestPill(edges: DiagramEdge[]): number {
+	let widest = 0;
+	for (const edge of edges) {
+		if (edge.type !== 'connection') continue;
+		const flows: Record<string, string> = ENGLISH_NAMES.flows;
+		const flow = Object.hasOwn(flows, String(edge.flow)) ? flows[String(edge.flow)] : undefined;
+		const text = pillText(String(edge.label ?? ''), flow);
+		if (text) widest = Math.max(widest, roughWidth(text) + 14);
+	}
+	return widest;
+}
 
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
@@ -82,7 +97,8 @@ export async function layoutDiagram(
 	const links = linksOf(nodes, edges);
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
 	const orthogonal = kind === 'system';
-	const gaps = GAPS[kind];
+	// Between layers, room for the widest Connection pill as well as the routes' bends.
+	const gaps = { ...GAPS[kind], layer: Math.max(GAPS[kind].layer, widestPill(edges) + 50) };
 	const hasZones = nodes.some((n) => n.type === 'zone');
 	// Membership at the model's sizes, as everywhere else.
 	const parents = hasZones ? zoneParents(nodes, estimatedSize) : new Map<string, string>();

@@ -65,7 +65,7 @@ import {
 	type SimpleIcon
 } from 'simple-icons';
 import type { ComponentType } from './component-types.ts';
-import type { Hosting, Provider, Runtime } from './project.ts';
+import type { Flow, Hosting, Provider, Runtime } from './project.ts';
 import type { SkinId } from './skins.ts';
 
 /*
@@ -164,6 +164,13 @@ export const RUNTIME_LOOKS: Record<Runtime, SkinLook & { logo: string }> = {
 	ruby: fromIcon(siRuby),
 	go: fromIcon(siGo),
 	rust: fromIcon(siRust)
+};
+
+/** A Connection's color by Flow; one without a Flow is drawn in the neutral edge color. */
+export const FLOW_COLORS: Record<Flow, string> = {
+	read: '#2563eb',
+	write: '#ea580c',
+	'read-write': '#7c3aed'
 };
 
 /** Every Component type's generic look, in the palette's order. */
