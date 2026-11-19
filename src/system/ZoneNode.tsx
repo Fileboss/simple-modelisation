@@ -25,7 +25,7 @@ export function ZoneNode({ id, data, selected }: NodeProps) {
 				handleClassName="zone-handle"
 				lineClassName="zone-line"
 				onResizeStart={() => project.stopCapturing()}
-				onResizeEnd={(_event, box) => project.setZoneBox(diagramId, id, box)}
+				// The canvas saves the box at the end of the resize, snapped (see useSnapGestures).
 			/>
 			<div className="zone-title">
 				{provider && (

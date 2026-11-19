@@ -14,7 +14,8 @@ import {
 	type EdgeTypes,
 	type Node,
 	type NodeChange,
-	type NodeTypes
+	type NodeTypes,
+	ViewportPortal
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import {
@@ -54,9 +55,10 @@ import { CanvasContext } from './canvas-context';
 import { captureViewport, drawnBounds, exportFrame } from './export-image';
 import { registerExporter } from './exporter';
 import type { Layout } from './layout';
-
-/** MIME type of what the palette drags onto the canvas. */
-export const PALETTE_MIME = 'application/x-simple-modelisation';
+import type { Box } from './geometry';
+import type { Size } from '@simple-modelisation/model/layout.ts';
+import { useSnapGestures } from './use-snap-gestures';
+import { draggedPaletteItem, endPaletteDrag, PALETTE_MIME } from './palette-drag';
 
 export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
 
@@ -93,7 +95,16 @@ export type CanvasKind = {
 	) => string;
 	/** Shown under the canvas (the MCD's MLD and SQL). */
 	Footer?: ComponentType<{ diagram: Diagram }>;
-	drop: (project: ProjectDocument, diagramId: string, item: string, x: number, y: number) => void;
+	/** Adds a palette item with its top-left corner at x, y; the new element's id. */
+	drop: (
+		project: ProjectDocument,
+		diagramId: string,
+		item: string,
+		x: number,
+		y: number
+	) => string | undefined;
+	/** The size and name a palette item is previewed with while it is dragged over the canvas. */
+	dropPreview: (item: string) => { width: number; height: number; label: string };
 	connect: (project: ProjectDocument, diagramId: string, source: string, target: string) => void;
 };
 
@@ -213,6 +224,11 @@ function Canvas({ project, diagram, kind }: Props) {
 	}, [project, diagram.id]);
 
 	const [nodes, setNodes] = useState(toNodes);
+	// Framed on what it holds when it opens. An empty Diagram is framed when content
+	// first arrives from a peer or an agent, but not around a first element dropped
+	// here: that would move it away from the pointer.
+	const [frameOnOpen] = useState(() => nodes.length > 0);
+	const framed = useRef(frameOnOpen);
 	const [edges, setEdges] = useState(toEdges);
 
 	useEffect(() => {
@@ -275,12 +291,21 @@ function Canvas({ project, diagram, kind }: Props) {
 		[diagram.name, screenToFlowPosition, kind, project, diagram.id, getNodes]
 	);
 
+	const onResized = useCallback(
+		(id: string, box: Box) => project.setZoneBox(diagram.id, id, box),
+		[project, diagram.id]
+	);
+	const snapping = useSnapGestures(edges, onResized);
+
 	// Dragging a Zone takes along what it holds when the drag starts.
 	const carried = useRef<{ zones: Map<string, Point>; content: Map<string, Point> } | null>(null);
 	const onNodeDragStart = (dragged: Node[]) => {
 		project.stopCapturing();
 		const zones = dragged.filter((n) => n.type === 'zone');
-		if (zones.length === 0) return;
+		if (zones.length === 0) {
+			snapping.beginDrag(dragged.map((n) => n.id));
+			return;
+		}
 		// At the model's sizes, as Tidy up and agents see it.
 		const all = new Map(project.nodes(diagram.id).map((n) => [n.id, n]));
 		const parents = zoneParents([...all.values()], estimatedSize);
@@ -296,15 +321,21 @@ function Canvas({ project, diagram, kind }: Props) {
 			zones: new Map(zones.map((z) => [z.id, z.data as DiagramNode])),
 			content
 		};
+		snapping.beginDrag(
+			dragged.map((n) => n.id),
+			content.keys()
+		);
 	};
 	const onNodeDrag = (dragged: Node[]) => {
 		const carry = carried.current;
 		if (!carry || carry.content.size === 0) return;
 		const zone = dragged.find((n) => carry.zones.has(n.id));
 		if (!zone) return;
+		// The content follows the Zone where it is drawn, snapped.
+		const at = snapping.draggedAt(zone.id) ?? zone.position;
 		const start = carry.zones.get(zone.id)!;
-		const dx = zone.position.x - start.x;
-		const dy = zone.position.y - start.y;
+		const dx = at.x - start.x;
+		const dy = at.y - start.y;
 		setNodes((current) =>
 			current.map((n) => {
 				const from = carry.content.get(n.id);
@@ -313,22 +344,30 @@ function Canvas({ project, diagram, kind }: Props) {
 		);
 	};
 	const onNodeDragStop = (dragged: Node[]) => {
-		const moves = dragged.map((n) => ({ id: n.id, ...n.position }));
+		// Saved where it is drawn, snapped.
+		const moves = dragged.map((n) => ({ id: n.id, ...(snapping.draggedAt(n.id) ?? n.position) }));
+		const zoneAt = (id: string, fallback: Point) => snapping.draggedAt(id) ?? fallback;
 		const carry = carried.current;
 		carried.current = null;
 		const zone = carry && dragged.find((n) => carry.zones.has(n.id));
 		if (carry && zone) {
 			const start = carry.zones.get(zone.id)!;
-			const dx = zone.position.x - start.x;
-			const dy = zone.position.y - start.y;
+			const at = zoneAt(zone.id, zone.position);
+			const dx = at.x - start.x;
+			const dy = at.y - start.y;
 			for (const [id, from] of carry.content) moves.push({ id, x: from.x + dx, y: from.y + dy });
 		}
+		snapping.endDrag();
 		project.moveNodes(diagram.id, moves);
 	};
 
+	const { snapChanges } = snapping;
 	const onNodesChange = useCallback(
-		(changes: NodeChange[]) => setNodes((current) => applyNodeChanges(changes, current)),
-		[setNodes]
+		(changes: NodeChange[]) => {
+			const snapped = snapChanges(changes);
+			setNodes((current) => applyNodeChanges(snapped, current));
+		},
+		[setNodes, snapChanges]
 	);
 	const onEdgesChange = useCallback(
 		(changes: EdgeChange[]) => setEdges((current) => applyEdgeChanges(changes, current)),
@@ -411,14 +450,73 @@ function Canvas({ project, diagram, kind }: Props) {
 					edge: selectedEdges[0]?.data as DiagramEdge | undefined
 				};
 
+	// A palette item dragged over the canvas: drawn where it will land, centred on the pointer, snapped.
+	const [preview, setPreview] = useState<(Box & { label: string }) | null>(null);
+	const previewAt = (event: DragEvent, item = draggedPaletteItem()) => {
+		if (!item || !event.dataTransfer.types.includes(PALETTE_MIME)) return null;
+		const { label, ...size } = kind.dropPreview(item);
+		const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+		return { ...snapping.placeCentred(at, size, event.altKey), label };
+	};
+	const clearPreview = () => {
+		setPreview(null);
+		snapping.clearGuides();
+	};
+	const onDragOver = (event: DragEvent) => {
+		event.preventDefault();
+		const box = previewAt(event);
+		setPreview((current) =>
+			current && box && current.x === box.x && current.y === box.y ? current : box
+		);
+	};
+	const onDragLeave = (event: DragEvent) => {
+		// Leaving for a child of the canvas is still being over it; by the pointer, since
+		// Safari gives no relatedTarget for drags.
+		const bounds = flowRef.current?.getBoundingClientRect();
+		const inside =
+			bounds &&
+			event.clientX > bounds.left &&
+			event.clientX < bounds.right &&
+			event.clientY > bounds.top &&
+			event.clientY < bounds.bottom;
+		if (!inside) clearPreview();
+	};
 	const onDrop = (event: DragEvent) => {
 		const item = event.dataTransfer.getData(PALETTE_MIME);
 		if (!item) return;
 		event.preventDefault();
-		const { x, y } = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+		// The item the drag carries: a drag from another window has no palette item here.
+		const box = previewAt(event, item);
+		clearPreview();
+		endPaletteDrag();
+		if (!box) return;
 		project.stopCapturing();
-		kind.drop(project, diagram.id, item, x, y);
+		framed.current = true;
+		const id = kind.drop(project, diagram.id, item, box.x, box.y);
+		if (id) dropped.current = { id, centre: centreOf(box), free: event.altKey };
 	};
+	// The preview has the model's estimated size: once the canvas has measured the new
+	// element, it is centred where the preview was (snapped again at its real size),
+	// in the same undo step.
+	const dropped = useRef<{ id: string; centre: Point; free: boolean } | null>(null);
+	const { placeCentred, clearGuides } = snapping;
+	useEffect(() => {
+		const pending = dropped.current;
+		const node = pending && nodes.find((n) => n.id === pending.id);
+		const size = node?.measured;
+		if (!pending || !node || !size?.width || !size.height) return;
+		dropped.current = null;
+		const box = placeCentred(pending.centre, size as Size, pending.free, pending.id);
+		clearGuides();
+		if (box.x !== node.position.x || box.y !== node.position.y) {
+			project.moveNode(diagram.id, pending.id, box.x, box.y);
+		}
+	}, [nodes, placeCentred, clearGuides, project, diagram.id]);
+	useEffect(() => {
+		if (framed.current || nodes.length === 0) return;
+		framed.current = true;
+		if (!dropped.current) setFitPending(true);
+	}, [nodes]);
 
 	return (
 		<div className="workspace">
@@ -428,7 +526,8 @@ function Canvas({ project, diagram, kind }: Props) {
 					ref={flowRef}
 					className="flow"
 					onDrop={onDrop}
-					onDragOver={(e) => e.preventDefault()}
+					onDragOver={onDragOver}
+					onDragLeave={onDragLeave}
 					onPointerMove={(e) => {
 						const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
 						cursor.move(x, y);
@@ -445,6 +544,10 @@ function Canvas({ project, diagram, kind }: Props) {
 						onNodeDragStart={(_event, _node, dragged) => onNodeDragStart(dragged)}
 						onNodeDrag={(_event, _node, dragged) => onNodeDrag(dragged)}
 						onNodeDragStop={(_event, _node, dragged) => onNodeDragStop(dragged)}
+						// Dragging a box-selected group by its selection rectangle: the same gestures.
+						onSelectionDragStart={(_event, dragged) => onNodeDragStart(dragged)}
+						onSelectionDrag={(_event, dragged) => onNodeDrag(dragged)}
+						onSelectionDragStop={(_event, dragged) => onNodeDragStop(dragged)}
 						onConnect={({ source, target }) => {
 							project.stopCapturing();
 							kind.connect(project, diagram.id, source, target);
@@ -464,11 +567,38 @@ function Canvas({ project, diagram, kind }: Props) {
 						panOnScroll
 						panOnScrollMode={PanOnScrollMode.Free}
 						zoomOnPinch
-						fitView
+						fitView={frameOnOpen}
 						fitViewOptions={{ maxZoom: 1 }}
 						proOptions={{ hideAttribution: true }}
 					>
 						<Background gap={16} />
+						<ViewportPortal>
+							{preview && (
+								<div
+									className="drop-preview"
+									style={{
+										transform: `translate(${preview.x}px, ${preview.y}px)`,
+										width: preview.width,
+										height: preview.height
+									}}
+								>
+									{preview.label}
+								</div>
+							)}
+							{snapping.guides.length > 0 && (
+								<svg className="snap-guides" width="1" height="1" aria-hidden="true">
+									{snapping.guides.map((g, i) => (
+										<line
+											key={i}
+											x1={g.axis === 'x' ? g.at : g.from}
+											x2={g.axis === 'x' ? g.at : g.to}
+											y1={g.axis === 'x' ? g.from : g.at}
+											y2={g.axis === 'x' ? g.to : g.at}
+										/>
+									))}
+								</svg>
+							)}
+						</ViewportPortal>
 						<RemoteCursors diagramId={diagram.id} />
 						<Controls showInteractive={false}>
 							<ControlButton
@@ -496,6 +626,7 @@ function Canvas({ project, diagram, kind }: Props) {
 }
 
 const pairKey = (e: DiagramEdge) => `${e.source}|${e.target}`;
+const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 
 /**
  * Carries over what React Flow knows of the previous elements: the selection,
