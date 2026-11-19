@@ -1,5 +1,5 @@
 import { useCanvas } from '../canvas/canvas-context';
-import { PALETTE_MIME } from '../canvas/DiagramCanvas';
+import { endPaletteDrag, startPaletteDrag } from '../canvas/palette-drag';
 import { strings } from '../ui/strings';
 import { setNotation, useNotation } from './notation';
 
@@ -26,10 +26,8 @@ export function McdPalette() {
 			<div
 				className="palette-item"
 				draggable
-				onDragStart={(e) => {
-					e.dataTransfer.setData(PALETTE_MIME, 'entity');
-					e.dataTransfer.effectAllowed = 'copy';
-				}}
+				onDragStart={(e) => startPaletteDrag(e, 'entity')}
+				onDragEnd={endPaletteDrag}
 			>
 				<span className="palette-entity" />
 				{strings.mcd.entity}

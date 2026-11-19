@@ -1,4 +1,4 @@
-import { PALETTE_MIME } from '../canvas/DiagramCanvas';
+import { endPaletteDrag, startPaletteDrag } from '../canvas/palette-drag';
 import { strings } from '../ui/strings';
 import { COMPONENT_TYPES, ZONE_ITEM } from './catalog';
 import { GenericIcon } from './ComponentIcon';
@@ -12,10 +12,8 @@ export function SystemPalette() {
 					key={info.type}
 					className="palette-item"
 					draggable
-					onDragStart={(e) => {
-						e.dataTransfer.setData(PALETTE_MIME, info.type);
-						e.dataTransfer.effectAllowed = 'copy';
-					}}
+					onDragStart={(e) => startPaletteDrag(e, info.type)}
+					onDragEnd={endPaletteDrag}
 				>
 					<GenericIcon type={info.type} color={info.color} />
 					{info.label}
@@ -24,10 +22,8 @@ export function SystemPalette() {
 			<div
 				className="palette-item"
 				draggable
-				onDragStart={(e) => {
-					e.dataTransfer.setData(PALETTE_MIME, ZONE_ITEM);
-					e.dataTransfer.effectAllowed = 'copy';
-				}}
+				onDragStart={(e) => startPaletteDrag(e, ZONE_ITEM)}
+				onDragEnd={endPaletteDrag}
 			>
 				<svg className="zone-icon" viewBox="0 0 24 24" aria-hidden="true">
 					<rect x="2.5" y="4.5" width="19" height="15" rx="2" />

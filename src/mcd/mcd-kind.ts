@@ -1,6 +1,9 @@
 import { useCanvas } from '../canvas/canvas-context';
 import type { CanvasKind } from '../canvas/DiagramCanvas';
 import { asStored } from '../canvas/layout';
+import { dataType } from '@simple-modelisation/model/data-types.ts';
+import { estimatedSize } from '@simple-modelisation/model/layout.ts';
+import { strings } from '../ui/strings';
 import { LegEdge } from './LegEdge';
 import { McdPalette } from './McdPalette';
 import { McdPanel } from './McdPanel';
@@ -19,8 +22,22 @@ export const mcdKind: CanvasKind = {
 		return useNotation(diagramId) === 'uml' ? umlLayout : asStored;
 	},
 	drop: (project, diagramId, item, x, y) => {
-		if (item === 'entity') project.addEntity(diagramId, x, y);
+		return item === 'entity' ? project.addEntity(diagramId, x, y, strings.mcd.entity) : undefined;
 	},
+	// A new Entity: its name and its auto-increment id.
+	dropPreview: () => ({
+		...estimatedSize({
+			id: '',
+			type: 'entity',
+			x: 0,
+			y: 0,
+			name: strings.mcd.entity,
+			attributes: [
+				{ id: '', name: 'id', identifier: true, type: dataType('serial'), optional: false }
+			]
+		}),
+		label: strings.mcd.entity
+	}),
 	// Dragging between two Entities (or two dots of one Entity) draws an Association.
 	connect: (project, diagramId, source, target) => {
 		project.addAssociation(diagramId, source, target);

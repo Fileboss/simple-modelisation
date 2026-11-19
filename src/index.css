@@ -1098,3 +1098,37 @@ select {
 	color: var(--accent);
 	font-size: 0.8rem;
 }
+
+/* Snapping guides and the palette's drop preview, in flow coordinates (ViewportPortal). */
+.snap-guides {
+	position: absolute;
+	left: 0;
+	top: 0;
+	overflow: visible;
+	pointer-events: none;
+	z-index: 2000;
+}
+
+.snap-guides line {
+	stroke: #e5484d;
+	stroke-width: 1;
+	vector-effect: non-scaling-stroke;
+}
+
+.drop-preview {
+	position: absolute;
+	left: 0;
+	top: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	border: 2px dashed var(--accent);
+	border-radius: 10px;
+	background: rgb(37 99 235 / 0.08);
+	color: var(--accent);
+	font-size: 0.85rem;
+	font-weight: 600;
+	pointer-events: none;
+	z-index: 1999;
+}
