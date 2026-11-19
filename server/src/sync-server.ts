@@ -38,6 +38,9 @@ export type SyncServerOptions = {
 
 export type SyncServer = { port: number; stop: () => Promise<void> };
 
+/** Answers 200 while the process serves requests: for Docker's HEALTHCHECK and proxies. */
+export const HEALTH_PATH = '/health';
+
 /** Messages one connection may send in MESSAGE_WINDOW_MS before it is closed. */
 const MESSAGE_WINDOW_MS = 10_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -110,7 +113,14 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		async onRequest({ request, response }) {
 			// Every response of this origin, errors and MCP included.
 			for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.setHeader(name, value);
-			const isMcp = new URL(request.url ?? '/', 'http://local').pathname === MCP_PATH;
+			const pathname = new URL(request.url ?? '/', 'http://local').pathname;
+			if (pathname === HEALTH_PATH) {
+				if (request.method === 'GET' || request.method === 'HEAD') {
+					response.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+				} else response.writeHead(405, { Allow: 'GET, HEAD' }).end();
+				throw null;
+			}
+			const isMcp = pathname === MCP_PATH;
 			if (!isMcp && !staticDir) return;
 			try {
 				if (isMcp && !mcp) response.writeHead(404).end();

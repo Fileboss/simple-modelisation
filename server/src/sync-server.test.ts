@@ -7,7 +7,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
-import { startSyncServer, type SyncServer, type SyncServerOptions } from './sync-server.ts';
+import {
+	HEALTH_PATH,
+	startSyncServer,
+	type SyncServer,
+	type SyncServerOptions
+} from './sync-server.ts';
 
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
@@ -320,6 +325,22 @@ describe('hardening', () => {
 		const error = await fetch(`http://127.0.0.1:${server.port}/%E0%A4%A`);
 		expect(error.status).toBe(400);
 		expect(error.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+	});
+
+	it('answers /health without storage or app, with the security headers', async () => {
+		const { server } = await start({ storage: 'none' });
+		const health = `http://127.0.0.1:${server.port}${HEALTH_PATH}`;
+		const response = await fetch(health);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('text/plain');
+		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(await response.text()).toBe('ok');
+		const head = await fetch(health, { method: 'HEAD' });
+		expect(head.status).toBe(200);
+		expect(await head.text()).toBe('');
+		const post = await fetch(health, { method: 'POST' });
+		expect(post.status).toBe(405);
+		expect(post.headers.get('allow')).toBe('GET, HEAD');
 	});
 
 	it('trusts X-Forwarded-Host for the Origin check only behind a trusted proxy', async () => {

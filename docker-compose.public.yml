@@ -8,7 +8,15 @@ services:
       - '3000:3000'
     environment:
       STORAGE: none
-      MAX_DOCUMENTS: '500'
+      MAX_DOCUMENTS: '80'
       TRUST_PROXY: 'true'
+    # Nothing writable but a small /tmp, no capability, no privilege escalation.
     read_only: true
+    tmpfs: ['/tmp:size=16m']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    # Bounds what one container may take from its host. Documents are 5 MB at most:
+    # MAX_DOCUMENTS above keeps 80 full ones within it; raise both together.
+    mem_limit: 512m
+    pids_limit: 100
     restart: unless-stopped

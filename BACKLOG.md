@@ -11,7 +11,6 @@ tags: [backlog]
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
 
-- v0.1 image-hardening: a minimal runtime image (no npm or pnpm), base image pinned by digest with Dependabot, HEALTHCHECK on /health, the public compose example hardened (read-only, no capabilities, memory and process limits), a smoke test of the image in CI
 - v0.1 release: CHANGELOG, v0.1.0 tag, public ghcr package, GitHub rulesets on main and v* tags, Actions read-only by default
 
 After v0.1:
@@ -29,6 +28,7 @@ After v0.1:
 
 ## Done
 
+- [image-hardening](docs/specs/image-hardening/): v0.1, a minimal runtime image pinned by digest, HEALTHCHECK on /health, the public compose hardened, a smoke test at the tag
 - [app-hardening](docs/specs/app-hardening/): v0.1, the exposed server hardened for a public relay
 - [relay-mode](docs/specs/relay-mode/): sharing without server storage, for a public deployment
 - [svg-export](docs/specs/svg-export/): System design diagrams as plain SVG, over MCP and in the app
