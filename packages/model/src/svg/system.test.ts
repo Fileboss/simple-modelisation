@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ENGLISH_NAMES } from '../names.ts';
 import { ProjectDocument } from '../project.ts';
+import { estimatedSize } from '../layout.ts';
+import { nodeBox } from '../zones.ts';
 import { systemSvg } from './system.ts';
+
+const nodeBoxOf = (node: Parameters<typeof nodeBox>[0]) => nodeBox(node, estimatedSize);
 
 const diagram = () => {
 	const project = new ProjectDocument();
@@ -164,5 +168,111 @@ describe('systemSvg', () => {
 		expect(svg).toContain('>Client</text>');
 		expect(svg).not.toContain('undefined');
 		expect(svg).not.toContain('Object');
+	});
+
+	describe('Legend', () => {
+		/** The Legend's group, or undefined: the last group moved under the content. */
+		const legendOf = (svg: string) =>
+			/<g transform="translate\([-\d.]+ [-\d.]+\)"><rect x="0.5" y="0.5"[^]*?<\/g>(?=\n<\/svg>|\n<)/.exec(
+				svg
+			)?.[0];
+		const keyTexts = (svg: string) =>
+			[...(legendOf(svg) ?? '').matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1]);
+
+		it('names the Flows, Providers, Hostings and Runtimes drawn, in badge order', () => {
+			const project = new ProjectDocument();
+			const d = project.addDiagram('system');
+			const zone = project.addZone(d, 0, 0, 600, 240, 'eu-west-3');
+			project.setProvider(d, zone, 'ovhcloud');
+			const web = project.addComponent(d, 'service', 'Web', 40, 80);
+			project.setSkin(d, web, 'nextjs');
+			project.setRuntime(d, web, 'bun');
+			project.setHosting(d, web, 'docker');
+			const db = project.addComponent(d, 'database', 'DB', 320, 80);
+			project.setHosting(d, db, 'managed');
+			project.setConnectionFlow(d, project.addConnection(d, web, db)!, 'read-write');
+			const svg = systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES });
+			expect(keyTexts(svg)).toEqual([
+				'Flow',
+				'Read/Write',
+				'Provider',
+				'OVHcloud',
+				'Hosting',
+				'Docker',
+				'Managed (cloud)',
+				'Runtime',
+				'Bun'
+			]);
+			// Its badges are not titled again: the Legend prints their names.
+			expect(svg.match(/<title>Provider: OVHcloud<\/title>/g)).toHaveLength(3);
+		});
+
+		it('leaves out what is not drawn as a mark', () => {
+			const project = new ProjectDocument();
+			const d = project.addDiagram('system');
+			const zone = project.addZone(d, 0, 0, 600, 240, 'Hetzner');
+			project.setProvider(d, zone, 'hetzner');
+			// An External service shows no Provider, a Runtime without a Skin is the Service's logo.
+			const api = project.addComponent(d, 'service', 'Payments', 40, 80);
+			project.setHosting(d, api, 'external');
+			const indexer = project.addComponent(d, 'service', 'Indexer', 320, 80);
+			project.setRuntime(d, indexer, 'rust');
+			project.addConnection(d, indexer, api);
+			const svg = systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES });
+			// The Zone's own Provider badge is named, once.
+			expect(keyTexts(svg)).toEqual(['Provider', 'Hetzner', 'Hosting', 'External service']);
+		});
+
+		it('is left out with nothing to name, or when turned off', () => {
+			const { nodes, edges } = diagram();
+			expect(legendOf(systemSvg(nodes, edges, { names: ENGLISH_NAMES }))).toBeDefined();
+			expect(
+				legendOf(systemSvg(nodes, edges, { names: ENGLISH_NAMES, legend: false }))
+			).toBeUndefined();
+			const project = new ProjectDocument();
+			const d = project.addDiagram('system');
+			project.addConnection(
+				d,
+				project.addComponent(d, 'service', 'A', 0, 0),
+				project.addComponent(d, 'service', 'B', 300, 0)
+			);
+			expect(
+				legendOf(systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES }))
+			).toBeUndefined();
+		});
+
+		it('sits under the content, bottom right, inside the frame', () => {
+			const project = new ProjectDocument();
+			const d = project.addDiagram('system');
+			// A single box: the Legend's right edge on its right edge, under it.
+			const db = project.addComponent(d, 'database', 'DB', 0, 0);
+			project.setHosting(d, db, 'kubernetes');
+			project.setProvider(d, db, 'google-cloud');
+			const svg = systemSvg(project.nodes(d), [], { names: ENGLISH_NAMES });
+			const [, vx, vy, vw, vh] = /viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/
+				.exec(svg)!
+				.map(Number);
+			const [, kx, ky] = /<g transform="translate\(([-\d.]+) ([-\d.]+)\)"><rect x="0.5"/
+				.exec(svg)!
+				.map(Number);
+			const [, kw, kh] = /<rect x="0.5" y="0.5" width="([\d.]+)" height="([\d.]+)"/
+				.exec(svg)!
+				.map(Number);
+			const box = nodeBoxOf(project.nodes(d)[0]);
+			expect(ky).toBeGreaterThan(box.y + box.height);
+			expect(kx + kw + 1).toBeCloseTo(box.x + box.width, 0);
+			expect(kx).toBeGreaterThanOrEqual(vx);
+			expect(ky + kh).toBeLessThanOrEqual(vy + vh);
+			expect(kx + kw).toBeLessThanOrEqual(vx + vw);
+		});
+
+		it('prints the names it is given, escaped', () => {
+			const { nodes, edges } = diagram();
+			const names = {
+				...ENGLISH_NAMES,
+				titles: { ...ENGLISH_NAMES.titles, hosting: 'Hébergement <x>' }
+			};
+			expect(keyTexts(systemSvg(nodes, edges, { names }))).toContain('Hébergement &lt;x&gt;');
+		});
 	});
 });

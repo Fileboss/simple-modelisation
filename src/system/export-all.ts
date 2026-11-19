@@ -6,10 +6,11 @@ import { SVG_NAMES } from './system-kind';
 /**
  * Every System design diagram of the Project as an SVG file in a .zip, named
  * after the Diagram (twins numbered); MCDs are not drawn yet and come back in
- * `skipped`. Null when there is nothing to draw. The zip library loads on demand.
+ * `skipped`. Each SVG has a Legend unless `legend` is false. Null when there is nothing to draw. The zip library loads on demand.
  */
 export async function allDiagramsZip(
-	project: ProjectDocument
+	project: ProjectDocument,
+	{ legend }: { legend: boolean }
 ): Promise<{ zip: Blob; skipped: string[] } | null> {
 	const diagrams = project.diagrams();
 	const drawn = diagrams.filter((d) => d.kind === 'system');
@@ -22,7 +23,8 @@ export async function allDiagramsZip(
 		for (let n = 2; name in files; n++) name = `${base} (${n}).svg`;
 		const svg = systemSvg(project.nodes(diagram.id), project.edges(diagram.id), {
 			names: SVG_NAMES,
-			measure: measureInPage
+			measure: measureInPage,
+			legend
 		});
 		files[name] = strToU8(svg);
 	}

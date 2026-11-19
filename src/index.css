@@ -1014,6 +1014,18 @@ select {
 	background: var(--bg);
 }
 
+.export-check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 4px;
+	padding: 6px 8px 2px;
+	border-top: 1px solid var(--border);
+	color: var(--muted);
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
 .export-note {
 	color: var(--muted);
 	font-size: 0.85rem;

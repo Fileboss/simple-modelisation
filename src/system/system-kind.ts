@@ -22,6 +22,7 @@ export const SVG_NAMES = {
 	providers: strings.provider.names,
 	flows: strings.flow.names,
 	titles: {
+		flow: strings.flow.title,
 		hosting: strings.hosting.title,
 		provider: strings.provider.title,
 		runtime: strings.runtime.title
@@ -36,8 +37,8 @@ export const systemKind: CanvasKind = {
 	// Connection labels are placed together, so that none overlaps another or a box.
 	useLayout: () => placeConnectionLabels,
 	derive: withInheritedProviders,
-	drawSvg: (nodes, edges, sizeOf) =>
-		systemSvg(nodes, edges, { names: SVG_NAMES, sizeOf, measure: measureInPage }),
+	drawSvg: (nodes, edges, sizeOf, legend) =>
+		systemSvg(nodes, edges, { names: SVG_NAMES, sizeOf, measure: measureInPage, legend }),
 	dropPreview: (item) => {
 		if (item === ZONE_ITEM) return { ...ZONE_DEFAULT, label: strings.system.zone };
 		if (item === NOTE_ITEM) return { ...noteSize(''), label: strings.note.title };

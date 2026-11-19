@@ -11,7 +11,6 @@ tags: [backlog]
 
 Road to v0.1, the first public version (a relay, for a few people): security first.
 
-- v0.1 export-legend: a legend in image exports for what the Diagram uses (Flows, Hostings, Providers, Runtimes)
 - v0.1 release: CHANGELOG, v0.1.0 tag, public ghcr package, GitHub rulesets on main and v* tags, Actions read-only by default
 
 After v0.1:
@@ -33,6 +32,7 @@ After v0.1:
 
 ## Done
 
+- [export-legend](docs/specs/export-legend/): v0.1, a Legend in exported images of System design diagrams (Flows, Providers, Hostings, Runtimes), with a toggle
 - [copy-paste](docs/specs/copy-paste/): v0.1, copy, cut, paste and duplicate on the canvas, through the system clipboard
 - [notes](docs/specs/notes/): v0.1, sticky Notes on the canvas in five colors, in System design diagrams and MCDs
 - [people](docs/specs/people/): v0.1, a Person Component type drawn as a silhouette, with role Skins (Customer, Admin, Partner, Support)

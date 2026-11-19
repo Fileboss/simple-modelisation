@@ -96,6 +96,10 @@ _Avoid_: Link, edge, flow (a Flow is what a Connection's data does)
 What a Connection's data does, seen from the initiator: Read (the data comes back), Write (the data goes to the target) or Read/Write; it colors the Connection and names it in its label.
 _Avoid_: Direction (the arrow's direction is always who initiates), access, mode
 
+**Legend**:
+The key in an exported image of a System design diagram, naming the Flows, Providers, Hostings and Runtimes its marks stand for; only those the image shows.
+_Avoid_: Key, caption
+
 ## Data modeling (Merise)
 
 **MCD**:
