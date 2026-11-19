@@ -74,6 +74,7 @@ describe('MCP endpoint', () => {
 			'add_zone',
 			'connect_components',
 			'delete_elements',
+			'export_diagram',
 			'get_diagram',
 			'get_mcd_sql',
 			'get_project',
@@ -432,6 +433,37 @@ describe('MCP endpoint', () => {
 		await vi.waitFor(() =>
 			expect(browser.nodes(diagram).find((n) => n.id === data)).toMatchObject({ x: 2000, y: 90 })
 		);
+	});
+
+	it('exports System design diagrams as plain SVG, MCDs left out with a note', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
+		await call(client, 'add_component', {
+			...at,
+			type: 'database',
+			name: 'DB',
+			skin: 'postgresql'
+		});
+		await call(client, 'connect_components', { ...at, from: 'API', to: 'DB', label: 'SQL' });
+
+		const one = await client.callTool({ name: 'export_diagram', arguments: at });
+		const [note, image] = one.content as [
+			{ text: string },
+			{ resource: { mimeType: string; text: string } }
+		];
+		expect(note.text).toBe('Architecture drawn as SVG.');
+		expect(image.resource.mimeType).toBe('image/svg+xml');
+		expect(image.resource.text).toMatch(/^<svg xmlns/);
+		expect(image.resource.text).toContain('>SQL</text>');
+		expect(image.resource.text).not.toContain('foreignObject');
+
+		const all = await client.callTool({ name: 'export_diagram', arguments: { project: id } });
+		expect((all.content as { text?: string }[])[0].text).toBe(
+			'Architecture drawn as SVG. Not drawn yet (MCDs): Data.'
+		);
+		const mcd = await call(client, 'export_diagram', { project: id, diagram: 'Data' });
+		expect(mcd.error).toMatch(/is not a System design diagram/);
 	});
 
 	it('says where Components run', async () => {

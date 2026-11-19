@@ -1,23 +1,11 @@
 import type { ComponentType } from '@simple-modelisation/model/project.ts';
+import { TYPE_LOOKS } from '@simple-modelisation/model/looks.ts';
 import type { Skin } from './catalog';
-
-// Line glyphs on a 24×24 box for the generic look of each Component type.
-const GLYPHS: Record<ComponentType, string> = {
-	client: 'M3 5h18v11H3zM8 20h8M12 16v4',
-	service: 'M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01',
-	database:
-		'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
-	cache: 'M13 2 4 14h7l-1 8 9-12h-7z',
-	queue: 'M3 7h4v10H3zM10 7h4v10h-4zM17 7h4v10h-4z',
-	gateway: 'M12 3l9 9-9 9-9-9zM8 12h8M13 9l3 3-3 3',
-	storage: 'M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10',
-	disk: 'M4 14l2.5-9h11L20 14M4 14h16v5H4zM16 16.5h.01M8 16.5h4'
-};
 
 export function GenericIcon({ type, color }: { type: ComponentType; color: string }) {
 	return (
 		<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke={color} strokeWidth="1.8">
-			<path d={GLYPHS[type]} strokeLinecap="round" strokeLinejoin="round" />
+			<path d={TYPE_LOOKS[type].glyph} strokeLinecap="round" strokeLinejoin="round" />
 		</svg>
 	);
 }

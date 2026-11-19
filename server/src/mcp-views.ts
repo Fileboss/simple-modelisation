@@ -12,7 +12,9 @@ import type {
 } from '@simple-modelisation/model/project.ts';
 import { estimatedSize } from '@simple-modelisation/model/layout.ts';
 import { effectiveProviders, zoneParents } from '@simple-modelisation/model/zones.ts';
+import { ENGLISH_NAMES } from '@simple-modelisation/model/names.ts';
 import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
+import { systemSvg } from '@simple-modelisation/model/svg/system.ts';
 import { mldText, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { ToolError } from './mcp-error.ts';
 
@@ -139,4 +141,23 @@ function only<T extends DiagramNode | DiagramEdge>(
 	type: string
 ) {
 	return items.filter((item) => item.type === type) as T[];
+}
+
+/**
+ * Diagrams drawn as SVG: the one named, or every one. MCDs are not drawn yet:
+ * they come back in `skipped`, and naming one is an error.
+ */
+export function exportDiagrams(project: ProjectDocument, reference?: string) {
+	// Naming an MCD is refused: only System design diagrams are drawn for now.
+	const diagrams = reference ? [pickDiagram(project, reference, 'system')] : project.diagrams();
+	return {
+		images: diagrams
+			.filter((d) => d.kind === 'system')
+			.map((d) => ({
+				id: d.id,
+				name: d.name,
+				svg: systemSvg(project.nodes(d.id), project.edges(d.id), { names: ENGLISH_NAMES })
+			})),
+		skipped: diagrams.filter((d) => d.kind === 'mcd').map((d) => d.name)
+	};
 }
