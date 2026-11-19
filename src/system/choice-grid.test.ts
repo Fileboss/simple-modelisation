@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { visibleChoices } from './choice-grid';
+import { groupedChoices, visibleChoices } from './choice-grid';
 
 const choices = ['Node.js', 'Spring Boot', 'Go', 'Bun', 'Python', 'Rust', 'Café'].map((label) => ({
 	id: label.toLowerCase(),
@@ -25,5 +25,21 @@ describe('visibleChoices', () => {
 		expect(labels(visibleChoices(choices, ['go'], null, true, '  PYT '))).toEqual(['Python']);
 		expect(labels(visibleChoices(choices, ['go'], null, true, 'cafe'))).toEqual(['Café']);
 		expect(visibleChoices(choices, ['go'], null, true, 'cobol')).toEqual([]);
+	});
+});
+
+describe('groupedChoices', () => {
+	it('cuts choices into their sections, in the order they first appear', () => {
+		const list = [
+			{ id: 'next', group: 'Frameworks' },
+			{ id: 'caddy', group: 'Products' },
+			{ id: 'nest', group: 'Frameworks' }
+		];
+		expect(groupedChoices(list).map((s) => [s.group, s.choices.map((c) => c.id)])).toEqual([
+			['Frameworks', ['next', 'nest']],
+			['Products', ['caddy']]
+		]);
+		const plain: { id: string; group?: string }[] = [{ id: 'a' }, { id: 'b' }];
+		expect(groupedChoices(plain)).toEqual([{ group: undefined, choices: plain }]);
 	});
 });

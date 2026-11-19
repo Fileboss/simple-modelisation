@@ -38,6 +38,8 @@ export type ComponentNode = DiagramNode & {
 	provider?: Provider;
 	/** A Disk's kind; absent when unspecified. */
 	diskKind?: DiskKind;
+	/** What runs a Service's code; absent when unspecified, and on other types. */
+	runtime?: Runtime;
 };
 
 /** Where a Component runs, from the most concrete to the most abstract. */
@@ -78,6 +80,23 @@ export const PROVIDERS = [
 	'railway'
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
+
+/**
+ * What executes a Service's code on the server, or the language for a native
+ * binary (Go, Rust): JavaScript runtimes, then VMs and interpreters, then compiled.
+ */
+export const RUNTIMES = [
+	'nodejs',
+	'bun',
+	'java',
+	'dotnet',
+	'python',
+	'php',
+	'ruby',
+	'go',
+	'rust'
+] as const;
+export type Runtime = (typeof RUNTIMES)[number];
 
 /** What a Disk is: spinning, solid-state, NVMe, or plugged in over USB. */
 export const DISK_KINDS = ['hdd', 'ssd', 'nvme', 'usb'] as const;
@@ -389,11 +408,12 @@ export class ProjectDocument {
 	/**
 	 * Changes what a Component is, keeping its id, Connections, Hosting and
 	 * Provider: a Skin the new type does not offer goes back to Generic, a Disk
-	 * kind goes away unless it is still a Disk.
+	 * kind goes away unless it is still a Disk, a Runtime unless it is still a Service.
 	 */
 	setComponentType(diagramId: string, componentId: string, componentType: ComponentType): void {
 		const component = this.nodeMap(diagramId).get(componentId);
 		if (!component) return;
+		const before = component.get('componentType') as string;
 		this.doc.transact(() => {
 			this.setNodeChoice(
 				diagramId,
@@ -403,9 +423,16 @@ export class ProjectDocument {
 				COMPONENT_TYPE_IDS
 			);
 			if (component.get('componentType') !== componentType) return;
+			// What the old type hid (a removed Skin, a peer's Runtime on a Database) must not
+			// show up under the new one: only what the Component showed carries over.
 			const skin = component.get('skin') as string | null;
-			if (skin && !skinFits(componentType, skin)) component.set('skin', null);
+			if (skin && !(skinFits(before, skin) && skinFits(componentType, skin))) {
+				component.set('skin', null);
+			}
 			if (componentType !== 'disk' && component.has('diskKind')) component.delete('diskKind');
+			if ((before !== 'service' || componentType !== 'service') && component.has('runtime')) {
+				component.delete('runtime');
+			}
 		});
 	}
 
@@ -426,6 +453,12 @@ export class ProjectDocument {
 	setDiskKind(diagramId: string, diskId: string, kind: DiskKind | null): void {
 		if (this.nodeMap(diagramId).get(diskId)?.get('componentType') !== 'disk') return;
 		this.setNodeChoice(diagramId, diskId, 'diskKind', kind, DISK_KINDS);
+	}
+
+	/** Says what runs a Service, or clears it with null; ignored on other Components or for an unknown value. */
+	setRuntime(diagramId: string, serviceId: string, runtime: Runtime | null): void {
+		if (this.nodeMap(diagramId).get(serviceId)?.get('componentType') !== 'service') return;
+		this.setNodeChoice(diagramId, serviceId, 'runtime', runtime, RUNTIMES);
 	}
 
 	/** Says where a Component runs, or clears it with null; an unknown value is ignored. */
@@ -801,17 +834,19 @@ function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 const canBeOptional = (a: Pick<Attribute, 'identifier' | 'type'>) =>
 	!a.identifier && a.type.kind !== 'serial';
 
-/**
- * A node as the app reads it: old Attributes completed, and a Hosting or a
- * Provider or a Disk kind this version does not know (a newer file or peer) read as unspecified.
- */
 /** Node fields that take one of a list (on Components, Zones); a value this version does not know reads as unspecified. */
 const NODE_CHOICES: [string, readonly string[]][] = [
 	['hosting', HOSTINGS],
 	['provider', PROVIDERS],
-	['diskKind', DISK_KINDS]
+	['diskKind', DISK_KINDS],
+	['runtime', RUNTIMES]
 ];
 
+/**
+ * A node as the app reads it: old Attributes completed, and a Hosting, a
+ * Provider, a Disk kind or a Runtime this version does not know (a newer file
+ * or peer), or that its type does not take, read as unspecified.
+ */
 function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
 	const attributes = node.attributes as Partial<Attribute>[] | undefined;
 	const read: Record<string, unknown> = attributes
@@ -826,6 +861,8 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	}
 	// Only a Disk has a kind, whatever a file or a peer sent.
 	if (read.componentType !== 'disk') delete read.diskKind;
+	// Only a Service has a Runtime.
+	if (read.componentType !== 'service') delete read.runtime;
 	return read as DiagramNode;
 }
 

@@ -79,6 +79,30 @@ describe('systemSvg', () => {
 		expect(Number(viewBox[1]) + Number(viewBox[2])).toBeGreaterThan(600);
 	});
 
+	it("shows a Service's Runtime as its logo, or as a badge beside its Skin", () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const indexer = project.addComponent(d, 'service', 'Indexer', 0, 0);
+		project.setRuntime(d, indexer, 'rust');
+		const web = project.addComponent(d, 'service', 'Web', 300, 0);
+		project.setSkin(d, web, 'nextjs');
+		project.setRuntime(d, web, 'bun');
+		const svg = systemSvg(project.nodes(d), [], { names: ENGLISH_NAMES });
+		expect(svg).toContain('>Rust</text>');
+		expect(svg).not.toContain('<title>Runtime: Rust</title>');
+		expect(svg).toContain('>Next.js</text>');
+		expect(svg).toContain('<title>Runtime: Bun</title>');
+	});
+
+	it('draws a Skin without a brand as its line glyph', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.setSkin(d, project.addComponent(d, 'client', 'Visitor', 0, 0), 'browser');
+		const svg = systemSvg(project.nodes(d), [], { names: ENGLISH_NAMES });
+		expect(svg).toContain('>Web browser</text>');
+		expect(svg).toMatch(/<path d="M12 3a9 9[^"]*" fill="none" stroke="#0284c7"/);
+	});
+
 	it('reads only catalog entries, whatever a peer writes', () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');

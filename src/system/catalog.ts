@@ -1,15 +1,19 @@
-import type { ComponentType } from '@simple-modelisation/model/project.ts';
-import { SKIN_LOOKS, TYPE_LOOKS } from '@simple-modelisation/model/looks.ts';
+import { RUNTIMES, type ComponentType, type Runtime } from '@simple-modelisation/model/project.ts';
+import { RUNTIME_LOOKS, SKIN_LOOKS, TYPE_LOOKS } from '@simple-modelisation/model/looks.ts';
 import { strings } from '../ui/strings';
-import { SKIN_IDS } from '@simple-modelisation/model/skins.ts';
+import { SERVICE_FRAMEWORKS, SKIN_IDS } from '@simple-modelisation/model/skins.ts';
 
-/** A market product a Component can wear; its look comes from the model's looks. */
+/** A product or framework a Component can wear, or a Runtime; its look comes from the model's looks. */
 export type Skin = {
 	id: string;
 	name: string;
 	color: string;
 	/** An SVG path on a 24×24 box; products without a Simple Icons logo show their initials. */
 	logo?: string;
+	/** A line glyph on a 24×24 box, for what no brand stands for (Web browser). */
+	glyph?: string;
+	/** The panel's section: a Service's Skins are frameworks or products. */
+	group?: string;
 };
 
 export type ComponentTypeInfo = {
@@ -33,8 +37,40 @@ const TYPES: { type: ComponentType; label: string; color: string }[] = [
 /** Each Component type with its Skins, in the model's order (packages/model skins.ts). */
 export const COMPONENT_TYPES: ComponentTypeInfo[] = TYPES.map((info) => ({
 	...info,
-	skins: SKIN_IDS[info.type].map((id) => ({ id, ...SKIN_LOOKS[id] }))
+	skins: SKIN_IDS[info.type].map((id) => ({
+		id,
+		...SKIN_LOOKS[id],
+		group: skinGroup(info.type, id)
+	}))
 }));
+
+function skinGroup(type: ComponentType, id: string): string | undefined {
+	if (type !== 'service') return undefined;
+	const frameworks: readonly string[] = SERVICE_FRAMEWORKS;
+	return frameworks.includes(id)
+		? strings.system.skinGroups.frameworks
+		: strings.system.skinGroups.products;
+}
+
+/** Every Runtime with its look, in the model's order. */
+export const RUNTIME_CHOICES: (Skin & { id: Runtime; logo: string })[] = RUNTIMES.map((id) => ({
+	id,
+	...RUNTIME_LOOKS[id]
+}));
+
+/** A Service's Runtime look; an unknown id (a newer file) means none. */
+export const findRuntime = (runtime: string | null | undefined) =>
+	RUNTIME_CHOICES.find((r) => r.id === runtime);
+
+/** The Runtimes the panel shows first. */
+export const RECOMMENDED_RUNTIMES: readonly Runtime[] = [
+	'nodejs',
+	'bun',
+	'python',
+	'go',
+	'java',
+	'rust'
+];
 
 export function componentTypeInfo(type: ComponentType): ComponentTypeInfo {
 	return COMPONENT_TYPES.find((t) => t.type === type) ?? COMPONENT_TYPES[0];
@@ -50,7 +86,7 @@ export function findSkin(type: ComponentType, skinId: string | null): Skin | und
  * the others are one click away. A type not listed shows all its Skins.
  */
 const RECOMMENDED: { [T in ComponentType]?: readonly (typeof SKIN_IDS)[T][number][] } = {
-	service: ['nodejs', 'go', 'python', 'spring-boot', 'bun'],
+	service: ['nextjs', 'react', 'nestjs', 'express', 'spring-boot', 'django', 'caddy'],
 	gateway: ['nginx', 'traefik', 'caddy', 'kong', 'tailscale']
 };
 

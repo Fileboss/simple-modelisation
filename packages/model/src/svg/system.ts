@@ -2,7 +2,14 @@ import { connectionRoute, routedPath, type Box, type Point } from '../geometry.t
 import { placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
 import { estimatedSize, type Size } from '../layout.ts';
 import { COMPONENT_TYPE_IDS } from '../component-types.ts';
-import { HOSTING_MARKS, PROVIDER_MARKS, SKIN_LOOKS, TYPE_LOOKS } from '../looks.ts';
+import {
+	HOSTING_MARKS,
+	PROVIDER_MARKS,
+	RUNTIME_LOOKS,
+	SKIN_LOOKS,
+	TYPE_LOOKS,
+	type SkinLook
+} from '../looks.ts';
 import { skinFits } from '../skins.ts';
 import type {
 	ComponentType,
@@ -10,7 +17,8 @@ import type {
 	DiagramNode,
 	DiskKind,
 	Hosting,
-	Provider
+	Provider,
+	Runtime
 } from '../project.ts';
 import type { ENGLISH_NAMES } from '../names.ts';
 import { effectiveProviders, nodeBox, zoneParents } from '../zones.ts';
@@ -155,10 +163,13 @@ function componentShape(
 		typeof component.skin === 'string' && skinFits(known, component.skin)
 			? own(SKIN_LOOKS, component.skin)
 			: undefined;
-	const color = skin?.color ?? typeLook.color;
+	const runtime = known === 'service' ? own(RUNTIME_LOOKS, component.runtime) : undefined;
+	// The Skin's logo, else the Runtime's: a Runtime beside a Skin is a badge.
+	const look = skin ?? runtime;
+	const color = look?.color ?? typeLook.color;
 	const name = String(component.name ?? '');
 	const diskKind = type === 'disk' ? (component.diskKind as DiskKind | undefined) : undefined;
-	const subtitle = skin?.name ?? (diskKind ? own(names.diskKinds, diskKind) : names.types[known]);
+	const subtitle = look?.name ?? (diskKind ? own(names.diskKinds, diskKind) : names.types[known]);
 	const middle = box.y + box.height / 2;
 	const icon = box.x + 14;
 	const text = icon + 28 + 10;
@@ -171,7 +182,7 @@ function componentShape(
 
 	const parts = [
 		`<rect x="${box.x + 1}" y="${box.y + 1}" width="${box.width - 2}" height="${box.height - 2}" rx="10" fill="#fff" stroke="${color}" stroke-width="2"/>`,
-		logoShape(skin, typeLook.glyph, color, icon, middle - 14, 28)
+		logoShape(look, typeLook.glyph, color, icon, middle - 14, 28)
 	];
 	if (subtitle && subtitle !== name) {
 		parts.push(
@@ -183,8 +194,9 @@ function componentShape(
 			`<text x="${text}" y="${middle}" font-size="15" font-weight="600" fill="${TEXT}" dy="0.35em"${fit}>${escape(name)}</text>`
 		);
 	}
-	// Badges in the top-right corner, read left to right: at whom, then how it runs.
+	// Badges in the top-right corner, read left to right: on what, at whom, then how it runs.
 	const badges: string[] = [];
+	if (skin && runtime) badges.push(runtimeBadge(runtime, names));
 	if (shown) badges.push(providerBadge(shown, 0, 0, BADGE, names));
 	if (hosting && own(HOSTING_MARKS, hosting)) badges.push(hostingBadge(hosting, 0, 0, names));
 	badges.forEach((badge, i) => {
@@ -194,9 +206,9 @@ function componentShape(
 	return parts.join('');
 }
 
-/** A Skin's logo, its initials without one, or the type's generic glyph. */
+/** A Skin's or a Runtime's logo or line glyph, its initials without either, or the type's generic glyph. */
 function logoShape(
-	skin: (typeof SKIN_LOOKS)[keyof typeof SKIN_LOOKS] | undefined,
+	skin: SkinLook | undefined,
 	glyph: string,
 	color: string,
 	x: number,
@@ -206,7 +218,7 @@ function logoShape(
 	if (skin?.logo) {
 		return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${skin.logo}" fill="${color}"/></svg>`;
 	}
-	if (skin) {
+	if (skin && !skin.glyph) {
 		const initials = skin.name
 			.split(/\s+/)
 			.map((word) => word[0])
@@ -214,13 +226,24 @@ function logoShape(
 			.slice(0, 2);
 		return `<rect x="${x}" y="${y}" width="${size}" height="${size}" rx="6" fill="${color}"/><text x="${x + size / 2}" y="${y + size / 2}" font-size="${size * 0.42}" font-weight="700" fill="#fff" text-anchor="middle" dy="0.35em">${escape(initials)}</text>`;
 	}
-	return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${glyph}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+	return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${skin?.glyph ?? glyph}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
 /** A round badge with a white ring, its mark in white (or its ink) on its color. */
 function badge(color: string, inner: string, title: string, x: number, y: number, size: number) {
 	const r = size / 2;
 	return `<g><title>${escape(title)}</title><circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r + 2}" fill="#fff"/><circle cx="${x + r + 2}" cy="${y + r + 2}" r="${r}" fill="${color}"/><svg x="${x + 2 + size * 0.19}" y="${y + 2 + size * 0.19}" width="${size * 0.62}" height="${size * 0.62}" viewBox="0 0 24 24">${inner}</svg></g>`;
+}
+
+function runtimeBadge(runtime: (typeof RUNTIME_LOOKS)[Runtime], names: SvgNames): string {
+	return badge(
+		runtime.color,
+		`<path d="${runtime.logo}" fill="#fff"/>`,
+		`${names.titles.runtime}: ${runtime.name}`,
+		0,
+		0,
+		BADGE
+	);
 }
 
 function hostingBadge(hosting: Hosting, x: number, y: number, names: SvgNames): string {

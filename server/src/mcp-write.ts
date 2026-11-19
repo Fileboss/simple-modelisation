@@ -5,6 +5,7 @@ import {
 	DISK_KINDS,
 	HOSTINGS,
 	PROVIDERS,
+	RUNTIMES,
 	type Attribute,
 	ZONE_DEFAULT,
 	ZONE_PADDING,
@@ -19,7 +20,7 @@ import {
 	layoutDiagram,
 	layoutFingerprint
 } from '@simple-modelisation/model/layout.ts';
-import { SKIN_IDS, skinFits } from '@simple-modelisation/model/skins.ts';
+import { SERVICE_FRAMEWORKS, SKIN_IDS, skinFits } from '@simple-modelisation/model/skins.ts';
 import {
 	nodeBox,
 	overlaps,
@@ -43,6 +44,11 @@ const providerArgument = z
 	.enum(PROVIDERS)
 	.describe(
 		`Whose infrastructure the Component runs on: ${PROVIDERS.join(', ')}. It goes with any Hosting.`
+	);
+const runtimeArgument = z
+	.enum(RUNTIMES)
+	.describe(
+		`What runs a service's code on the server: ${RUNTIMES.join(', ')} (go and rust for native binaries). A service takes it whether or not it has a Skin.`
 	);
 // Bounds on what an agent sends, on top of the document size limit.
 const name = () => z.string().min(1).max(200);
@@ -244,7 +250,11 @@ function addAttributes(
 function skinRefusal(skin: string, offered: readonly string[], what: string): string {
 	const products = offered.filter((id) => id !== 'generic');
 	if (products.length === 0) return `${what[0].toUpperCase()}${what.slice(1)} takes no Skin.`;
-	return `No "${skin}" Skin for ${what}. Skins: ${offered.join(', ')}.`;
+	// Runtimes were Service Skins once: point an agent that remembers them to the right field.
+	const runtime = (RUNTIMES as readonly string[]).includes(skin)
+		? ` "${skin}" is a service's runtime: set it with runtime or set_runtime.`
+		: '';
+	return `No "${skin}" Skin for ${what}.${runtime} Skins: ${offered.join(', ')}.`;
 }
 
 /** The write tools: each call is one transaction that open browsers receive live. */
@@ -267,7 +277,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			skin: z
 				.string()
 				.optional()
-				.describe('A market product, e.g. postgresql, redis, kafka, nginx.'),
+				.describe(
+					`A product or framework, e.g. postgresql, redis, kafka, nginx. A service's Skin is its framework (${SERVICE_FRAMEWORKS.join(', ')}) or a product (caddy, vaultwarden…); a web app, front end included, is a service. A client is what the end user runs it in: browser, android, ios, desktop.`
+				),
+			runtime: runtimeArgument.optional(),
 			hosting: hostingArgument.optional(),
 			provider: providerArgument.optional(),
 			disk_kind: z
@@ -276,7 +289,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.describe('For a disk (physical storage attached to a machine): hdd, ssd, nvme or usb.'),
 			zone: zoneArgument.optional().describe('Zone id or exact name to place the Component in.')
 		},
-		({ project, diagram, type, name, skin, hosting, provider, disk_kind, zone }) =>
+		({ project, diagram, type, name, skin, runtime, hosting, provider, disk_kind, zone }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				if (skin && !skinFits(type, skin)) {
@@ -284,11 +297,22 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				}
 				// Checked before anything is drawn: a refused call leaves the Diagram as it was.
 				if (disk_kind && type !== 'disk') throw new ToolError('Only a disk has a disk_kind.');
+				if (runtime && type !== 'service') throw new ToolError('Only a service has a runtime.');
 				const zoneId = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
-				const size = estimatedSize({ id: '', type: 'component', x: 0, y: 0, name, skin });
+				const size = estimatedSize({
+					id: '',
+					type: 'component',
+					x: 0,
+					y: 0,
+					name,
+					skin,
+					runtime,
+					diskKind: disk_kind
+				});
 				const { x, y } = placeNew(p, d.id, size, zoneId);
 				const id = p.addComponent(d.id, type, name, x, y);
 				if (skin) p.setSkin(d.id, id, skin);
+				if (runtime) p.setRuntime(d.id, id, runtime);
 				if (hosting) p.setHosting(d.id, id, hosting);
 				if (provider) p.setProvider(d.id, id, provider);
 				if (disk_kind) p.setDiskKind(d.id, id, disk_kind);
@@ -439,7 +463,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_skin',
-		'Gives a Component the look of a market product, or the generic look with "generic".',
+		'Gives a Component the look of a product or a framework, or the generic look with "generic". What runs a service is its runtime (set_runtime), not a Skin.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -512,6 +536,26 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				const target = pick(nodesOf(p, d.id, 'component'), disk, 'component');
 				if (target.componentType !== 'disk') throw new ToolError('Only a disk has a kind.');
 				p.setDiskKind(d.id, target.id, kind === 'none' ? null : kind);
+				return { id: target.id };
+			})
+	);
+
+	tool(
+		'set_runtime',
+		`Says what runs a service's code (${RUNTIMES.join(', ')}), or clears it with "none". It shows as the service's logo without a Skin, else as a badge beside it.`,
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			service: z.string().describe('Service id or exact name.'),
+			runtime: z.enum([...RUNTIMES, 'none'])
+		},
+		({ project, diagram, service, runtime }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'system');
+				const target = pick(nodesOf(p, d.id, 'component'), service, 'component');
+				if (target.componentType !== 'service')
+					throw new ToolError('Only a service has a runtime.');
+				p.setRuntime(d.id, target.id, runtime === 'none' ? null : runtime);
 				return { id: target.id };
 			})
 	);

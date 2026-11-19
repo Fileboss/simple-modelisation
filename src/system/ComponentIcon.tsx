@@ -10,8 +10,25 @@ export function GenericIcon({ type, color }: { type: ComponentType; color: strin
 	);
 }
 
-/** A product's logo, or its initials on its color when Simple Icons has no logo for it. */
+/** A product's logo or line glyph, or its initials on its color when Simple Icons has no logo for it. */
 export function SkinLogo({ skin, size = 28 }: { skin: Skin; size?: number }) {
+	if (skin.glyph) {
+		return (
+			<svg
+				viewBox="0 0 24 24"
+				width={size}
+				height={size}
+				fill="none"
+				stroke={skin.color}
+				strokeWidth="1.8"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				aria-label={skin.name}
+			>
+				<path d={skin.glyph} />
+			</svg>
+		);
+	}
 	if (skin.logo) {
 		return (
 			<svg viewBox="0 0 24 24" width={size} height={size} fill={skin.color} aria-label={skin.name}>
