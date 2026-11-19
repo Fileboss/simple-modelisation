@@ -58,6 +58,7 @@ import type { Layout } from './layout';
 import type { Box } from './geometry';
 import type { Size } from '@simple-modelisation/model/layout.ts';
 import { useSnapGestures } from './use-snap-gestures';
+import { selectionShortcut, withSelection } from './selection';
 import { draggedPaletteItem, endPaletteDrag, PALETTE_MIME } from './palette-drag';
 
 export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
@@ -450,6 +451,28 @@ function Canvas({ project, diagram, kind }: Props) {
 					edge: selectedEdges[0]?.data as DiagramEdge | undefined
 				};
 
+	// Cmd/Ctrl+A selects everything, Escape nothing, while the canvas was the last thing clicked.
+	useEffect(() => {
+		let canvasActive = false;
+		const onPointer = (e: PointerEvent) => {
+			canvasActive = Boolean(flowRef.current?.contains(e.target as globalThis.Node));
+		};
+		const onKey = (e: KeyboardEvent) => {
+			const shortcut = selectionShortcut(e, canvasActive);
+			if (!shortcut) return;
+			// Escape keeps its default: a menu or a dialog may want it too.
+			if (shortcut === 'all') e.preventDefault();
+			setNodes((current) => withSelection(current, shortcut === 'all'));
+			setEdges((current) => withSelection(current, shortcut === 'all'));
+		};
+		window.addEventListener('pointerdown', onPointer, true);
+		window.addEventListener('keydown', onKey);
+		return () => {
+			window.removeEventListener('pointerdown', onPointer, true);
+			window.removeEventListener('keydown', onKey);
+		};
+	}, []);
+
 	// A palette item dragged over the canvas: drawn where it will land, centred on the pointer, snapped.
 	const [preview, setPreview] = useState<(Box & { label: string }) | null>(null);
 	const previewAt = (event: DragEvent, item = draggedPaletteItem()) => {
@@ -561,6 +584,15 @@ function Canvas({ project, diagram, kind }: Props) {
 							);
 						}}
 						connectionMode={ConnectionMode.Loose}
+						// Selection as in design tools: dragging on the background draws a selection
+						// rectangle, Shift+click (or Cmd+click, Ctrl+click off a Mac) adds to it, Delete
+						// or Backspace removes it. The view pans with two fingers, the middle or right
+						// button, or Space+drag (React Flow's pan key).
+						// On a touch screen one finger still pans: there is no Space key to hold.
+						selectionOnDrag={!coarsePointer}
+						panOnDrag={coarsePointer ? true : [1, 2]}
+						multiSelectionKeyCode={MULTI_SELECTION_KEYS}
+						deleteKeyCode={['Backspace', 'Delete']}
 						// Trackpad gestures, as in Figma: two fingers pan, a pinch zooms (it arrives as a
 						// ctrl+wheel), and a mouse wheel zooms with Cmd (Ctrl elsewhere) held, React Flow's
 						// default zoom key.
@@ -624,6 +656,13 @@ function Canvas({ project, diagram, kind }: Props) {
 		</div>
 	);
 }
+
+// On a Mac, Ctrl+click is a right click: it opens the context menu.
+const MULTI_SELECTION_KEYS =
+	typeof navigator !== 'undefined' && /Mac|iP(hone|ad)/.test(navigator.userAgent)
+		? ['Shift', 'Meta']
+		: ['Shift', 'Control'];
+const coarsePointer = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
 const pairKey = (e: DiagramEdge) => `${e.source}|${e.target}`;
 const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });

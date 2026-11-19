@@ -132,7 +132,9 @@ export const strings = {
 		unreachable: 'The server cannot be reached. Try again later.'
 	},
 	canvas: {
-		tidyUp: 'Tidy up: arrange along the links'
+		tidyUp: 'Tidy up: arrange along the links',
+		gestures:
+			'Drag on the background to select, Shift+click to add, Cmd/Ctrl+A for all, Escape for none, Delete to remove. Pan with two fingers, a right-drag or Space+drag. Hold Alt while moving to place freely.'
 	},
 	panel: {
 		name: 'Name',
