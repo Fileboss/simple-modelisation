@@ -1,3 +1,4 @@
+import { pasteable } from '@simple-modelisation/model/project.ts';
 import { NotePanel } from './NoteNode';
 import {
 	applyEdgeChanges,
@@ -60,7 +61,13 @@ import type { Layout } from './layout';
 import type { Box } from './geometry';
 import type { Size } from '@simple-modelisation/model/layout.ts';
 import { useSnapGestures } from './use-snap-gestures';
-import { selectionShortcut, withSelection } from './selection';
+import { isCanvasClipboard, selectionShortcut, withSelection } from './selection';
+import {
+	clipBounds,
+	copyElements,
+	readClip,
+	type Clip
+} from '@simple-modelisation/model/clipboard.ts';
 import { draggedPaletteItem, endPaletteDrag, PALETTE_MIME } from './palette-drag';
 
 export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
@@ -453,27 +460,125 @@ function Canvas({ project, diagram, kind }: Props) {
 					edge: selectedEdges[0]?.data as DiagramEdge | undefined
 				};
 
-	// Cmd/Ctrl+A selects everything, Escape nothing, while the canvas was the last thing clicked.
+	// Where the pointer is over the canvas, on screen: a paste lands under it, wherever the
+	// view has moved since.
+	const pointerAt = useRef<Point | null>(null);
+	// Whether the canvas was the last thing clicked: its shortcuts act only then.
+	const canvasActive = useRef(false);
+
+	// Keyboard and clipboard, while the canvas was the last thing clicked: Cmd/Ctrl+A selects
+	// everything, Escape nothing; copy, cut, paste and Cmd/Ctrl+D duplicate the selection.
 	useEffect(() => {
-		let canvasActive = false;
 		const onPointer = (e: PointerEvent) => {
-			canvasActive = Boolean(flowRef.current?.contains(e.target as globalThis.Node));
+			canvasActive.current = Boolean(flowRef.current?.contains(e.target as globalThis.Node));
+		};
+		const copied = () => {
+			const ids = getNodes()
+				.filter((n) => n.selected)
+				.map((n) => n.id);
+			return ids.length
+				? copyElements(project.nodes(diagram.id), project.edges(diagram.id), ids, diagram.kind)
+				: null;
+		};
+		/** Pastes centred under the pointer when it is over the canvas, else 24px off; selects it. */
+		const pasteClip = (clip: Clip, underPointer: boolean) => {
+			// Centred on what this Diagram takes of the clip, not on what it leaves out.
+			const { nodes } = pasteable(clip, diagram.kind);
+			if (nodes.length === 0) return;
+			const bounds = clipBounds(nodes);
+			const at = underPointer && pointerAt.current ? screenToFlowPosition(pointerAt.current) : null;
+			const dx = at ? at.x - (bounds.x + bounds.width / 2) : 24;
+			const dy = at ? at.y - (bounds.y + bounds.height / 2) : 24;
+			project.stopCapturing();
+			const pasted = new Set(project.paste(diagram.id, clip, dx, dy));
+			setNodes((current) => current.map((n) => ({ ...n, selected: pasted.has(n.id) })));
+			setEdges((current) => current.map((e) => ({ ...e, selected: pasted.has(e.id) })));
+		};
+		/** Copies, and for a cut removes what was copied: a Zone goes with what it holds. */
+		const copyOut = (cut: boolean): string | null => {
+			const clip = copied();
+			if (!clip) return null;
+			if (cut) {
+				project.stopCapturing();
+				project.deleteElements(
+					diagram.id,
+					clip.nodes.map((n) => n.id),
+					clip.edges.map((e) => e.id)
+				);
+			}
+			return JSON.stringify(clip);
+		};
+		// Safari fires no copy or paste event without a text selection or a field: when the
+		// event has not come by the next task, the Clipboard API does the work instead.
+		let pending: 'copy' | 'cut' | 'paste' | null = null;
+		const fallback = (action: 'copy' | 'cut' | 'paste') => {
+			pending = action;
+			setTimeout(() => {
+				if (pending !== action) return;
+				pending = null;
+				if (action === 'paste') {
+					void navigator.clipboard
+						?.readText()
+						.then((text) => {
+							const clip = readClip(text);
+							if (clip) pasteClip(clip, true);
+						})
+						.catch(() => {});
+				} else {
+					const text = copyOut(action === 'cut');
+					if (text) void navigator.clipboard?.writeText(text).catch(() => {});
+				}
+			});
 		};
 		const onKey = (e: KeyboardEvent) => {
-			const shortcut = selectionShortcut(e, canvasActive);
+			const shortcut = selectionShortcut(e, canvasActive.current);
 			if (!shortcut) return;
+			if (shortcut === 'copy' || shortcut === 'cut' || shortcut === 'paste') {
+				// The browser's own event comes first where it fires (Chrome, Firefox).
+				fallback(shortcut);
+				return;
+			}
 			// Escape keeps its default: a menu or a dialog may want it too.
-			if (shortcut === 'all') e.preventDefault();
+			if (shortcut !== 'none') e.preventDefault();
+			if (shortcut === 'duplicate') {
+				// Holding the keys makes one copy, not one per key repeat.
+				if (e.repeat) return;
+				const clip = copied();
+				if (clip) pasteClip(clip, false);
+				return;
+			}
 			setNodes((current) => withSelection(current, shortcut === 'all'));
 			setEdges((current) => withSelection(current, shortcut === 'all'));
 		};
+		const onCopy = (e: ClipboardEvent) => {
+			if (!isCanvasClipboard(e, canvasActive.current)) return;
+			pending = null;
+			const text = copyOut(e.type === 'cut');
+			if (!text) return;
+			e.preventDefault();
+			e.clipboardData?.setData('text/plain', text);
+		};
+		const onPaste = (e: ClipboardEvent) => {
+			if (!isCanvasClipboard(e, canvasActive.current)) return;
+			pending = null;
+			const clip = readClip(e.clipboardData?.getData('text/plain') ?? '');
+			if (!clip) return;
+			e.preventDefault();
+			pasteClip(clip, true);
+		};
 		window.addEventListener('pointerdown', onPointer, true);
 		window.addEventListener('keydown', onKey);
+		document.addEventListener('copy', onCopy);
+		document.addEventListener('cut', onCopy);
+		document.addEventListener('paste', onPaste);
 		return () => {
 			window.removeEventListener('pointerdown', onPointer, true);
 			window.removeEventListener('keydown', onKey);
+			document.removeEventListener('copy', onCopy);
+			document.removeEventListener('cut', onCopy);
+			document.removeEventListener('paste', onPaste);
 		};
-	}, []);
+	}, [getNodes, project, diagram.id, diagram.kind, screenToFlowPosition]);
 
 	// A palette item dragged over the canvas: drawn where it will land, centred on the pointer, snapped.
 	const [preview, setPreview] = useState<(Box & { label: string }) | null>(null);
@@ -555,9 +660,13 @@ function Canvas({ project, diagram, kind }: Props) {
 					onDragLeave={onDragLeave}
 					onPointerMove={(e) => {
 						const { x, y } = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+						pointerAt.current = { x: e.clientX, y: e.clientY };
 						cursor.move(x, y);
 					}}
-					onPointerLeave={cursor.leave}
+					onPointerLeave={() => {
+						pointerAt.current = null;
+						cursor.leave();
+					}}
 				>
 					<ReactFlow
 						nodes={drawn.nodes}
