@@ -163,7 +163,7 @@ function only<T extends DiagramNode | DiagramEdge>(
  * Diagrams drawn as SVG: the one named, or every one. MCDs are not drawn yet:
  * they come back in `skipped`, and naming one is an error.
  */
-export function exportDiagrams(project: ProjectDocument, reference?: string) {
+export function exportDiagrams(project: ProjectDocument, reference?: string, legend = true) {
 	// Naming an MCD is refused: only System design diagrams are drawn for now.
 	const diagrams = reference ? [pickDiagram(project, reference, 'system')] : project.diagrams();
 	return {
@@ -172,7 +172,7 @@ export function exportDiagrams(project: ProjectDocument, reference?: string) {
 			.map((d) => ({
 				id: d.id,
 				name: d.name,
-				svg: systemSvg(project.nodes(d.id), project.edges(d.id), { names: ENGLISH_NAMES })
+				svg: systemSvg(project.nodes(d.id), project.edges(d.id), { names: ENGLISH_NAMES, legend })
 			})),
 		skipped: diagrams.filter((d) => d.kind === 'mcd').map((d) => d.name)
 	};

@@ -11,8 +11,8 @@ export const ENGLISH_NAMES: {
 	hostings: Record<Hosting, string>;
 	providers: Record<Provider, string>;
 	flows: Record<Flow, string>;
-	/** What badges are named by, before their value: "Hosting: Docker". */
-	titles: { hosting: string; provider: string; runtime: string };
+	/** What badges are named by, before their value ("Hosting: Docker"), and the Legend's headings. */
+	titles: { flow: string; hosting: string; provider: string; runtime: string };
 } = {
 	types: {
 		person: 'Person',
@@ -57,5 +57,5 @@ export const ENGLISH_NAMES: {
 		railway: 'Railway'
 	},
 	flows: { read: 'Read', write: 'Write', 'read-write': 'Read/Write' },
-	titles: { hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }
+	titles: { flow: 'Flow', hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }
 };

@@ -11,6 +11,7 @@ import { exportOpenDiagram } from '../canvas/exporter';
 import { copyText } from '../ui/clipboard';
 import { downloadBlob, downloadText } from '../ui/download';
 import { allDiagramsZip, fileName } from '../system/export-all';
+import { readIncludeLegend, saveIncludeLegend } from './legend-preference';
 import { strings } from '../ui/strings';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
@@ -189,10 +190,15 @@ type StopSharingProps = {
 	onCopied: (copyId: string) => void;
 };
 
-/** Export: the Project as JSON, the open Diagram as an image. */
+/** Export: the Project as JSON, the open Diagram as an image, with a Legend or not. */
 function ExportMenu({ project }: { project: ProjectDocument }) {
 	const menu = useRef<HTMLDetailsElement>(null);
 	const [note, setNote] = useState<string | null>(null);
+	const [legend, setLegend] = useState(readIncludeLegend);
+	const toggleLegend = (include: boolean) => {
+		setLegend(include);
+		saveIncludeLegend(include);
+	};
 
 	// Closes on a click elsewhere or on Escape, like a menu.
 	useEffect(() => {
@@ -217,7 +223,7 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 
 	const exportAll = async () => {
 		try {
-			const result = await allDiagramsZip(project);
+			const result = await allDiagramsZip(project, { legend });
 			if (!result) return setNote(strings.project.noSystemDiagram);
 			downloadBlob(`${fileName(project.name())}.zip`, result.zip);
 			if (result.skipped.length) setNote(strings.project.mcdsLeftOut(result.skipped.join(', ')));
@@ -229,7 +235,7 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 
 	const exportImage = async (format: ImageFormat) => {
 		try {
-			if (!(await exportOpenDiagram(format))) setNote(strings.project.nothingToExport);
+			if (!(await exportOpenDiagram(format, { legend }))) setNote(strings.project.nothingToExport);
 		} catch (error) {
 			console.error('Image export failed', error);
 			setNote(strings.project.exportFailed);
@@ -259,6 +265,15 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 						</button>
 					))}
 					<button onClick={() => void exportAll()}>{strings.project.exportAll}</button>
+					{/* A setting, not an action: checking it leaves the menu open. */}
+					<label className="export-check" onClick={(e) => e.stopPropagation()}>
+						<input
+							type="checkbox"
+							checked={legend}
+							onChange={(e) => toggleLegend(e.target.checked)}
+						/>
+						{strings.project.includeLegend}
+					</label>
 				</div>
 			</details>
 		</>

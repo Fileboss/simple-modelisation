@@ -651,6 +651,23 @@ describe('MCP endpoint', () => {
 		expect(mcd.error).toMatch(/is not a System design diagram/);
 	});
 
+	it('draws a Legend in exported images unless told not to', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', {
+			...at,
+			type: 'database',
+			name: 'DB',
+			hosting: 'managed'
+		});
+		const svgOf = async (args: Record<string, unknown>) => {
+			const result = await client.callTool({ name: 'export_diagram', arguments: args });
+			return (result.content as { resource?: { text: string } }[])[1].resource!.text;
+		};
+		expect(await svgOf(at)).toContain('>Managed (cloud)</text>');
+		expect(await svgOf({ ...at, legend: false })).not.toContain('>Managed (cloud)</text>');
+	});
+
 	it('says where Components run', async () => {
 		const { client, id } = await setup();
 		await call(client, 'add_component', {

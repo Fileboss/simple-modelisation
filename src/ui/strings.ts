@@ -30,6 +30,7 @@ export const strings = {
 		exportProject: 'Project (JSON)',
 		exportImage: { png: 'Diagram as PNG', svg: 'Diagram as SVG' },
 		exportAll: 'All diagrams (SVG, .zip)',
+		includeLegend: 'Include legend',
 		mcdsLeftOut: (names: string) => `Not in the zip yet (MCDs): ${names}`,
 		noSystemDiagram: 'No System design diagram to export',
 		nothingToExport: 'Nothing to export: open a Diagram with something in it',
