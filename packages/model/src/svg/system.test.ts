@@ -78,4 +78,20 @@ describe('systemSvg', () => {
 		const viewBox = /viewBox="[-\d.]+ ([-\d.]+) [-\d.]+ ([-\d.]+)"/.exec(svg)!;
 		expect(Number(viewBox[1]) + Number(viewBox[2])).toBeGreaterThan(600);
 	});
+
+	it('reads only catalog entries, whatever a peer writes', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		project.addComponent(d, 'service', 'Odd', 0, 0);
+		const [node] = project.nodes(d);
+		const crafted = [
+			{ ...node, componentType: 'constructor', skin: '__proto__', hosting: 'toString' }
+		];
+		const svg = systemSvg(crafted, [], { names: ENGLISH_NAMES });
+		expect(svg).toContain('>Odd</text>');
+		// An unknown type looks like the first one, as on the canvas.
+		expect(svg).toContain('>Client</text>');
+		expect(svg).not.toContain('undefined');
+		expect(svg).not.toContain('Object');
+	});
 });

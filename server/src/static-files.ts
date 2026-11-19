@@ -15,6 +15,33 @@ const TYPES: Record<string, string> = {
 };
 
 /**
+ * Sent with the app and its assets: a strict Content Security Policy (inline
+ * styles only, which React Flow positions nodes with) and the usual security
+ * headers. No referrer: Share links are secrets in the URL. HSTS belongs to the
+ * proxy that terminates TLS.
+ */
+export const SECURITY_HEADERS: Record<string, string> = {
+	'Content-Security-Policy': [
+		"default-src 'self'",
+		"script-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
+		"img-src 'self' data: blob:",
+		"font-src 'self'",
+		"connect-src 'self'",
+		"worker-src 'self' blob:",
+		"object-src 'none'",
+		"base-uri 'none'",
+		"form-action 'none'",
+		"frame-ancestors 'none'"
+	].join('; '),
+	'X-Content-Type-Options': 'nosniff',
+	'Referrer-Policy': 'no-referrer',
+	'X-Frame-Options': 'DENY',
+	'Cross-Origin-Opener-Policy': 'same-origin',
+	'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+};
+
+/**
  * Serves the built app: existing files as they are (hashed assets cached for
  * good), any other path as index.html so client routes like /p/<id> load the app.
  */
@@ -31,6 +58,7 @@ export async function serveStatic(
 	const isAsset = file.includes(`${path.sep}assets${path.sep}`);
 	const stream = createReadStream(file);
 	stream.once('open', () => {
+		// The security headers are already set (onRequest), for every response.
 		response.writeHead(200, {
 			'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream',
 			'Cache-Control': isAsset ? 'public, max-age=31536000, immutable' : 'no-cache'

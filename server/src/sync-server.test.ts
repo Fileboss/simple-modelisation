@@ -53,6 +53,32 @@ function connect(
 
 const text = (doc: Y.Doc) => doc.getText('t').toString();
 
+/** A raw WebSocket upgrade with the headers given: resolves with 101 or the refusal's status. */
+function rawUpgrade(server: SyncServer, headers: Record<string, string>) {
+	return new Promise<number>((resolve) => {
+		const upgrade = request({
+			port: server.port,
+			host: '127.0.0.1',
+			path: SYNC_PATH,
+			headers: {
+				Connection: 'Upgrade',
+				Upgrade: 'websocket',
+				'Sec-WebSocket-Version': '13',
+				'Sec-WebSocket-Key': randomBytes(16).toString('base64'),
+				...headers
+			}
+		});
+		upgrade.on('upgrade', (_response, socket) => {
+			socket.destroy();
+			resolve(101);
+		});
+		upgrade.on('response', (response) => resolve(response.statusCode ?? 0));
+		upgrade.on('error', () => resolve(0));
+		upgrade.end();
+		cleanups.push(() => upgrade.destroy());
+	});
+}
+
 describe('sync server', () => {
 	it('syncs edits between the clients of a shared document', async () => {
 		const { server } = await start();
@@ -236,5 +262,71 @@ describe('relay mode (no storage)', () => {
 		await expect(startSyncServer({ port: 0, storage: 'none', mcp: true })).rejects.toThrow(
 			/MCP endpoint needs storage/
 		);
+	});
+});
+
+describe('hardening', () => {
+	it("accepts WebSocket upgrades from the app's own pages only", async () => {
+		const { server, logs } = await start();
+		const own = `http://127.0.0.1:${server.port}`;
+		expect(await rawUpgrade(server, { Origin: 'https://evil.example' })).toBe(403);
+		expect(logs.join()).toContain('origin');
+		expect(await rawUpgrade(server, { Origin: 'not a url' })).toBe(403);
+		expect(await rawUpgrade(server, { Origin: own })).toBe(101);
+		// A proxy adding a port or changing the case still names the same host.
+		expect(await rawUpgrade(server, { Origin: own, Host: `127.0.0.1:443` })).toBe(101);
+		// Not a browser: no Origin.
+		expect(await rawUpgrade(server, {})).toBe(101);
+	});
+
+	it('closes a connection that sends a message larger than a document', async () => {
+		const { server } = await start({ maxDocumentBytes: 1000 });
+		const socket = new WebSocket(`ws://127.0.0.1:${server.port}${SYNC_PATH}`);
+		const closed = new Promise<number>((resolve) =>
+			socket.addEventListener('close', (e) => resolve(e.code))
+		);
+		await new Promise((resolve) => socket.addEventListener('open', resolve));
+		socket.send(new Uint8Array(200 * 1024));
+		// 1009: message too big.
+		expect(await closed).toBe(1009);
+	});
+
+	it('cuts off a socket that floods messages, dropping what it queued', async () => {
+		const { server, logs } = await start({ maxMessagesPerWindow: 20 });
+		const id = crypto.randomUUID();
+		const owner = await connect(server, id, 'share');
+		// Hocuspocus closes the document connection with our reason (its code goes out as 1000).
+		const closed = new Promise<string>((resolve) =>
+			owner.provider.on('close', ({ event }: { event: { reason: string } }) =>
+				resolve(event.reason)
+			)
+		);
+		for (let i = 0; i < 200; i++) owner.doc.getText('t').insert(0, 'x');
+		expect(await closed).toBe('message-rate');
+		expect(logs.join()).toContain('message rate');
+	});
+
+	it('serves the app with a strict CSP and security headers', async () => {
+		const staticDir = mkdtempSync(path.join(tmpdir(), 'sync-static-'));
+		writeFileSync(path.join(staticDir, 'index.html'), '<title>app</title>');
+		cleanups.push(() => rmSync(staticDir, { recursive: true, force: true }));
+		const { server } = await start({ staticDir });
+		const response = await fetch(`http://127.0.0.1:${server.port}/`);
+		expect(response.headers.get('content-security-policy')).toContain("script-src 'self'");
+		expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+		expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+		// Errors too.
+		const error = await fetch(`http://127.0.0.1:${server.port}/%E0%A4%A`);
+		expect(error.status).toBe(400);
+		expect(error.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+	});
+
+	it('trusts X-Forwarded-Host for the Origin check only behind a trusted proxy', async () => {
+		const origin = { Origin: 'https://diagrams.example', 'X-Forwarded-Host': 'diagrams.example' };
+		const direct = await start();
+		expect(await rawUpgrade(direct.server, origin)).toBe(403);
+		const proxied = await start({ trustProxy: true });
+		expect(await rawUpgrade(proxied.server, origin)).toBe(101);
 	});
 });

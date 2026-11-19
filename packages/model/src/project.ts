@@ -820,6 +820,10 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	for (const [key, allowed] of NODE_CHOICES) {
 		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
 	}
+	// A Skin the type does not offer (a file or a peer) reads as generic, as the canvas shows it.
+	if (read.type === 'component' && typeof read.skin === 'string') {
+		if (!skinFits(String(read.componentType), read.skin)) read.skin = null;
+	}
 	// Only a Disk has a kind, whatever a file or a peer sent.
 	if (read.componentType !== 'disk') delete read.diskKind;
 	return read as DiagramNode;

@@ -1,7 +1,9 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
 import { placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
 import { estimatedSize, type Size } from '../layout.ts';
+import { COMPONENT_TYPE_IDS } from '../component-types.ts';
 import { HOSTING_MARKS, PROVIDER_MARKS, SKIN_LOOKS, TYPE_LOOKS } from '../looks.ts';
+import { skinFits } from '../skins.ts';
 import type {
 	ComponentType,
 	DiagramEdge,
@@ -146,12 +148,17 @@ function componentShape(
 	names: SvgNames
 ): string {
 	const type = component.componentType as ComponentType;
-	const typeLook = TYPE_LOOKS[type] ?? TYPE_LOOKS.service;
-	const skin = SKIN_LOOKS[component.skin as keyof typeof SKIN_LOOKS];
+	// As the canvas: an unknown type looks like the first one, a Skin only on a type offering it.
+	const known = own(TYPE_LOOKS, type) ? type : COMPONENT_TYPE_IDS[0];
+	const typeLook = TYPE_LOOKS[known];
+	const skin =
+		typeof component.skin === 'string' && skinFits(known, component.skin)
+			? own(SKIN_LOOKS, component.skin)
+			: undefined;
 	const color = skin?.color ?? typeLook.color;
 	const name = String(component.name ?? '');
 	const diskKind = type === 'disk' ? (component.diskKind as DiskKind | undefined) : undefined;
-	const subtitle = skin?.name ?? (diskKind ? names.diskKinds[diskKind] : names.types[type]);
+	const subtitle = skin?.name ?? (diskKind ? own(names.diskKinds, diskKind) : names.types[known]);
 	const middle = box.y + box.height / 2;
 	const icon = box.x + 14;
 	const text = icon + 28 + 10;
@@ -179,7 +186,7 @@ function componentShape(
 	// Badges in the top-right corner, read left to right: at whom, then how it runs.
 	const badges: string[] = [];
 	if (shown) badges.push(providerBadge(shown, 0, 0, BADGE, names));
-	if (hosting && HOSTING_MARKS[hosting]) badges.push(hostingBadge(hosting, 0, 0, names));
+	if (hosting && own(HOSTING_MARKS, hosting)) badges.push(hostingBadge(hosting, 0, 0, names));
 	badges.forEach((badge, i) => {
 		const right = box.x + box.width + 9 - (badges.length - 1 - i) * (BADGE + 6);
 		parts.push(`<g transform="translate(${right - BADGE - 2} ${box.y - 11})">${badge}</g>`);
@@ -240,6 +247,15 @@ function providerBadge(
 				? `<path d="${mark.path}" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`
 				: `<text x="12" y="12" text-anchor="middle" dy="0.35em" textLength="${mark.text.length > 2 ? 24 : 20}" lengthAdjust="spacingAndGlyphs" font-size="${mark.text.length > 2 ? 15 : 17}" font-weight="800" fill="${mark.ink}">${escape(mark.text)}</text>`;
 	return badge(color, inner, `${names.titles.provider}: ${names.providers[provider]}`, x, y, size);
+}
+
+/**
+ * A catalog entry by a key from the document: its own entries only. Peers can
+ * write any value, and `constructor` or `__proto__` must not read what every
+ * object inherits.
+ */
+function own<T>(catalog: Record<string, T>, key: unknown): T | undefined {
+	return typeof key === 'string' && Object.hasOwn(catalog, key) ? catalog[key] : undefined;
 }
 
 function bounds(boxes: Box[]): Box {
