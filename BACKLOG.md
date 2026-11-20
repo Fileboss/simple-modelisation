@@ -9,11 +9,7 @@ tags: [backlog]
 
 ## To do
 
-Road to v0.1, the first public version (a relay, for a few people): security first.
-
-- v0.1 release with /sdlc:release (CHANGELOG, v0.1.0 tag), then the ghcr package made public
-
-After v0.1:
+- Make the ghcr package public once the v0.1.0 image is published
 
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Malformed shared document entries (diagram not a Y.Map, unknown kind, primitive node or edge, non-string name) crash the app for every participant, survive in IndexedDB and Stop sharing, and break JSON export; no React error boundary (`packages/model/src/project.ts`, `src/app/ProjectPage.tsx`)
@@ -43,6 +39,7 @@ After v0.1:
 
 ## Done
 
+- v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only
 - [pre-release-fixes](docs/specs/pre-release-fixes/): v0.1, fixes from the global review: Safari cut, Note editing, static cache, documents per address, paste
 - [relay-limits](docs/specs/relay-limits/): v0.1, bound what one client can do to a public relay: documents per address, message and Presence size, true document size, malformed peer fields, proxy-only deployments
