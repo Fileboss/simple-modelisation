@@ -13,7 +13,6 @@ tags: [backlog]
 
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Malformed shared document entries (diagram not a Y.Map, unknown kind, primitive node or edge, non-string name) crash the app for every participant, survive in IndexedDB and Stop sharing, and break JSON export; no React error boundary (`packages/model/src/project.ts`, `src/app/ProjectPage.tsx`)
-  - Line breaks in Entity, Association and diagram names escape the `--` comments of the PostgreSQL script (`packages/model/src/sql/postgres.ts`, `mld.ts`)
   - Stop sharing deletes the original before the Local copy's IndexedDB write is confirmed; a quota error leaves an empty copy (`src/storage/persistence.ts` `storeCopy`)
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
@@ -39,6 +38,7 @@ tags: [backlog]
 
 ## Done
 
+- sql-name-line-breaks: a line break in an Entity, Association or Diagram name no longer escapes the `--` comments of the PostgreSQL script
 - v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only
 - [pre-release-fixes](docs/specs/pre-release-fixes/): v0.1, fixes from the global review: Safari cut, Note editing, static cache, documents per address, paste

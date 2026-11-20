@@ -206,4 +206,25 @@ describe('PostgreSQL script', () => {
 		m.entity('customer');
 		expect(postgresScript(m.mld(), 'MCD')).toContain('-- Warning: Two tables are named customer.');
 	});
+
+	it('keeps names with line breaks inside their comments', () => {
+		const m = mcd();
+		// An Entity without Identifier and an Association that cannot reference it: both warn with the name.
+		const loose = m.entity('Loose\nDROP TABLE x;');
+		const node = m.project.nodes(m.diagram).find((n) => n.id === loose)!;
+		m.project.toggleIdentifier(m.diagram, loose, (node.attributes as { id: string }[])[0].id);
+		const tag = m.entity('Tag');
+		m.associate('tags\r\nDROP TABLE y;', [tag, '1,1'], [loose, '0,n']);
+		const script = postgresScript(m.mld(), 'Shop\u2028DROP TABLE z;');
+		const header = script.slice(0, script.indexOf('CREATE TABLE'));
+		expect(
+			header
+				.trim()
+				.split('\n')
+				.every((line) => line.startsWith('-- '))
+		).toBe(true);
+		expect(header).toContain('-- Shop DROP TABLE z;');
+		expect(header).toContain('Entity "Loose DROP TABLE x;" has no Identifier');
+		expect(header).toContain('Association "tags DROP TABLE y;" cannot reference');
+	});
 });
