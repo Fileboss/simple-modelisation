@@ -936,6 +936,37 @@ describe('MCP endpoint', () => {
 		expect(mld).toContain('line = (#order_id, number INTEGER);');
 	});
 
+	it('leaves out a node stored under another key than its id, which no write can reach', async () => {
+		const { client, id, browser } = await setup();
+		const diagram = browser.diagrams()[0].id;
+		const nodes = (browser.doc.getMap('diagrams').get(diagram) as Y.Map<unknown>).get(
+			'nodes'
+		) as Y.Map<unknown>;
+		const ghost = new Y.Map<unknown>();
+		const fields = {
+			id: 'real-id',
+			type: 'component',
+			x: 0,
+			y: 0,
+			name: 'Ghost',
+			componentType: 'service',
+			skin: null
+		};
+		for (const [key, value] of Object.entries(fields)) ghost.set(key, value);
+		// In the same update as a node the server can read: once that one shows, so has the ghost.
+		browser.doc.transact(() => {
+			nodes.set('other-key', ghost);
+			browser.addComponent(diagram, 'service', 'Visible', 300, 0);
+		});
+		const at = { project: id, diagram: 'Architecture' };
+		await vi.waitFor(async () => {
+			const { components } = await call(client, 'get_diagram', at);
+			expect(components.map((c: { name: string }) => c.name)).toEqual(['Visible']);
+		});
+		const answer = await call(client, 'rename_element', { ...at, element: 'Ghost', name: 'Seen' });
+		expect(answer.error).toMatch(/No element "Ghost"/);
+	});
+
 	it('explains ambiguous names, unknown names and wrong links', async () => {
 		const { client, id } = await setup();
 		await call(client, 'add_entity', { project: id, diagram: 'Data', name: 'Tag' });
