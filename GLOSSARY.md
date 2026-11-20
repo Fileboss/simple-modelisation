@@ -85,7 +85,7 @@ A named area of a System design diagram grouping the Components drawn inside it,
 _Avoid_: Group, container, boundary, cluster (a Kubernetes cluster is one thing a Zone can stand for)
 
 **Note**:
-Free text on a sticky note, placed anywhere on a Diagram to explain it (a schedule, a constraint), in one of five colors; not part of the system it describes: no Connections, left in place by Tidy up, ignored by the MLD.
+Free text on a sticky note, placed anywhere on a Diagram to explain it (a schedule, a constraint), in one of five colors; not part of the system it describes: no Connections, ignored by the MLD; Tidy up keeps it beside the element nearest it.
 _Avoid_: Comment (a remark on a document), annotation, label (a Connection's text)
 
 **Connection**:
@@ -95,6 +95,10 @@ _Avoid_: Link, edge, flow (a Flow is what a Connection's data does)
 **Flow**:
 What a Connection's data does, seen from the initiator: Read (the data comes back), Write (the data goes to the target) or Read/Write; it colors the Connection and names it in its label.
 _Avoid_: Direction (the arrow's direction is always who initiates), access, mode
+
+**Tidy up**:
+Arranging a whole Diagram automatically in layers along its Connections or Legs, from left to right, or from top to bottom on an MCD set to vertical; each Note follows the element it lies beside.
+_Avoid_: Auto-layout, arrange (the code's word), format
 
 **Legend**:
 The key in an exported image of a System design diagram, naming the Flows, Providers, Hostings and Runtimes its marks stand for; only those the image shows.

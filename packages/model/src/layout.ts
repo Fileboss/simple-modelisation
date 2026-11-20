@@ -2,8 +2,16 @@ import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Notation } from './mcd-drawing.ts';
-import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
+import type {
+	Attribute,
+	DiagramEdge,
+	DiagramKind,
+	DiagramNode,
+	Point,
+	TidyDirection
+} from './project.ts';
 import { CIF_OFFSET, CIF_SIZE, INHERITANCE_SIZE, ZONE_PADDING } from './project.ts';
+import { drawnRoute, labelPoint, type Side } from './geometry.ts';
 import { pillText, roughWidth } from './label-placement.ts';
 import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
@@ -32,29 +40,31 @@ type Link = {
 	returns?: string[];
 	/** Ranks only: an Inheritance's lines are drawn straight, the one to its parent not stored. */
 	unrouted?: boolean;
+	/** The width of the Connection's pills, which need room along the link. */
+	pillWidth?: number;
 };
 
 // An MCD packs tighter: each Association is a layer of its own between its Entities,
 // so Looping-like proximity needs small gaps; a System design diagram needs room for
 // right-angle routes and their labels.
 const GAPS: Record<DiagramKind, { node: number; layer: number }> = {
-	system: { node: 50, layer: 110 },
+	system: { node: 50, layer: 50 },
 	mcd: { node: 40, layer: 40 }
 };
 /** Elements without any link go on a grid under the rest, this many per row. */
 const LOOSE_PER_ROW = 5;
 
-/** The widest Connection pill, in English at the rough width: the layout must not depend on the UI language. */
-function widestPill(edges: DiagramEdge[]): number {
-	let widest = 0;
-	for (const edge of edges) {
-		if (edge.type !== 'connection') continue;
-		const flows: Record<string, string> = ENGLISH_NAMES.flows;
-		const flow = Object.hasOwn(flows, String(edge.flow)) ? flows[String(edge.flow)] : undefined;
-		const text = pillText(String(edge.label ?? ''), flow);
-		if (text) widest = Math.max(widest, roughWidth(text) + 14);
-	}
-	return widest;
+/** A Connection's pill width, 0 without one, at the rough width of its English text. */
+function pillWidthOf(edge: DiagramEdge): number {
+	const text = pillOf(edge);
+	return text ? roughWidth(text) + 14 : 0;
+}
+
+/** A Connection's pill text, in English: the layout must not depend on the UI language. */
+function pillOf(edge: DiagramEdge): string {
+	const flows: Record<string, string> = ENGLISH_NAMES.flows;
+	const flow = Object.hasOwn(flows, String(edge.flow)) ? flows[String(edge.flow)] : undefined;
+	return pillText(String(edge.label ?? ''), flow);
 }
 
 /** A Note's paper: 180px wide, its text wrapped (14px, about 7px a character), at least 80px high. */
@@ -115,7 +125,8 @@ function loadElk(): Promise<Elk> {
 }
 
 /**
- * Arranges a Diagram in layers from left to right along its links (ELK
+ * Arranges a Diagram in layers from left to right (top to bottom when
+ * `direction` is vertical, for an MCD) along its links (ELK
  * layered): the Connections of a System design diagram, routed at right
  * angles; the Legs of an MCD, each Association ranked between its Entities,
  * routed as broken lines. Elements without links go on a grid underneath.
@@ -128,23 +139,28 @@ export async function layoutDiagram(
 	allNodes: DiagramNode[],
 	allEdges: DiagramEdge[],
 	sizeOf: (node: DiagramNode) => Size,
-	kind: DiagramKind
+	kind: DiagramKind,
+	direction: TidyDirection = 'horizontal'
 ): Promise<Layout> {
 	// Input order steers the layout: sort by id so peers that received the document
 	// in a different order still agree.
-	// Notes explain the Diagram: Tidy up leaves them where they are, except those in a
-	// Zone, laid out with its content so that the Zone fitted around it still holds them.
+	// A Note follows the element it lies beside, placed afterwards. One far from everything
+	// is laid out with its Zone's content, or joins the unlinked elements outside every Zone.
 	const inZone = zoneParents(allNodes, estimatedSize);
+	const anchored = anchorNotes(
+		allNodes.filter((n) => n.type === 'note').sort(byId),
+		allNodes.filter((n) => !['note', 'zone', 'cif'].includes(n.type)).sort(byId),
+		inZone,
+		sizeOf
+	);
+	const following = new Set(anchored.map((a) => a.note.id));
 	// A CIF goes back beside its Association afterwards.
-	const nodes = allNodes
-		.filter((n) => n.type !== 'cif' && (n.type !== 'note' || inZone.has(n.id)))
-		.sort(byId);
+	const nodes = allNodes.filter((n) => n.type !== 'cif' && !following.has(n.id)).sort(byId);
 	const edges = [...allEdges].sort(byId);
 	const links = linksOf(nodes, edges);
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
 	const orthogonal = kind === 'system';
-	// Between layers, room for the widest Connection pill as well as the routes' bends.
-	const gaps = { ...GAPS[kind], layer: Math.max(GAPS[kind].layer, widestPill(edges) + 50) };
+	const gaps = GAPS[kind];
 	const hasZones = nodes.some((n) => n.type === 'zone');
 	// Membership at the model's sizes, as everywhere else.
 	const parents = hasZones ? inZone : new Map<string, string>();
@@ -153,15 +169,24 @@ export async function layoutDiagram(
 
 	const options = {
 		'elk.algorithm': 'layered',
-		'elk.direction': 'RIGHT',
+		'elk.direction': direction === 'vertical' ? 'DOWN' : 'RIGHT',
 		'elk.edgeRouting': orthogonal ? 'ORTHOGONAL' : 'POLYLINE',
 		'elk.spacing.nodeNode': String(gaps.node),
 		'elk.layered.spacing.nodeNodeBetweenLayers': String(gaps.layer),
 		'elk.spacing.edgeNode': '25',
 		'elk.spacing.edgeEdge': '15',
 		'elk.layered.spacing.edgeNodeBetweenLayers': '25',
-		// ELK's model order fails on nested layouts (a TypeError in 0.12): left out with Zones.
-		...(hasZones ? {} : { 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES' }),
+		// Each Connection's pill takes room only where it passes, at the middle of its route.
+		'elk.edgeLabels.placement': 'CENTER',
+		'elk.spacing.edgeLabel': '4',
+		// ELK's model order and compaction fail on nested layouts (a TypeError, invalid hitboxes in
+		// 0.12): left out with Zones.
+		...(hasZones
+			? {}
+			: {
+					'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
+					'elk.layered.compaction.postCompaction.strategy': 'EDGE_LENGTH'
+				}),
 		'elk.padding': '[top=0,left=0,bottom=0,right=0]'
 	};
 	const graph: ElkNode = {
@@ -186,11 +211,15 @@ export async function layoutDiagram(
 					}
 				)
 			: nodes.filter((n) => !isLoose(n)).map((n) => ({ id: n.id, ...sizeOf(n) })),
-		edges: links.map((link, index) => ({
-			id: String(index),
-			sources: [link.from],
-			targets: [link.to]
-		}))
+		edges: links.map((link, index) => {
+			const width = link.pillWidth ?? 0;
+			return {
+				id: String(index),
+				sources: [link.from],
+				targets: [link.to],
+				...(width && { labels: [{ text: 'pill', width, height: 18 }] })
+			};
+		})
 	};
 	const result = await (await loadElk()).layout(graph);
 
@@ -257,7 +286,189 @@ export async function layoutDiagram(
 			positions.set(cif.id, { x: association.x + CIF_OFFSET.x, y: association.y + CIF_OFFSET.y });
 		}
 	}
+	placeNotes(anchored, inZone, positions, zoneSizes, routes, allNodes, allEdges, sizeOf);
 	return { positions, routes, zoneSizes };
+}
+
+/** How far a Note may lie from an element and still follow it in a Tidy up. */
+const NOTE_REACH = 200;
+/** How far a Note steps away from its element while it overlaps something. */
+const NOTE_STEP = 10;
+/** How far out a Note looks for room on one side of its element before trying another. */
+const NOTE_SEARCH = 80;
+/** A Note's gap from its element on a side it did not lie on. */
+const NOTE_GAP = 20;
+/** The sides a Note tries after its own, in order: under, above, then beside. */
+const SIDES: Side[] = ['bottom', 'top', 'right', 'left'];
+
+/** A Note following an element: on which side of it, how far, and how far along that side. */
+type Anchor = { note: DiagramNode; to: string; side: Side; gap: number; along: number };
+
+/** Each Note's nearest element within reach, and where the Note lies from it. */
+function anchorNotes(
+	notes: DiagramNode[],
+	elements: DiagramNode[],
+	parents: Map<string, string>,
+	sizeOf: (node: DiagramNode) => Size
+): Anchor[] {
+	const anchored: Anchor[] = [];
+	for (const note of notes) {
+		const n = { x: note.x, y: note.y, ...sizeOf(note) };
+		let best: { anchor: Anchor; distance: number } | null = null;
+		// In the same Zone only: Zones move apart in a layout, and the Note must stay in its own.
+		for (const element of elements.filter((e) => parents.get(e.id) === parents.get(note.id))) {
+			const b = { x: element.x, y: element.y, ...sizeOf(element) };
+			const gx = Math.max(b.x - (n.x + n.width), n.x - (b.x + b.width), 0);
+			const gy = Math.max(b.y - (n.y + n.height), n.y - (b.y + b.height), 0);
+			const distance = Math.hypot(gx, gy);
+			if (distance > NOTE_REACH || (best && distance >= best.distance)) continue;
+			const sideways = gx > gy || (gx === gy && Math.abs(n.x - b.x) >= Math.abs(n.y - b.y));
+			const side: Side = sideways
+				? n.x + n.width / 2 > b.x + b.width / 2
+					? 'right'
+					: 'left'
+				: n.y + n.height / 2 > b.y + b.height / 2
+					? 'bottom'
+					: 'top';
+			const anchor: Anchor = {
+				note,
+				to: element.id,
+				side,
+				gap: sideways ? gx : gy,
+				along: sideways ? n.y - b.y : n.x - b.x
+			};
+			best = { anchor, distance };
+		}
+		if (best) anchored.push(best.anchor);
+	}
+	return anchored;
+}
+
+/**
+ * Puts each anchored Note beside its element as it lay before, stepping away
+ * from it while it overlaps a box, a route, a Zone or a Note already placed;
+ * the Zones it lay in grow to hold it still.
+ */
+function placeNotes(
+	anchored: Anchor[],
+	parents: Map<string, string>,
+	positions: Positions,
+	zoneSizes: Map<string, Size>,
+	routes: Map<string, Point[]>,
+	allNodes: DiagramNode[],
+	allEdges: DiagramEdge[],
+	sizeOf: (node: DiagramNode) => Size
+) {
+	const byId = new Map(allNodes.map((n) => [n.id, n]));
+	const boxOf = (id: string): Box => ({
+		...positions.get(id)!,
+		...(zoneSizes.get(id) ?? sizeOf(byId.get(id)!))
+	});
+	const notes = new Set(anchored.map((a) => a.note.id));
+	// By id, so that a Zone can be told apart (a Note's own) and replaced when it grows.
+	const obstacles = new Map<string, Box>(
+		[...positions.keys()].filter((id) => !notes.has(id)).map((id) => [id, boxOf(id)])
+	);
+	// The routes too, each segment a thin box, and each Connection's pill where the canvas
+	// puts it first: a Note must not hide a line or its label.
+	for (const edge of allEdges) {
+		const bends = routes.get(edge.id);
+		if (!bends || !positions.has(edge.source) || !positions.has(edge.target)) continue;
+		const route = drawnRoute(boxOf(edge.source), bends, boxOf(edge.target));
+		route.slice(1).forEach((b, i) => {
+			const a = route[i];
+			obstacles.set(`${edge.id}:${i}`, {
+				x: Math.min(a.x, b.x) - 6,
+				y: Math.min(a.y, b.y) - 6,
+				width: Math.abs(b.x - a.x) + 12,
+				height: Math.abs(b.y - a.y) + 12
+			});
+		});
+		const width = edge.type === 'connection' ? pillWidthOf(edge) : 0;
+		if (width) {
+			const middle = labelPoint(route);
+			obstacles.set(`${edge.id}:pill`, {
+				x: middle.x - width / 2,
+				y: middle.y - 9,
+				width,
+				height: 18
+			});
+		}
+	}
+	/** Whether `id` lies in `zone`, at any depth. */
+	const within = (id: string, zone: string) => {
+		for (let at = parents.get(id); at; at = parents.get(at)) if (at === zone) return true;
+		return false;
+	};
+	/** The Zones grown around a Note's box, innermost first, each around the one inside it. */
+	const grown = (zones: string[], held: Box) => {
+		let inner = held;
+		return zones.map((zone) => {
+			const box = boxOf(zone);
+			const left = Math.min(box.x, inner.x - ZONE_PADDING.side);
+			const top = Math.min(box.y, inner.y - ZONE_PADDING.top);
+			const right = Math.max(box.x + box.width, inner.x + inner.width + ZONE_PADDING.side);
+			const bottom = Math.max(box.y + box.height, inner.y + inner.height + ZONE_PADDING.side);
+			inner = { x: left, y: top, width: right - left, height: bottom - top };
+			return [zone, inner] as const;
+		});
+	};
+	for (const { note, to, side, gap, along } of anchored) {
+		if (!positions.has(to)) continue;
+		// The Zones it lies in, innermost first: they hold it, so they are no obstacle.
+		const zones: string[] = [];
+		for (let at = parents.get(note.id); at; at = parents.get(at)) zones.push(at);
+		const b = boxOf(to);
+		const size = sizeOf(note);
+		const at = (on: Side, distance: number, offset: number) => {
+			if (on === 'right') return { x: b.x + b.width + distance, y: b.y + offset };
+			if (on === 'left') return { x: b.x - distance - size.width, y: b.y + offset };
+			if (on === 'bottom') return { x: b.x + offset, y: b.y + b.height + distance };
+			return { x: b.x + offset, y: b.y - distance - size.height };
+		};
+		const clear = (place: Point) => {
+			const held = { ...place, ...size };
+			for (const [id, o] of obstacles) {
+				if (!zones.includes(id) && overlaps(o, held)) return false;
+			}
+			// Nor may its Zones, grown to hold it, take in an element that is not theirs.
+			for (const [zone, box] of grown(zones, held)) {
+				for (const [id, o] of obstacles) {
+					if (!byId.has(id) || id === zone || within(zone, id) || within(id, zone)) continue;
+					if (overlaps(o, box)) return false;
+				}
+			}
+			return true;
+		};
+		// Its own side first, a little further out if needed; then the element's other sides,
+		// aligned on its corner; at worst its own side, as far as it takes.
+		const tries = [
+			{ on: side, from: gap, offset: along },
+			...SIDES.filter((other) => other !== side).map((on) => ({ on, from: NOTE_GAP, offset: 0 }))
+		];
+		let place: Point | undefined;
+		for (const { on, from, offset } of tries) {
+			for (let distance = from; distance <= from + NOTE_SEARCH && !place; distance += NOTE_STEP) {
+				if (clear(at(on, distance, offset))) place = at(on, distance, offset);
+			}
+			if (place) break;
+		}
+		if (!place) {
+			let distance = gap;
+			for (let step = 0; step < 200 && !clear(at(side, distance, along)); step++) {
+				distance += NOTE_STEP;
+			}
+			place = at(side, distance, along);
+		}
+		const held = { x: Math.round(place.x), y: Math.round(place.y), ...size };
+		positions.set(note.id, { x: held.x, y: held.y });
+		obstacles.set(note.id, held);
+		for (const [zone, box] of grown(zones, held)) {
+			positions.set(zone, { x: box.x, y: box.y });
+			zoneSizes.set(zone, { width: box.width, height: box.height });
+			obstacles.set(zone, box);
+		}
+	}
 }
 
 /**
@@ -357,15 +568,20 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 		// A Connection back towards where flows start (a push to a Client, a mail to a Person)
 		// ranks the other way.
 		const back = level(edge.target) > level(edge.source);
+		const pillWidth = pillWidthOf(edge);
 		const link: Link = back
-			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true }
-			: { from: edge.source, to: edge.target, edge: edge.id };
+			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true, pillWidth }
+			: { from: edge.source, to: edge.target, edge: edge.id, pillWidth };
 		links.push(link);
 		connectionLinks.set(`${edge.source}|${edge.target}`, link);
 	}
 	for (const edge of backwards) {
 		const forth = connectionLinks.get(`${edge.target}|${edge.source}`);
-		if (forth) (forth.returns ??= []).push(edge.id);
+		if (!forth) continue;
+		(forth.returns ??= []).push(edge.id);
+		// One route, two pills: room for both, side by side.
+		const back = pillWidthOf(edge);
+		if (back) forth.pillWidth = (forth.pillWidth ? forth.pillWidth + 8 : 0) + back;
 	}
 	return links;
 }
@@ -434,10 +650,16 @@ export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
  * What a layout depends on in a Diagram: its nodes' places and sizes, its
  * edges. A layout computed from one fingerprint is stale once it differs.
  */
-export function layoutFingerprint(nodes: DiagramNode[], edges: DiagramEdge[]): string {
+export function layoutFingerprint(
+	nodes: DiagramNode[],
+	edges: DiagramEdge[],
+	direction: TidyDirection = 'horizontal'
+): string {
 	return JSON.stringify([
+		direction,
 		[...nodes].sort(byId).map((n) => [n.id, n.x, n.y, estimatedSize(n)]),
-		[...edges].sort(byId).map((e) => [e.id, e.source, e.target])
+		// A Connection's label and Flow make its pill, which needs room along its link.
+		[...edges].sort(byId).map((e) => [e.id, e.source, e.target, e.label ?? null, e.flow ?? null])
 	]);
 }
 

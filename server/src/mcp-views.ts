@@ -70,12 +70,15 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	const edges = project.edges(diagram.id);
 	const nameOf = (id: string) => String(nodes.find((n) => n.id === id)?.name ?? id);
 	const base = { id: diagram.id, name: diagram.name, kind: kindName(diagram.kind) };
+	// Where each element is drawn, at the model's estimated size: what move_elements adjusts.
+	const box = (n: DiagramNode) => ({ x: n.x, y: n.y, ...estimatedSize(n) });
 	/** The Notes, with the Zone each lies in on a System design diagram. */
 	const notesOf = (zoneOf?: (id: string) => { id: string; name: string } | null) =>
 		only<NoteNode>(nodes, 'note').map((n) => ({
 			id: n.id,
 			text: n.text,
 			color: n.color ?? 'yellow',
+			...box(n),
 			...(zoneOf && { zone: zoneOf(n.id) })
 		}));
 
@@ -117,7 +120,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				...providerOf(c.id),
 				...(c.componentType === 'disk' && { disk_kind: c.diskKind ?? null }),
 				...(c.componentType === 'service' && { runtime: c.runtime ?? null }),
-				zone: zoneOf(c.id)
+				zone: zoneOf(c.id),
+				...box(c)
 			})),
 			notes: notesOf(zoneOf),
 			connections: only<ConnectionEdge>(edges, 'connection').map((c) => ({
@@ -137,7 +141,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 		entities: only<EntityNode>(nodes, 'entity').map((e) => ({
 			id: e.id,
 			name: e.name,
-			attributes: e.attributes
+			attributes: e.attributes,
+			...box(e)
 		})),
 		associations: only<AssociationNode>(nodes, 'association').map((a) => ({
 			id: a.id,
@@ -150,7 +155,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 					entity: nameOf(l.target),
 					cardinality: l.cardinality,
 					relative: l.relative === true
-				}))
+				})),
+			...box(a)
 		})),
 		inheritances: only<InheritanceNode>(nodes, 'inheritance').map((i) => ({
 			id: i.id,
@@ -159,7 +165,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				.filter((e) => e.type === 'isa' && e.source === i.id)
 				.map((e) => nameOf(e.target)),
 			constraint: i.constraint ?? 'none',
-			translation: i.translation ?? 'reference'
+			translation: i.translation ?? 'reference',
+			...box(i)
 		})),
 		cifs: only<CifNode>(nodes, 'cif').map((c) => {
 			const legOf = (id: string) => ({
@@ -170,7 +177,8 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				id: c.id,
 				association: nameOf(c.association),
 				determinants: c.determinants.map(legOf),
-				determined: legOf(c.determined)
+				determined: legOf(c.determined),
+				...box(c)
 			};
 		})
 	};
