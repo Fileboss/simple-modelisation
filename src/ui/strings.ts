@@ -171,6 +171,12 @@ export const strings = {
 	},
 	canvas: {
 		tidyUp: 'Tidy up: arrange along the links',
+		sides: {
+			palette: { hide: 'Hide the palette', show: 'Show the palette' },
+			panel: { hide: 'Hide the properties', show: 'Show the properties' }
+		},
+		sidesShortcut: 'Cmd/Ctrl+\\ for both',
+		somethingSelected: 'something is selected',
 		touchGestures:
 			'Tap an item, then tap the canvas to place it. One finger pans, two fingers zoom. Drag from a dot to connect; press and hold an element for its actions.',
 		tapToPlace: (label: string) => `Tap the canvas to place: ${label}`,
