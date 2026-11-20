@@ -68,9 +68,11 @@ describe('MCP endpoint', () => {
 		expect(tools.map((t) => t.name).sort()).toEqual([
 			'add_association',
 			'add_attribute',
+			'add_cif',
 			'add_component',
 			'add_diagram',
 			'add_entity',
+			'add_leg',
 			'add_note',
 			'add_zone',
 			'connect_components',
@@ -86,6 +88,8 @@ describe('MCP endpoint', () => {
 			'set_connection',
 			'set_disk_kind',
 			'set_hosting',
+			'set_inheritance',
+			'set_inheritance_options',
 			'set_note',
 			'set_provider',
 			'set_runtime',
@@ -727,6 +731,209 @@ describe('MCP endpoint', () => {
 		expect(mld).toBe(
 			'customer = (id SERIAL, email VARCHAR(120));\norder = (id SERIAL, #customer_id);'
 		);
+	});
+
+	it('models N-ary Associations with legs and add_leg', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Teacher', 'Room', 'Slot', 'Subject']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'add_association', {
+			...at,
+			name: 'teaches',
+			legs: [
+				{ entity: 'Teacher', cardinality: '0,n' },
+				{ entity: 'Room', cardinality: '1,n' },
+				{ entity: 'Slot', cardinality: '0,n' }
+			]
+		});
+		const { id: leg } = await call(client, 'add_leg', {
+			...at,
+			association: 'teaches',
+			entity: 'Subject',
+			cardinality: '1,n'
+		});
+		const { associations } = await call(client, 'get_diagram', at);
+		expect(associations[0].legs).toMatchObject([
+			{ entity: 'Teacher', cardinality: '0,n' },
+			{ entity: 'Room', cardinality: '1,n' },
+			{ entity: 'Slot', cardinality: '0,n' },
+			{ id: leg, entity: 'Subject', cardinality: '1,n' }
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('teaches = (#teacher_id, #room_id, #slot_id, #subject_id);');
+
+		expect(
+			(
+				await call(client, 'add_association', {
+					...at,
+					name: 'x',
+					legs: [{ entity: 'Room', cardinality: '0,n' }]
+				})
+			).error
+		).toMatch(/legs/);
+		const both = await call(client, 'add_association', {
+			...at,
+			name: 'x',
+			legs: [
+				{ entity: 'Room', cardinality: '0,n' },
+				{ entity: 'Slot', cardinality: '0,n' }
+			],
+			from: { entity: 'Room', cardinality: '0,n' }
+		});
+		expect(both.error).toBe('Give legs, or from and to, not both.');
+		expect((await call(client, 'add_association', { ...at, name: 'x' })).error).toBe(
+			'Give legs (two or more), or from and to.'
+		);
+		expect(
+			(await call(client, 'add_leg', { ...at, association: 'Room', entity: 'Slot' })).error
+		).toMatch(/No association "Room"/);
+	});
+
+	it('puts a CIF on an N-ary Association, by Entity names or Leg ids', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Teacher', 'Class', 'Subject']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'add_association', {
+			...at,
+			name: 'teaches',
+			legs: ['Teacher', 'Class', 'Subject'].map((entity) => ({ entity, cardinality: '0,n' }))
+		});
+		const { id: cif } = await call(client, 'add_cif', {
+			...at,
+			association: 'teaches',
+			determinants: ['Class', 'Subject'],
+			determined: 'Teacher'
+		});
+		const { cifs, associations } = await call(client, 'get_diagram', at);
+		const legOf = (entity: string) =>
+			associations[0].legs.find((l: { entity: string }) => l.entity === entity).id;
+		expect(cifs).toEqual([
+			{
+				id: cif,
+				association: 'teaches',
+				determinants: [
+					{ leg: legOf('Class'), entity: 'Class' },
+					{ leg: legOf('Subject'), entity: 'Subject' }
+				],
+				determined: { leg: legOf('Teacher'), entity: 'Teacher' }
+			}
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('teaches = (#teacher_id, #class_id, #subject_id);');
+		const { sql } = await call(client, 'get_mcd_sql', at);
+		expect(sql).toContain('PRIMARY KEY (class_id, subject_id)');
+
+		await call(client, 'delete_elements', { ...at, elements: [cif] });
+		const byLegs = await call(client, 'add_cif', {
+			...at,
+			association: 'teaches',
+			determinants: [legOf('Teacher')],
+			determined: legOf('Subject')
+		});
+		expect(byLegs.id).toBeTruthy();
+		expect(
+			(
+				await call(client, 'add_cif', {
+					...at,
+					association: 'teaches',
+					determinants: ['Teacher'],
+					determined: 'Teacher'
+				})
+			).error
+		).toBe('The determined Leg cannot also be a determinant.');
+		expect(
+			(
+				await call(client, 'add_cif', {
+					...at,
+					association: 'teaches',
+					determinants: ['Room'],
+					determined: 'Class'
+				})
+			).error
+		).toBe('"Room" is not linked by this Association.');
+	});
+
+	it('makes Inheritances and sets their constraint and translation', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Person', 'Student', 'Teacher']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'set_inheritance', { ...at, entity: 'Student', parent: 'Person' });
+		await call(client, 'set_inheritance', { ...at, entity: 'Teacher', parent: 'Person' });
+		await call(client, 'set_inheritance_options', {
+			...at,
+			parent: 'Person',
+			constraint: 'XT',
+			translation: 'up'
+		});
+		const { inheritances } = await call(client, 'get_diagram', at);
+		expect(inheritances).toEqual([
+			{
+				id: expect.any(String),
+				parent: 'Person',
+				children: ['Student', 'Teacher'],
+				constraint: 'XT',
+				translation: 'up'
+			}
+		]);
+		await call(client, 'set_inheritance', { ...at, entity: 'Teacher', parent: null });
+		expect((await call(client, 'get_diagram', at)).inheritances[0].children).toEqual(['Student']);
+		expect(
+			(await call(client, 'set_inheritance', { ...at, entity: 'Person', parent: 'Student' })).error
+		).toBe('An Entity cannot inherit from itself or a descendant.');
+		expect(
+			(await call(client, 'set_inheritance_options', { ...at, parent: 'Teacher', constraint: 'X' }))
+				.error
+		).toBe('"Teacher" has no child Entities.');
+		expect((await call(client, 'set_inheritance_options', { ...at, parent: 'Person' })).error).toBe(
+			'Give a constraint, a translation or both.'
+		);
+	});
+
+	it('marks a relative identifier with set_cardinality', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Order' });
+		await call(client, 'add_entity', {
+			...at,
+			name: 'Line',
+			attributes: [{ name: 'number', type: 'integer', identifier: true }]
+		});
+		await call(client, 'add_association', {
+			...at,
+			name: 'of',
+			from: { entity: 'Line', cardinality: '0,n' },
+			to: { entity: 'Order', cardinality: '0,n' }
+		});
+		const wrong = await call(client, 'set_cardinality', {
+			...at,
+			association: 'of',
+			entity: 'Line',
+			cardinality: '0,1',
+			relative: true
+		});
+		expect(wrong.error).toBe(
+			'A relative identifier goes on a 1,1 Leg of a binary Association between two Entities.'
+		);
+		await call(client, 'set_cardinality', {
+			...at,
+			association: 'of',
+			entity: 'Line',
+			cardinality: '1,1',
+			relative: true
+		});
+		const { associations } = await call(client, 'get_diagram', at);
+		expect(associations[0].legs).toMatchObject([
+			{ entity: 'Line', cardinality: '1,1', relative: true },
+			{ entity: 'Order', cardinality: '0,n', relative: false }
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('line = (#order_id, number INTEGER);');
 	});
 
 	it('explains ambiguous names, unknown names and wrong links', async () => {

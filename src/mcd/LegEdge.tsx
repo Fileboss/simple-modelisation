@@ -55,13 +55,32 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 		label = at(isUml ? 0.82 : 0.7);
 	}
 
+	// The composition's diamond takes the line's color, selected or another Participant's.
+	const stroke = selected ? 'var(--accent)' : (leg.remoteColor ?? '#1d1b22');
 	return (
 		<>
+			{leg.composition && isUml && (
+				<defs>
+					<marker
+						id={`composition-${id}`}
+						viewBox="0 0 16 10"
+						refX="16"
+						refY="5"
+						markerWidth="24"
+						markerHeight="15"
+						markerUnits="userSpaceOnUse"
+						orient="auto"
+					>
+						<path d="M 0 5 L 8 0 L 16 5 L 8 10 z" style={{ fill: stroke }} />
+					</marker>
+				</defs>
+			)}
 			<BaseEdge
 				id={id}
 				path={path}
+				markerEnd={leg.composition && isUml ? `url(#composition-${id})` : undefined}
 				style={{
-					stroke: selected ? 'var(--accent)' : (leg.remoteColor ?? '#1d1b22'),
+					stroke,
 					strokeWidth: leg.remoteColor && !selected ? 3 : 1.2
 				}}
 			/>
@@ -75,6 +94,7 @@ export function LegEdge({ id, source, target, data, selected }: EdgeProps) {
 					}}
 				>
 					{isUml ? umlMultiplicity(shown.cardinality) : shown.cardinality}
+					{!isUml && leg.relative && <span className="relative-mark"> R</span>}
 				</button>
 			</EdgeLabelRenderer>
 		</>

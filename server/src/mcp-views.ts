@@ -1,4 +1,6 @@
 import type {
+	CifNode,
+	InheritanceNode,
 	AssociationNode,
 	ComponentNode,
 	ConnectionEdge,
@@ -141,8 +143,34 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 			attributes: a.attributes,
 			legs: legs
 				.filter((l) => l.source === a.id)
-				.map((l) => ({ id: l.id, entity: nameOf(l.target), cardinality: l.cardinality }))
-		}))
+				.map((l) => ({
+					id: l.id,
+					entity: nameOf(l.target),
+					cardinality: l.cardinality,
+					relative: l.relative === true
+				}))
+		})),
+		inheritances: only<InheritanceNode>(nodes, 'inheritance').map((i) => ({
+			id: i.id,
+			parent: nameOf(i.parent),
+			children: edges
+				.filter((e) => e.type === 'isa' && e.source === i.id)
+				.map((e) => nameOf(e.target)),
+			constraint: i.constraint ?? 'none',
+			translation: i.translation ?? 'reference'
+		})),
+		cifs: only<CifNode>(nodes, 'cif').map((c) => {
+			const legOf = (id: string) => ({
+				leg: id,
+				entity: nameOf(legs.find((l) => l.id === id)?.target ?? id)
+			});
+			return {
+				id: c.id,
+				association: nameOf(c.association),
+				determinants: c.determinants.map(legOf),
+				determined: legOf(c.determined)
+			};
+		})
 	};
 }
 

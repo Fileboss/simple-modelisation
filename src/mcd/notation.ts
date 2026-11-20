@@ -72,8 +72,18 @@ export function umlAttribute(attribute: Attribute): string {
 /** Where an association class goes: above a horizontal line, beside a vertical one. */
 export type AssociationClassSide = { umlSide?: 'top' | 'right' };
 
-/** The other Leg of a Leg's Association: its Cardinality shows at this Leg's end in UML. */
-export type PeerLeg = { peer?: { id: string; cardinality: Cardinality } };
+/** Set on an N-ary Association in UML: drawn as a diamond where it is stored. */
+export type NaryAssociation = { umlNary?: boolean };
+
+/**
+ * The Leg whose Cardinality shows at this Leg's class end in UML: the other Leg
+ * of a binary Association, the Leg itself on an N-ary one.
+ */
+export type PeerLeg = {
+	peer?: { id: string; cardinality: Cardinality };
+	/** UML composition: the other Leg's Entity is identified relative to this one's, drawn as a filled diamond here. */
+	composition?: boolean;
+};
 
 const FALLBACK_SIZE = { width: 120, height: 60 };
 const size = (node: Node) => ({
@@ -89,9 +99,10 @@ const center = (node: Node) => ({
 const REFLEXIVE_GAP = 70;
 
 /**
- * Lays an MCD out the UML way: each Association's label sits between its two
- * classes (beside the class when reflexive) and is not dragged, so its Legs
- * draw the line through it; each Leg learns its peer's Cardinality.
+ * Lays an MCD out the UML way: each binary Association's label sits between its
+ * two classes (beside the class when reflexive) and is not dragged, so its Legs
+ * draw the line through it; each Leg learns its peer's Cardinality. An N-ary
+ * Association stays where it is stored, a diamond, each Leg showing its own.
  */
 export function umlLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges: Edge[] } {
 	const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -106,8 +117,25 @@ export function umlLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 		return legs.length === 2 ? legs : [];
 	};
 
+	const isNary = (associationId: string) => (legsByAssociation.get(associationId)?.length ?? 0) > 2;
+
 	const laidNodes = nodes.map((node) => {
 		if (node.type !== 'association') return node;
+		if (isNary(node.id)) {
+			// The association class goes above the diamond, unless a Leg leaves upwards.
+			const here = center(node);
+			const upwards = (legsByAssociation.get(node.id) ?? []).some((leg) => {
+				const other = byId.get(leg.target);
+				if (!other) return false;
+				const dx = center(other).x - here.x;
+				const dy = center(other).y - here.y;
+				return dy < 0 && Math.abs(dy) >= Math.abs(dx);
+			});
+			return {
+				...node,
+				data: { ...node.data, umlNary: true, umlSide: upwards ? 'right' : 'top' }
+			};
+		}
 		const [a, b] = legsOf(node.id).map((leg) => byId.get(leg.target));
 		if (!a || !b) return node;
 		const label = size(node);
@@ -128,10 +156,18 @@ export function umlLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 
 	const laidEdges = edges.map((edge) => {
 		if (edge.type !== 'leg') return edge;
-		const peer = legsOf(edge.source).find((leg) => leg.id !== edge.id);
+		const peer = isNary(edge.source) ? edge : legsOf(edge.source).find((leg) => leg.id !== edge.id);
 		if (!peer) return edge;
 		const cardinality = (peer.data as LegEdge).cardinality;
-		return { ...edge, data: { ...edge.data, peer: { id: peer.id, cardinality } } };
+		const composition = peer !== edge && (peer.data as LegEdge).relative === true;
+		return {
+			...edge,
+			data: {
+				...edge.data,
+				peer: { id: peer.id, cardinality },
+				...(composition && { composition: true })
+			}
+		};
 	});
 
 	return { nodes: laidNodes, edges: laidEdges };

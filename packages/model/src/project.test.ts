@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { DataType } from './data-types.ts';
 import { estimatedSize } from './layout.ts';
-import { ProjectDocument, type Attribute } from './project.ts';
+import {
+	ProjectDocument,
+	type Attribute,
+	type Cardinality,
+	type CifNode,
+	type InheritanceNode,
+	type LegEdge
+} from './project.ts';
 import { effectiveProviders, zoneParents } from './zones.ts';
 import { systemSvg } from './svg/system.ts';
 import { ENGLISH_NAMES } from './names.ts';
@@ -164,6 +171,266 @@ describe('MCD', () => {
 			seen.push(legsOf(project, diagram).find((l) => l.id === leg)?.cardinality);
 		}
 		expect(seen).toEqual(['1,n', '0,1', '1,1', '0,n']);
+	});
+
+	it('adds a 0,n Leg to make an N-ary Association, and only from an Association to an Entity', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		const leg = project.addLeg(diagram, lists, product);
+		expect(legsOf(project, diagram).find((l) => l.id === leg)).toMatchObject({
+			source: lists,
+			target: product,
+			cardinality: '0,n'
+		});
+		expect(() => project.addLeg(diagram, customer, product)).toThrow();
+		expect(() => project.addLeg(diagram, lists, lists)).toThrow();
+		expect(legsOf(project, diagram)).toHaveLength(3);
+	});
+
+	it('leaves a binary Association when a Leg of a ternary is deleted', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		const leg = project.addLeg(diagram, lists, product);
+		project.deleteElements(diagram, [], [leg]);
+		expect(project.nodes(diagram).some((n) => n.id === lists)).toBe(true);
+		expect(legsOf(project, diagram).map((l) => l.target)).toEqual([customer, order]);
+	});
+
+	it('keeps the Legs of an N-ary Association through a file round trip', () => {
+		const { project, diagram, customer, order } = setup();
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		project.addLeg(diagram, lists, customer);
+		const copy = ProjectDocument.fromFile(project.toFile());
+		const [copied] = copy.diagrams();
+		expect(copy.edges(copied.id).filter((e) => e.source === lists)).toHaveLength(3);
+	});
+
+	describe('CIF', () => {
+		const ternary = (cardinalities: Cardinality[] = ['0,n', '0,n', '0,n']) => {
+			const { project, diagram, customer, order } = setup();
+			const product = project.addEntity(diagram, 200, 300, 'Product');
+			const lists = project.addAssociation(diagram, customer, order, 'lists');
+			project.addLeg(diagram, lists, product);
+			const legs = legsOf(project, diagram);
+			legs.forEach((leg, i) => project.setCardinality(diagram, leg.id, cardinalities[i]));
+			const cifOf = (id: string) =>
+				project.nodes(diagram).find((n) => n.id === id) as CifNode | undefined;
+			return { project, diagram, lists, legs, cifOf, customer };
+		};
+
+		it('determines the Leg with a max of 1, else the last, by the others', () => {
+			const withOne = ternary(['0,n', '1,1', '0,n']);
+			const id = withOne.project.addCif(withOne.diagram, withOne.lists);
+			expect(withOne.cifOf(id)).toMatchObject({
+				type: 'cif',
+				association: withOne.lists,
+				determined: withOne.legs[1].id,
+				determinants: [withOne.legs[0].id, withOne.legs[2].id]
+			});
+			const plain = ternary();
+			const other = plain.project.addCif(plain.diagram, plain.lists);
+			expect(plain.cifOf(other)?.determined).toBe(plain.legs[2].id);
+		});
+
+		it('is refused on a binary Association', () => {
+			const { project, diagram, customer, order } = setup();
+			const places = project.addAssociation(diagram, customer, order);
+			expect(() => project.addCif(diagram, places)).toThrow();
+		});
+
+		it('changes the role of a Leg, one determined at a time, at least one determinant', () => {
+			const { project, diagram, lists, legs, cifOf } = ternary();
+			const id = project.addCif(diagram, lists);
+			project.setCifRole(diagram, id, legs[0].id, 'determined');
+			// The former determined Leg is left out; the new one leaves the determinants.
+			expect(cifOf(id)).toMatchObject({ determined: legs[0].id, determinants: [legs[1].id] });
+			project.setCifRole(diagram, id, legs[2].id, 'determinant');
+			expect(cifOf(id)?.determinants).toEqual([legs[1].id, legs[2].id]);
+			project.setCifRole(diagram, id, legs[1].id, 'none');
+			project.setCifRole(diagram, id, legs[2].id, 'none');
+			// The last determinant stays: a CIF needs one.
+			expect(cifOf(id)?.determinants).toEqual([legs[2].id]);
+		});
+
+		it('goes with its Association or its determined Leg, and loses a deleted determinant', () => {
+			const a = ternary();
+			const first = a.project.addCif(a.diagram, a.lists);
+			a.project.deleteElements(a.diagram, [], [a.legs[0].id]);
+			// Binary again: the CIF loses Leg 0 but keeps Leg 1 → Leg 2.
+			expect(a.cifOf(first)).toMatchObject({ determinants: [a.legs[1].id] });
+			a.project.deleteElements(a.diagram, [], [a.legs[2].id]);
+			expect(a.cifOf(first)).toBeUndefined();
+
+			const b = ternary();
+			const second = b.project.addCif(b.diagram, b.lists);
+			b.project.deleteElements(b.diagram, [b.lists], []);
+			expect(b.cifOf(second)).toBeUndefined();
+
+			const c = ternary();
+			const third = c.project.addCif(c.diagram, c.lists);
+			c.project.deleteElements(c.diagram, [c.customer], []);
+			// Deleting an Entity deletes its Leg (a determinant): the CIF keeps the other.
+			expect(c.cifOf(third)?.determinants).toEqual([c.legs[1].id]);
+		});
+
+		it('keeps a CIF through a file round trip', () => {
+			const { project, diagram, lists } = ternary();
+			const id = project.addCif(diagram, lists);
+			const copy = ProjectDocument.fromFile(project.toFile());
+			expect(copy.nodes(copy.diagrams()[0].id).find((n) => n.id === id)).toMatchObject({
+				type: 'cif',
+				association: lists
+			});
+		});
+	});
+
+	describe('Inheritance', () => {
+		const people = () => {
+			const project = new ProjectDocument();
+			const diagram = project.addDiagram('mcd');
+			const person = project.addEntity(diagram, 300, 0, 'Person');
+			const student = project.addEntity(diagram, 0, 400, 'Student');
+			const teacher = project.addEntity(diagram, 600, 400, 'Teacher');
+			const nodes = () => project.nodes(diagram);
+			const inheritances = () =>
+				nodes().filter((n): n is InheritanceNode => n.type === 'inheritance');
+			const childrenOf = (id: string) =>
+				project
+					.edges(diagram)
+					.filter((e) => e.type === 'isa' && e.source === id)
+					.map((e) => e.target);
+			return { project, diagram, person, student, teacher, inheritances, childrenOf };
+		};
+
+		it('makes one Inheritance under the parent, shared by its children', () => {
+			const { project, diagram, person, student, teacher, inheritances, childrenOf } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, teacher, person);
+			const [inheritance] = inheritances();
+			expect(inheritances()).toHaveLength(1);
+			expect(inheritance).toMatchObject({ parent: person, x: 300, y: 120 });
+			expect(childrenOf(inheritance.id)).toEqual([student, teacher]);
+			expect(project.parentOf(diagram, teacher)).toBe(person);
+		});
+
+		it('moves a child to another parent and deletes an Inheritance left empty', () => {
+			const { project, diagram, person, student, teacher, inheritances } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, student, teacher);
+			expect(inheritances().map((i) => i.parent)).toEqual([teacher]);
+			project.setParent(diagram, student, null);
+			expect(inheritances()).toEqual([]);
+		});
+
+		it('refuses a parent that is the Entity itself or one of its descendants', () => {
+			const { project, diagram, person, student, teacher } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, teacher, student);
+			expect(() => project.setParent(diagram, person, teacher)).toThrow();
+			expect(() => project.setParent(diagram, person, person)).toThrow();
+		});
+
+		it('merges two Inheritances that peers made for one parent at once', () => {
+			const { project, diagram, person, student, teacher, inheritances, childrenOf } = people();
+			// A peer starts from the same document, and each side gives Person a child.
+			const peer = new ProjectDocument();
+			Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(project.doc));
+			project.setParent(diagram, student, person);
+			peer.setParent(diagram, teacher, person);
+			Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(peer.doc));
+			expect(inheritances()).toHaveLength(2);
+			// The next change merges them into the first by id.
+			project.setInheritanceConstraint(diagram, inheritances()[0].id, 'X');
+			project.setParent(diagram, student, person);
+			expect(inheritances()).toHaveLength(1);
+			expect(childrenOf(inheritances()[0].id).sort()).toEqual([student, teacher].sort());
+		});
+
+		it('sets the constraint and the translation, unknown values ignored', () => {
+			const { project, diagram, person, student, inheritances } = people();
+			project.setParent(diagram, student, person);
+			const id = inheritances()[0].id;
+			project.setInheritanceConstraint(diagram, id, 'XT');
+			project.setInheritanceTranslation(diagram, id, 'up');
+			project.setInheritanceConstraint(diagram, id, 'Q' as never);
+			expect(inheritances()[0]).toMatchObject({ constraint: 'XT', translation: 'up' });
+			project.setInheritanceConstraint(diagram, id, 'none');
+			project.setInheritanceTranslation(diagram, id, 'reference');
+			expect(inheritances()[0].constraint).toBeUndefined();
+			expect(inheritances()[0].translation).toBeUndefined();
+		});
+
+		it('goes with its parent or its last child, and frees its children when deleted', () => {
+			const a = people();
+			a.project.setParent(a.diagram, a.student, a.person);
+			a.project.deleteElements(a.diagram, [a.person], []);
+			expect(a.inheritances()).toEqual([]);
+
+			const b = people();
+			b.project.setParent(b.diagram, b.student, b.person);
+			b.project.deleteElements(b.diagram, [b.student], []);
+			expect(b.inheritances()).toEqual([]);
+
+			const c = people();
+			c.project.setParent(c.diagram, c.student, c.person);
+			c.project.deleteElements(c.diagram, [c.inheritances()[0].id], []);
+			expect(c.project.parentOf(c.diagram, c.student)).toBeNull();
+			expect(c.project.edges(c.diagram)).toEqual([]);
+		});
+
+		it('keeps an Inheritance through a file round trip and a paste', () => {
+			const { project, diagram, person, student, inheritances } = people();
+			project.setParent(diagram, student, person);
+			const copy = ProjectDocument.fromFile(project.toFile());
+			expect(copy.parentOf(copy.diagrams()[0].id, student)).toBe(person);
+
+			const pasted = project.paste(
+				diagram,
+				{ nodes: project.nodes(diagram), edges: project.edges(diagram) },
+				0,
+				600
+			);
+			expect(inheritances()).toHaveLength(2);
+			const pastedStudent = pasted.find(
+				(id) => project.nodes(diagram).find((n) => n.id === id)?.name === 'Student'
+			)!;
+			const pastedPerson = pasted.find(
+				(id) => project.nodes(diagram).find((n) => n.id === id)?.name === 'Person'
+			)!;
+			expect(project.parentOf(diagram, pastedStudent)).toBe(pastedPerson);
+		});
+	});
+
+	it('marks a 1,1 Leg of a binary Association relative, and clears it with its Cardinality', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const places = project.addAssociation(diagram, order, customer, 'places');
+		const [orderLeg, customerLeg] = legsOf(project, diagram);
+		const relativeOf = (id: string) =>
+			(legsOf(project, diagram).find((l) => l.id === id) as LegEdge).relative;
+		expect(() => project.setRelative(diagram, orderLeg.id, true)).toThrow();
+		project.setCardinality(diagram, orderLeg.id, '1,1');
+		project.setRelative(diagram, orderLeg.id, true);
+		expect(relativeOf(orderLeg.id)).toBe(true);
+		const copy = ProjectDocument.fromFile(project.toFile());
+		expect(
+			(copy.edges(copy.diagrams()[0].id).find((e) => e.id === orderLeg.id) as LegEdge).relative
+		).toBe(true);
+		// Clicking the Cardinality moves it on from 1,1: the R goes too.
+		project.cycleCardinality(diagram, orderLeg.id);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		project.setCardinality(diagram, orderLeg.id, '1,1');
+		project.setRelative(diagram, orderLeg.id, true);
+		project.setRelative(diagram, orderLeg.id, false);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		// A third Leg makes it N-ary: the R goes, and is no longer offered.
+		project.setRelative(diagram, orderLeg.id, true);
+		project.addLeg(diagram, places, product);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		expect(() => project.setRelative(diagram, orderLeg.id, true)).toThrow();
+		void customerLeg;
 	});
 
 	it('deletes the Legs and Associations of a deleted Entity', () => {

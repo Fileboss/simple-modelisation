@@ -122,9 +122,21 @@ _Avoid_: Column type, SQL type
 The Attribute(s) that uniquely identify an Entity, shown underlined.
 _Avoid_: Primary key, ID
 
+**Relative identifier**:
+An Entity identified within another: its 1,1 Leg is marked R, and its table's key starts with the other Entity's key.
+_Avoid_: Weak entity, identifying relationship (other notations' words)
+
 **Association**:
-A named relationship between Entities, possibly reflexive and possibly carrying Attributes.
+A named relationship between two Entities or more (the same Entity may appear twice: reflexive), possibly carrying Attributes.
 _Avoid_: Relation, relationship, link
+
+**N-ary Association**:
+An Association with three Legs or more (a ternary has three); its MLD is always a table.
+_Avoid_: Multi-association, complex relation
+
+**CIF**:
+A functional integrity constraint on an N-ary Association: the Entities on some of its Legs (determinants) fix the one on another (determined), which the MLD then leaves out of the table's key.
+_Avoid_: Functional dependency, FD
 
 **Leg**:
 The line joining an Association to one of its Entities, labelled with a Cardinality.
@@ -133,6 +145,10 @@ _Avoid_: Link, edge, branch
 **Cardinality**:
 The min,max count on a Leg: one of 0,1 / 1,1 / 0,n / 1,n.
 _Avoid_: Multiplicity (the UML Notation's word for it)
+
+**Inheritance**:
+A parent Entity specialised by child Entities, which share its Attributes and Identifier; constrained X (exclusion), T (totality) or XT (partition), and translated into the MLD by reference, push down or push up.
+_Avoid_: Generalisation (the UML Notation's word for it), subtype, is-a
 
 **MLD**:
 The relational model derived from an MCD: its tables, their columns, primary keys and foreign keys, written in Looping's textual notation.

@@ -3,6 +3,8 @@ import type {
 	AssociationNode,
 	Attribute,
 	Cardinality,
+	CifNode,
+	InheritanceNode,
 	DiagramEdge,
 	DiagramNode,
 	EntityNode,
@@ -15,6 +17,8 @@ export type Column = {
 	nullable: boolean;
 	/** Set on the columns of a foreign key. */
 	foreign?: boolean;
+	/** The only values allowed (an Inheritance's type column). */
+	check?: string[];
 };
 
 export type ForeignKey = {
@@ -32,8 +36,11 @@ export type Table = {
 	unique: string[][];
 };
 
-/** The relational model of an MCD: its tables, referenced ones first, and what is wrong with it. */
-export type Mld = { tables: Table[]; warnings: string[] };
+/**
+ * The relational model of an MCD: its tables, referenced ones first, what is
+ * wrong with it, and what the tables do not enforce (notes).
+ */
+export type Mld = { tables: Table[]; warnings: string[]; notes: string[] };
 
 const maxIsOne = (cardinality: Cardinality) => cardinality.endsWith(',1');
 
@@ -41,7 +48,8 @@ const maxIsOne = (cardinality: Cardinality) => cardinality.endsWith(',1');
  * Derives the MLD of an MCD with the Merise rules: an Entity is a table keyed
  * by its Identifier; a binary Association with a Leg of max 1 adds a foreign
  * key (and its Attributes) to the Entity on that side, UNIQUE when both Legs
- * have max 1; any other Association becomes a table keyed by both foreign keys.
+ * have max 1; any other Association, and every N-ary one, becomes a table
+ * keyed by its foreign keys.
  */
 export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	const warnings: string[] = [];
@@ -50,25 +58,124 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	const legs = edges.filter((e): e is LegEdge => e.type === 'leg');
 
 	const tables = new Map<string, Table>();
+	for (const entity of entities) tables.set(entity.id, entityTable(entity));
+	const entityNames = new Map(entities.map((e) => [e.id, e.name]));
+	const notes: string[] = [];
+	const parentIds = new Set(
+		nodes.filter((n) => n.type === 'inheritance').map((n) => String(n.parent))
+	);
+	const isParent = (id: string) => parentIds.has(id);
+	// Relative identifiers go around the Inheritances: before, so that a dependent parent's
+	// children reference its whole key; after, those whose strong Entity is a child (or
+	// depends on one), whose key comes from the Inheritance.
+	const childIds = new Set(edges.filter((e) => e.type === 'isa').map((e) => e.target));
+	const downParents = new Set(
+		nodes
+			.filter((n) => n.type === 'inheritance' && n.translation === 'down')
+			.map((n) => String(n.parent))
+	);
+	const relative = relativeLinks(associations, legs, childIds, entityNames, warnings);
+	const late = new Set(relative.filter((l) => childIds.has(l.strong)).map((l) => l.weak));
+	for (let grew = true; grew;) {
+		grew = false;
+		for (const link of relative) {
+			if (late.has(link.strong) && !late.has(link.weak)) {
+				late.add(link.weak);
+				grew = true;
+			}
+		}
+	}
+	const state = { handled: new Set<string>(), leading: new Map<Table, string[]>() };
+	applyRelativeLinks(
+		relative.filter((l) => !late.has(l.weak)),
+		tables,
+		downParents,
+		state,
+		entityNames,
+		warnings
+	);
+	const { pushedDown, children } = applyInheritances(
+		entities,
+		nodes,
+		edges,
+		tables,
+		warnings,
+		notes
+	);
+	const lateLinks = relative.filter((l) => late.has(l.weak));
+	for (const link of lateLinks.filter((l) => isParent(l.weak))) {
+		warnings.push(
+			`The relative identifier of ${entityNames.get(link.weak)} is ignored: it would come after its Inheritance children took its key.`
+		);
+	}
+	applyRelativeLinks(
+		lateLinks.filter((l) => !isParent(l.weak)),
+		tables,
+		pushedDown,
+		state,
+		entityNames,
+		warnings
+	);
+	const handled = state.handled;
 	for (const entity of entities) {
-		const table = entityTable(entity);
-		if (table.primaryKey.length === 0) {
+		const table = tables.get(entity.id);
+		if (table && !children.has(entity.id) && table.primaryKey.length === 0) {
 			warnings.push(
 				`Entity "${entity.name}" has no Identifier: table ${table.name} has no primary key.`
 			);
 		}
-		tables.set(entity.id, table);
 	}
 
+	const cifs = nodes.filter((n): n is CifNode => n.type === 'cif');
 	const associationTables: Table[] = [];
 	for (const association of associations) {
-		const [a, b] = legs.filter((l) => l.source === association.id);
-		if (!a || !b) continue;
+		if (handled.has(association.id)) continue;
+		const own = legs.filter((l) => l.source === association.id);
 		const target = (leg: LegEdge) => tables.get(leg.target);
-		const tableA = target(a);
-		const tableB = target(b);
-		if (!tableA || !tableB) continue;
+		const gone = own.find((leg) => pushedDown.has(leg.target));
+		if (gone) {
+			warnings.push(
+				`Association "${association.name}" is left out: ${entityNames.get(gone.target)} is pushed down into its children.`
+			);
+			continue;
+		}
+		if (own.length < 2 || own.some((leg) => !target(leg))) continue;
+		const [a, b] = own;
 
+		const itsCifs = cifs.filter((c) => c.association === association.id);
+		if (own.length > 2) {
+			// N-ary: always a table, keyed by the foreign keys of the Legs no CIF determines.
+			// A CIF applies, in order, only while its determinants are all still in the key:
+			// the key then stays unique and never empty.
+			const ownIds = new Set(own.map((l) => l.id));
+			const determined = new Set<string>();
+			for (const cif of itsCifs) {
+				if (!ownIds.has(cif.determined) || determined.has(cif.determined)) continue;
+				const determinants = cif.determinants.filter((l) => ownIds.has(l));
+				const gone = determinants.find((l) => determined.has(l));
+				if (determinants.length === 0) continue;
+				if (gone) {
+					const leg = own.find((l) => l.id === gone)!;
+					warnings.push(
+						`A CIF on "${association.name}" is not applied: ${entityNames.get(leg.target)} is no longer in the key.`
+					);
+					continue;
+				}
+				determined.add(cif.determined);
+			}
+			for (const leg of own.filter((l) => maxIsOne(l.cardinality) && !determined.has(l.id))) {
+				warnings.push(
+					`Association "${association.name}" joins ${own.length} Entities with a max of 1 on ${entityNames.get(leg.target)}: add a CIF to take it out of the key.`
+				);
+			}
+			associationTables.push(associationTable(association, own, target, warnings, determined));
+			continue;
+		}
+		if (itsCifs.length > 0) {
+			warnings.push(
+				`The CIF on "${association.name}" is ignored: a CIF needs an Association with three Legs or more.`
+			);
+		}
 		if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
 			// The key goes to a side of max 1: the 1,1 one when both are, else the second.
 			const receiving =
@@ -92,31 +199,293 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 				table.columns.push(attributeColumn(table, attribute, optional));
 			}
 		} else {
-			const table: Table = {
-				name: snakeCase(association.name),
-				columns: [],
-				primaryKey: [],
-				foreignKeys: [],
-				unique: []
-			};
-			for (const leg of [a, b]) {
-				const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
-				table.primaryKey.push(...(columns ?? []));
-			}
-			for (const attribute of association.attributes ?? []) {
-				table.columns.push(attributeColumn(table, attribute, false));
-			}
-			associationTables.push(table);
+			associationTables.push(associationTable(association, own, target, warnings));
 		}
 	}
 
-	const ordered = [...referencedFirst([...tables.values()]), ...associationTables];
+	// A child pushed up shares its parent's table: each table once.
+	const ordered = [...referencedFirst([...new Set(tables.values())]), ...associationTables];
 	const seen = new Set<string>();
 	for (const table of ordered) {
 		if (seen.has(table.name)) warnings.push(`Two tables are named ${table.name}.`);
 		seen.add(table.name);
 	}
-	return { tables: ordered, warnings };
+	return { tables: ordered, warnings, notes };
+}
+
+type RelativeLink = { weak: string; strong: string; association: AssociationNode };
+
+/**
+ * The relative identifiers that can apply: a 1,1 Leg marked R on a binary
+ * Association between two Entities, whose dependent Entity is not an
+ * Inheritance child (a child takes its key from its parent). The others warn.
+ */
+function relativeLinks(
+	associations: AssociationNode[],
+	legs: LegEdge[],
+	children: Set<string>,
+	entityNames: Map<string, string>,
+	warnings: string[]
+): RelativeLink[] {
+	const byId = new Map(associations.map((a) => [a.id, a]));
+	const legsOf = new Map<string, LegEdge[]>();
+	for (const leg of legs) legsOf.set(leg.source, [...(legsOf.get(leg.source) ?? []), leg]);
+	const links: RelativeLink[] = [];
+	for (const leg of legs.filter((l) => l.relative && l.cardinality === '1,1')) {
+		const association = byId.get(leg.source);
+		if (!association) continue;
+		const own = legsOf.get(leg.source) ?? [];
+		const other = own.find((l) => l !== leg);
+		if (own.length !== 2 || !other || other.target === leg.target) {
+			warnings.push(
+				`The relative identifier on "${association.name}" is ignored: it needs a binary Association between two Entities.`
+			);
+		} else if (children.has(leg.target)) {
+			warnings.push(
+				`The relative identifier of ${entityNames.get(leg.target)} is ignored: an Inheritance child takes its key from its parent.`
+			);
+		} else {
+			links.push({ weak: leg.target, strong: other.target, association });
+		}
+	}
+	return links;
+}
+
+/**
+ * Keys each dependent Entity by the foreign key to its strong Entity's table,
+ * in front of its own Identifier, strong Entities first so that chains carry
+ * the whole key. What waits once nothing more can go is a cycle, or depends on
+ * one: ignored, with a warning. Adds the Associations it translated to `handled`.
+ */
+function applyRelativeLinks(
+	links: RelativeLink[],
+	tables: Map<string, Table>,
+	skip: Set<string>,
+	state: { handled: Set<string>; leading: Map<Table, string[]> },
+	entityNames: Map<string, string>,
+	warnings: string[]
+): void {
+	// An Entity pushed down has no table: the Association loop says so.
+	let left = links.filter(
+		(l) => !skip.has(l.weak) && !skip.has(l.strong) && tables.has(l.weak) && tables.has(l.strong)
+	);
+	while (left.length > 0) {
+		const waiting = new Set(left.map((l) => l.weak));
+		// A link is ready once its strong Entity has its whole key.
+		const ready = left.filter((l) => !waiting.has(l.strong));
+		if (ready.length === 0) break;
+		for (const { weak, strong, association } of ready) {
+			// Translated here even when it cannot reference: its warning is said once.
+			state.handled.add(association.id);
+			const table = tables.get(weak)!;
+			const columns = addForeignKey(table, tables.get(strong)!, association.name, false, warnings);
+			if (!columns) continue;
+			// The foreign keys lead the key and the columns, in the order of the Legs, as
+			// Looping writes it; the Entity's own Identifier comes after.
+			const leading = [...(state.leading.get(table) ?? []), ...columns];
+			state.leading.set(table, leading);
+			table.primaryKey = [...leading, ...table.primaryKey.filter((c) => !leading.includes(c))];
+			table.columns = [
+				...leading.map((name) => table.columns.find((c) => c.name === name)!),
+				...table.columns.filter((c) => !leading.includes(c.name))
+			];
+			for (const attribute of association.attributes ?? []) {
+				table.columns.push(attributeColumn(table, attribute, false));
+			}
+		}
+		left = left.filter((l) => !ready.includes(l));
+	}
+	if (left.length === 0) return;
+	// In a cycle: an Entity its strong Entities lead back to; the others only depend on one.
+	const strongOf = (id: string) => left.filter((l) => l.weak === id).map((l) => l.strong);
+	const inCycle = (start: string) => {
+		const seen = new Set<string>();
+		const next = [...strongOf(start)];
+		while (next.length > 0) {
+			const at = next.pop()!;
+			if (at === start) return true;
+			if (seen.has(at)) continue;
+			seen.add(at);
+			next.push(...strongOf(at));
+		}
+		return false;
+	};
+	const weak = [...new Set(left.map((l) => l.weak))];
+	const names = (ids: string[]) =>
+		ids
+			.map((id) => entityNames.get(id))
+			.sort()
+			.join(', ');
+	const cycle = weak.filter(inCycle);
+	const dependent = weak.filter((id) => !cycle.includes(id));
+	warnings.push(
+		`The relative identifiers of ${names(cycle)} form a cycle: they are ignored` +
+			(dependent.length > 0 ? `, with those depending on them (${names(dependent)}).` : '.')
+	);
+}
+
+const CONSTRAINT_WORDS = { X: 'at most', T: 'at least', XT: 'exactly' } as const;
+
+/**
+ * Translates the Inheritances, parents first so that chains compose: by
+ * reference, a child's table is keyed by a foreign key to its parent's; pushed
+ * down, it copies its parent's table, which then goes; pushed up, the child's
+ * Attributes join its parent's table, with a type column. A child's own
+ * Identifier is ignored. Returns the Entities pushed down and the children.
+ */
+function applyInheritances(
+	entities: EntityNode[],
+	nodes: DiagramNode[],
+	edges: DiagramEdge[],
+	tables: Map<string, Table>,
+	warnings: string[],
+	notes: string[]
+): { pushedDown: Set<string>; children: Set<string> } {
+	const byId = new Map(entities.map((e) => [e.id, e]));
+	// One Inheritance per parent, its first by id, should two peers have made two at once.
+	const canonical = new Map<string, InheritanceNode>();
+	const found = nodes
+		.filter((n): n is InheritanceNode => n.type === 'inheritance' && byId.has(String(n.parent)))
+		.sort((a, b) => a.id.localeCompare(b.id));
+	for (const node of found) if (!canonical.has(node.parent)) canonical.set(node.parent, node);
+	const inheritances = new Map(found.map((n) => [n.id, canonical.get(n.parent)!]));
+	// One parent per child: the first Inheritance a file or a peer gave it.
+	const inheritanceOf = new Map<string, InheritanceNode>();
+	for (const edge of edges) {
+		const inheritance = inheritances.get(edge.source);
+		if (
+			edge.type === 'isa' &&
+			inheritance &&
+			byId.has(edge.target) &&
+			!inheritanceOf.has(edge.target)
+		) {
+			inheritanceOf.set(edge.target, inheritance);
+		}
+	}
+	const depth = (id: string): number => {
+		let steps = 0;
+		for (
+			let at = inheritanceOf.get(id);
+			at && steps <= byId.size;
+			at = inheritanceOf.get(at.parent)
+		) {
+			steps++;
+		}
+		return steps;
+	};
+	// A cycle (from a file or a peer) has no depth that ends: left out.
+	const children = [...inheritanceOf.keys()]
+		.filter((id) => depth(id) <= byId.size)
+		.sort((a, b) => depth(a) - depth(b));
+
+	const pushedDown = new Set<string>();
+	const pushedUp = new Set<string>();
+	const typed = new Set<string>();
+	// Warned once: by Inheritance or by parent.
+	const warned = new Set<string>();
+	for (const childId of children) {
+		const child = byId.get(childId)!;
+		const inheritance = inheritanceOf.get(childId)!;
+		const parent = byId.get(inheritance.parent)!;
+		const parentTable = tables.get(parent.id)!;
+		if ((child.attributes ?? []).some((a) => a.identifier)) {
+			warnings.push(
+				`Entity "${child.name}" inherits its Identifier from ${parent.name}: its own is ignored.`
+			);
+		}
+		const own = (child.attributes ?? []).filter((a) => !a.identifier);
+		let translation = inheritance.translation ?? 'reference';
+		// Its rows are in its own parent's table: nothing of its own to push down.
+		if (translation === 'down' && pushedUp.has(parent.id)) {
+			if (!warned.has(inheritance.id)) {
+				warned.add(inheritance.id);
+				warnings.push(
+					`Inheritance of ${parent.name} cannot be pushed down: ${parent.name} is pushed up into its own parent. Translated by reference.`
+				);
+			}
+			translation = 'reference';
+		}
+		if (translation === 'up') {
+			if (!typed.has(inheritance.id)) {
+				typed.add(inheritance.id);
+				const total = inheritance.constraint === 'T' || inheritance.constraint === 'XT';
+				parentTable.columns.push({
+					name: uniqueName(parentTable, `${snakeCase(parent.name)}_type`),
+					type: { kind: 'varchar', length: 50 },
+					nullable: !total,
+					check: children
+						.filter((c) => inheritanceOf.get(c) === inheritance)
+						.map((c) => byId.get(c)!.name)
+				});
+			}
+			for (const attribute of own)
+				parentTable.columns.push(attributeColumn(parentTable, attribute, true));
+			tables.set(childId, parentTable);
+			pushedUp.add(childId);
+			continue;
+		}
+		const table: Table =
+			translation === 'down'
+				? {
+						name: snakeCase(child.name),
+						columns: parentTable.columns.map((c) => ({ ...c })),
+						primaryKey: [...parentTable.primaryKey],
+						foreignKeys: parentTable.foreignKeys.map((fk) => ({ ...fk })),
+						unique: parentTable.unique.map((u) => [...u])
+					}
+				: { name: snakeCase(child.name), columns: [], primaryKey: [], foreignKeys: [], unique: [] };
+		if (translation === 'down') {
+			pushedDown.add(parent.id);
+			if (parentTable.primaryKey.length === 0 && !warned.has(parent.id)) {
+				warned.add(parent.id);
+				warnings.push(
+					`Entity "${parent.name}" has no Identifier: the tables it is pushed down into have no primary key.`
+				);
+			}
+		} else if (parentTable.primaryKey.length === 0) {
+			warnings.push(
+				`Entity "${child.name}" cannot reference its parent ${parent.name}, which has no primary key.`
+			);
+		} else {
+			table.primaryKey.push(...addForeignKey(table, parentTable, child.name, false, warnings)!);
+		}
+		for (const attribute of own) table.columns.push(attributeColumn(table, attribute, false));
+		tables.set(childId, table);
+	}
+	for (const id of pushedDown) tables.delete(id);
+
+	for (const inheritance of new Set(children.map((c) => inheritanceOf.get(c)!))) {
+		const parent = byId.get(inheritance.parent)!.name;
+		const names = children
+			.filter((c) => inheritanceOf.get(c) === inheritance)
+			.map((c) => byId.get(c)!.name)
+			.join(', ');
+		const constraint = inheritance.constraint;
+		const total = constraint === 'T' || constraint === 'XT';
+		if (inheritance.translation === 'up') {
+			if (constraint !== 'X' && constraint !== 'XT') {
+				notes.push(
+					`Inheritance of ${parent} pushed up: one type per row, so a ${parent} is at most one of ${names}.`
+				);
+			}
+		} else if (inheritance.translation === 'down' && !pushedUp.has(inheritance.parent)) {
+			if (!total) {
+				notes.push(
+					`Inheritance of ${parent} pushed down: a ${parent} that is none of ${names} cannot be stored.`
+				);
+			}
+			if (constraint === 'X' || constraint === 'XT') {
+				notes.push(
+					`Inheritance of ${parent}: X (a ${parent} is at most one of ${names}) is not enforced by this script.`
+				);
+			}
+		} else if (constraint) {
+			notes.push(
+				`Inheritance of ${parent}: ${constraint} (a ${parent} is ${CONSTRAINT_WORDS[constraint]} one of ${names}) is not enforced by this script.`
+			);
+		}
+	}
+	return { pushedDown, children: new Set(children) };
 }
 
 function entityTable(entity: EntityNode): Table {
@@ -147,6 +516,35 @@ function attributeColumn(table: Table, attribute: Attribute, forceNullable: bool
 		type: nullable && attribute.type.kind === 'serial' ? dataType('integer') : attribute.type,
 		nullable
 	};
+}
+
+/**
+ * An Association's own table: keyed by the foreign keys to its Entities, but
+ * those of `determined` Legs, with its Attributes.
+ */
+function associationTable(
+	association: AssociationNode,
+	legs: LegEdge[],
+	target: (leg: LegEdge) => Table | undefined,
+	warnings: string[],
+	determined: Set<string> = new Set()
+): Table {
+	const table: Table = {
+		name: snakeCase(association.name),
+		columns: [],
+		primaryKey: [],
+		foreignKeys: [],
+		unique: []
+	};
+	for (const leg of legs) {
+		const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
+		// A Leg a CIF determines is a NOT NULL column outside the key.
+		if (!determined.has(leg.id)) table.primaryKey.push(...(columns ?? []));
+	}
+	for (const attribute of association.attributes ?? []) {
+		table.columns.push(attributeColumn(table, attribute, false));
+	}
+	return table;
 }
 
 /** Adds to `table` the columns and foreign key referencing `referenced`; null when it cannot. */

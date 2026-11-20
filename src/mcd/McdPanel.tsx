@@ -3,8 +3,16 @@ import type { Selection } from '../canvas/DiagramCanvas';
 import { PanelField } from '../canvas/PanelField';
 import {
 	CARDINALITIES,
+	canBeRelative,
 	type AssociationNode,
 	type Cardinality,
+	type CifNode,
+	type CifRole,
+	INHERITANCE_CONSTRAINTS,
+	INHERITANCE_TRANSLATIONS,
+	type InheritanceConstraint,
+	type InheritanceNode,
+	type InheritanceTranslation,
 	type EntityNode,
 	type LegEdge
 } from '@simple-modelisation/model/project.ts';
@@ -35,6 +43,7 @@ export function McdPanel({ selection }: { selection: Selection }) {
 					onChange={(name) => project.renameNode(diagramId, element.id, name)}
 				/>
 				<AttributesEditor element={element} />
+				{isEntity && <ParentPicker entityId={element.id} />}
 				{isEntity ? (
 					<button
 						className="panel-action"
@@ -46,11 +55,18 @@ export function McdPanel({ selection }: { selection: Selection }) {
 						{strings.mcd.addReflexive}
 					</button>
 				) : (
-					<LegsEditor associationId={element.id} isUml={isUml} />
+					<>
+						<LegsEditor associationId={element.id} isUml={isUml} />
+						<AddCif associationId={element.id} />
+					</>
 				)}
 			</>
 		);
 	}
+
+	if (node?.type === 'cif') return <CifEditor cif={node as CifNode} />;
+	if (node?.type === 'inheritance')
+		return <InheritanceEditor inheritance={node as InheritanceNode} />;
 
 	if (selection.edge?.type === 'leg') {
 		const leg = selection.edge as LegEdge;
@@ -212,6 +228,162 @@ function DataTypeField({ type, onChange }: { type: DataType; onChange: (type: Da
 	);
 }
 
+/** An Entity's parent: any other Entity but its own descendants. */
+function ParentPicker({ entityId }: { entityId: string }) {
+	const { project, diagramId } = useCanvas();
+	const entities = project.nodes(diagramId).filter((n) => n.type === 'entity');
+	const excluded = project.selfAndDescendants(diagramId, entityId);
+	return (
+		<label className="panel-field">
+			{strings.mcd.inheritsFrom}
+			<select
+				value={project.parentOf(diagramId, entityId) ?? ''}
+				onChange={(e) => {
+					project.stopCapturing();
+					try {
+						project.setParent(diagramId, entityId, e.currentTarget.value || null);
+					} catch (error) {
+						// A peer made it a descendant meanwhile: the list redraws without it.
+						console.warn('Parent refused', error);
+					}
+				}}
+			>
+				<option value="">{strings.mcd.noParent}</option>
+				{entities
+					.filter((e) => !excluded.has(e.id))
+					.map((e) => (
+						<option key={e.id} value={e.id}>
+							{String(e.name)}
+						</option>
+					))}
+			</select>
+		</label>
+	);
+}
+
+/** An Inheritance: its children, its constraint and its MLD translation. */
+function InheritanceEditor({ inheritance }: { inheritance: InheritanceNode }) {
+	const { project, diagramId } = useCanvas();
+	const names = new Map(project.nodes(diagramId).map((n) => [n.id, String(n.name ?? '')]));
+	const children = project
+		.edges(diagramId)
+		.filter((e) => e.type === 'isa' && e.source === inheritance.id)
+		.map((e) => names.get(e.target));
+	return (
+		<>
+			<h2>{strings.mcd.inheritance}</h2>
+			<p className="panel-hint">{strings.mcd.inheritanceHint}</p>
+			<p className="panel-field">
+				{names.get(inheritance.parent)} → {children.join(', ')}
+			</p>
+			<label className="panel-field">
+				{strings.mcd.constraint}
+				<select
+					value={inheritance.constraint ?? 'none'}
+					onChange={(e) => {
+						project.stopCapturing();
+						project.setInheritanceConstraint(
+							diagramId,
+							inheritance.id,
+							e.currentTarget.value as InheritanceConstraint
+						);
+					}}
+				>
+					{INHERITANCE_CONSTRAINTS.map((c) => (
+						<option key={c} value={c}>
+							{strings.mcd.constraints[c]}
+						</option>
+					))}
+				</select>
+			</label>
+			<label className="panel-field">
+				{strings.mcd.translation}
+				<select
+					value={inheritance.translation ?? 'reference'}
+					onChange={(e) => {
+						project.stopCapturing();
+						project.setInheritanceTranslation(
+							diagramId,
+							inheritance.id,
+							e.currentTarget.value as InheritanceTranslation
+						);
+					}}
+				>
+					{INHERITANCE_TRANSLATIONS.map((t) => (
+						<option key={t} value={t}>
+							{strings.mcd.translations[t]}
+						</option>
+					))}
+				</select>
+			</label>
+		</>
+	);
+}
+
+/** On an N-ary Association: puts a CIF above it. */
+function AddCif({ associationId }: { associationId: string }) {
+	const { project, diagramId } = useCanvas();
+	const legs = project.edges(diagramId).filter((e) => e.source === associationId);
+	if (legs.length < 3) return null;
+	return (
+		<button
+			className="panel-action"
+			onClick={() => {
+				project.stopCapturing();
+				project.addCif(diagramId, associationId);
+			}}
+		>
+			{strings.mcd.addCif}
+		</button>
+	);
+}
+
+/** A CIF: each Leg of its Association as a determinant, the determined one, or not involved. */
+function CifEditor({ cif }: { cif: CifNode }) {
+	const { project, diagramId } = useCanvas();
+	const legs = project
+		.edges(diagramId)
+		.filter((e): e is LegEdge => e.type === 'leg' && e.source === cif.association);
+	const names = new Map(project.nodes(diagramId).map((n) => [n.id, String(n.name ?? '')]));
+	const roleOf = (leg: string): CifRole =>
+		leg === cif.determined ? 'determined' : cif.determinants.includes(leg) ? 'determinant' : 'none';
+	return (
+		<>
+			<h2>{strings.mcd.cif}</h2>
+			<p className="panel-hint">{strings.mcd.cifHint}</p>
+			{legs.map((leg) => (
+				<label key={leg.id} className="panel-field leg-row">
+					<span>{names.get(leg.target)}</span>
+					<select
+						value={roleOf(leg.id)}
+						onChange={(e) => {
+							project.stopCapturing();
+							project.setCifRole(diagramId, cif.id, leg.id, e.currentTarget.value as CifRole);
+						}}
+					>
+						{(['determinant', 'determined', 'none'] as const).map((role) => (
+							// The determined Leg changes by choosing another one; the last determinant stays.
+							<option
+								key={role}
+								value={role}
+								disabled={
+									role !== roleOf(leg.id) &&
+									(roleOf(leg.id) === 'determined' ||
+										(role === 'none' &&
+											cif.determinants.length === 1 &&
+											roleOf(leg.id) === 'determinant'))
+								}
+							>
+								{strings.mcd.cifRoles[role]}
+							</option>
+						))}
+					</select>
+				</label>
+			))}
+		</>
+	);
+}
+
 function LegsEditor({ associationId, isUml }: { associationId: string; isUml: boolean }) {
 	const { project, diagramId } = useCanvas();
 	const legs = project
@@ -240,6 +412,35 @@ function LegRow({ leg, nextTo }: { leg: LegEdge; nextTo?: string }) {
 	const { project, diagramId } = useCanvas();
 	const nameOf = (id: string) =>
 		String(project.nodes(diagramId).find((n) => n.id === id)?.name ?? '');
+	// In Merise only, where the row is the Leg itself (in UML, the other end's multiplicity);
+	// still shown while set, so that an R that no longer applies can be cleared.
+	const offered =
+		nextTo === undefined &&
+		(leg.relative === true || canBeRelative(project.edges(diagramId), leg.id));
+	return (
+		<>
+			<LegCardinality leg={leg} nextTo={nextTo} nameOf={nameOf} />
+			{offered && (
+				<label className="panel-check">
+					<input
+						type="checkbox"
+						checked={leg.relative === true}
+						onChange={(e) => {
+							project.stopCapturing();
+							project.setRelative(diagramId, leg.id, e.currentTarget.checked);
+						}}
+					/>
+					{strings.mcd.relative(nameOf(leg.target))}
+				</label>
+			)}
+		</>
+	);
+}
+
+type CardinalityProps = { leg: LegEdge; nextTo?: string; nameOf: (id: string) => string };
+
+function LegCardinality({ leg, nextTo, nameOf }: CardinalityProps) {
+	const { project, diagramId } = useCanvas();
 	return (
 		<label className="panel-field leg-row">
 			<span>
