@@ -79,7 +79,11 @@ export type NaryAssociation = { umlNary?: boolean };
  * The Leg whose Cardinality shows at this Leg's class end in UML: the other Leg
  * of a binary Association, the Leg itself on an N-ary one.
  */
-export type PeerLeg = { peer?: { id: string; cardinality: Cardinality } };
+export type PeerLeg = {
+	peer?: { id: string; cardinality: Cardinality };
+	/** UML composition: the other Leg's Entity is identified relative to this one's, drawn as a filled diamond here. */
+	composition?: boolean;
+};
 
 const FALLBACK_SIZE = { width: 120, height: 60 };
 const size = (node: Node) => ({
@@ -155,7 +159,15 @@ export function umlLayout(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges:
 		const peer = isNary(edge.source) ? edge : legsOf(edge.source).find((leg) => leg.id !== edge.id);
 		if (!peer) return edge;
 		const cardinality = (peer.data as LegEdge).cardinality;
-		return { ...edge, data: { ...edge.data, peer: { id: peer.id, cardinality } } };
+		const composition = peer !== edge && (peer.data as LegEdge).relative === true;
+		return {
+			...edge,
+			data: {
+				...edge.data,
+				peer: { id: peer.id, cardinality },
+				...(composition && { composition: true })
+			}
+		};
 	});
 
 	return { nodes: laidNodes, edges: laidEdges };

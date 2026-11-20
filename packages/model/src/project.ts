@@ -215,11 +215,24 @@ export const INHERITANCE_OFFSET = { x: 0, y: 120 };
 /** An Inheritance's triangle. */
 export const INHERITANCE_SIZE = { width: 56, height: 40 };
 
+/** Whether a Leg can be marked relative: 1,1, on a binary Association between two Entities. */
+export function canBeRelative(edges: DiagramEdge[], legId: string): boolean {
+	const leg = edges.find((e) => e.id === legId) as LegEdge | undefined;
+	if (leg?.type !== 'leg' || leg.cardinality !== '1,1') return false;
+	const legs = edges.filter((e) => e.type === 'leg' && e.source === leg.source);
+	return legs.length === 2 && legs[0].target !== legs[1].target;
+}
+
 /** A Leg's part in a CIF. */
 export type CifRole = 'determinant' | 'determined' | 'none';
 
-/** Joins an Association (source) to one of its Entities (target). */
-export type LegEdge = DiagramEdge & Route & { type: 'leg'; cardinality: Cardinality };
+/**
+ * Joins an Association (source) to one of its Entities (target). `relative`, on
+ * a 1,1 Leg of a binary Association: that Entity is identified relative to the
+ * other one.
+ */
+export type LegEdge = DiagramEdge &
+	Route & { type: 'leg'; cardinality: Cardinality; relative?: true };
 
 /** The JSON file a Project exports to and imports from. */
 export type ProjectFile = {
@@ -811,7 +824,13 @@ export class ProjectDocument {
 			target: entityId,
 			cardinality: '0,n'
 		};
-		this.insertEdge(diagramId, leg);
+		this.doc.transact(() => {
+			this.insertEdge(diagramId, leg);
+			// N-ary now: no relative identifier any more.
+			for (const edge of this.edgeMap(diagramId).values()) {
+				if (edge.get('source') === associationId) edge.delete('relative');
+			}
+		});
 		return leg.id;
 	}
 
@@ -1003,8 +1022,33 @@ export class ProjectDocument {
 		}
 	}
 
+	/** Sets a Leg's Cardinality; a relative identifier needs 1,1 and goes with any other. */
 	setCardinality(diagramId: string, legId: string, cardinality: Cardinality): void {
-		this.edgeMap(diagramId).get(legId)?.set('cardinality', cardinality);
+		const leg = this.edgeMap(diagramId).get(legId);
+		if (!leg) return;
+		this.doc.transact(() => {
+			leg.set('cardinality', cardinality);
+			if (cardinality !== '1,1') leg.delete('relative');
+		});
+	}
+
+	/**
+	 * Marks a Leg relative (its Entity identified relative to the other one) or
+	 * not; only where `canBeRelative` says.
+	 */
+	setRelative(diagramId: string, legId: string, relative: boolean): void {
+		const leg = this.edgeMap(diagramId).get(legId);
+		if (leg?.get('type') !== 'leg') return;
+		if (!relative) {
+			leg.delete('relative');
+			return;
+		}
+		if (!canBeRelative(this.edges(diagramId), legId)) {
+			throw new Error(
+				'A relative identifier goes on a 1,1 Leg of a binary Association between two Entities.'
+			);
+		}
+		leg.set('relative', true);
 	}
 
 	/** Moves a Leg to the next Cardinality: 0,1 → 1,1 → 0,n → 1,n → 0,1. */
@@ -1012,7 +1056,7 @@ export class ProjectDocument {
 		const leg = this.edgeMap(diagramId).get(legId);
 		if (!leg) return;
 		const index = CARDINALITIES.indexOf(leg.get('cardinality') as Cardinality);
-		leg.set('cardinality', CARDINALITIES[(index + 1) % CARDINALITIES.length]);
+		this.setCardinality(diagramId, legId, CARDINALITIES[(index + 1) % CARDINALITIES.length]);
 	}
 
 	/** Adds an Attribute to an Entity or an Association. */
@@ -1305,9 +1349,13 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 
 /** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
 function readEdge(edge: Record<string, unknown>): DiagramEdge {
-	if (!('flow' in edge)) return edge as DiagramEdge;
+	if (!('flow' in edge) && !('relative' in edge)) return edge as DiagramEdge;
 	const read = { ...edge };
 	if (read.type !== 'connection' || !FLOWS.includes(read.flow as Flow)) delete read.flow;
+	// Only `true` on a 1,1 Leg, whatever a file or a peer wrote.
+	if (read.type !== 'leg' || read.relative !== true || read.cardinality !== '1,1') {
+		delete read.relative;
+	}
 	return read as DiagramEdge;
 }
 
@@ -1392,7 +1440,7 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
 	connection: ['source', 'target', 'label', 'flow', 'points'],
-	leg: ['source', 'target', 'cardinality', 'points'],
+	leg: ['source', 'target', 'cardinality', 'relative', 'points'],
 	isa: ['source', 'target', 'points']
 };
 

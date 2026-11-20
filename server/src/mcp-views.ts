@@ -143,7 +143,12 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 			attributes: a.attributes,
 			legs: legs
 				.filter((l) => l.source === a.id)
-				.map((l) => ({ id: l.id, entity: nameOf(l.target), cardinality: l.cardinality }))
+				.map((l) => ({
+					id: l.id,
+					entity: nameOf(l.target),
+					cardinality: l.cardinality,
+					relative: l.relative === true
+				}))
 		})),
 		inheritances: only<InheritanceNode>(nodes, 'inheritance').map((i) => ({
 			id: i.id,

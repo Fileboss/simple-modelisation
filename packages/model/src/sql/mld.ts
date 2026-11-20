@@ -61,6 +61,39 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	for (const entity of entities) tables.set(entity.id, entityTable(entity));
 	const entityNames = new Map(entities.map((e) => [e.id, e.name]));
 	const notes: string[] = [];
+	const parentIds = new Set(
+		nodes.filter((n) => n.type === 'inheritance').map((n) => String(n.parent))
+	);
+	const isParent = (id: string) => parentIds.has(id);
+	// Relative identifiers go around the Inheritances: before, so that a dependent parent's
+	// children reference its whole key; after, those whose strong Entity is a child (or
+	// depends on one), whose key comes from the Inheritance.
+	const childIds = new Set(edges.filter((e) => e.type === 'isa').map((e) => e.target));
+	const downParents = new Set(
+		nodes
+			.filter((n) => n.type === 'inheritance' && n.translation === 'down')
+			.map((n) => String(n.parent))
+	);
+	const relative = relativeLinks(associations, legs, childIds, entityNames, warnings);
+	const late = new Set(relative.filter((l) => childIds.has(l.strong)).map((l) => l.weak));
+	for (let grew = true; grew;) {
+		grew = false;
+		for (const link of relative) {
+			if (late.has(link.strong) && !late.has(link.weak)) {
+				late.add(link.weak);
+				grew = true;
+			}
+		}
+	}
+	const state = { handled: new Set<string>(), leading: new Map<Table, string[]>() };
+	applyRelativeLinks(
+		relative.filter((l) => !late.has(l.weak)),
+		tables,
+		downParents,
+		state,
+		entityNames,
+		warnings
+	);
 	const { pushedDown, children } = applyInheritances(
 		entities,
 		nodes,
@@ -69,6 +102,21 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 		warnings,
 		notes
 	);
+	const lateLinks = relative.filter((l) => late.has(l.weak));
+	for (const link of lateLinks.filter((l) => isParent(l.weak))) {
+		warnings.push(
+			`The relative identifier of ${entityNames.get(link.weak)} is ignored: it would come after its Inheritance children took its key.`
+		);
+	}
+	applyRelativeLinks(
+		lateLinks.filter((l) => !isParent(l.weak)),
+		tables,
+		pushedDown,
+		state,
+		entityNames,
+		warnings
+	);
+	const handled = state.handled;
 	for (const entity of entities) {
 		const table = tables.get(entity.id);
 		if (table && !children.has(entity.id) && table.primaryKey.length === 0) {
@@ -81,6 +129,7 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	const cifs = nodes.filter((n): n is CifNode => n.type === 'cif');
 	const associationTables: Table[] = [];
 	for (const association of associations) {
+		if (handled.has(association.id)) continue;
 		const own = legs.filter((l) => l.source === association.id);
 		const target = (leg: LegEdge) => tables.get(leg.target);
 		const gone = own.find((leg) => pushedDown.has(leg.target));
@@ -162,6 +211,117 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 		seen.add(table.name);
 	}
 	return { tables: ordered, warnings, notes };
+}
+
+type RelativeLink = { weak: string; strong: string; association: AssociationNode };
+
+/**
+ * The relative identifiers that can apply: a 1,1 Leg marked R on a binary
+ * Association between two Entities, whose dependent Entity is not an
+ * Inheritance child (a child takes its key from its parent). The others warn.
+ */
+function relativeLinks(
+	associations: AssociationNode[],
+	legs: LegEdge[],
+	children: Set<string>,
+	entityNames: Map<string, string>,
+	warnings: string[]
+): RelativeLink[] {
+	const byId = new Map(associations.map((a) => [a.id, a]));
+	const legsOf = new Map<string, LegEdge[]>();
+	for (const leg of legs) legsOf.set(leg.source, [...(legsOf.get(leg.source) ?? []), leg]);
+	const links: RelativeLink[] = [];
+	for (const leg of legs.filter((l) => l.relative && l.cardinality === '1,1')) {
+		const association = byId.get(leg.source);
+		if (!association) continue;
+		const own = legsOf.get(leg.source) ?? [];
+		const other = own.find((l) => l !== leg);
+		if (own.length !== 2 || !other || other.target === leg.target) {
+			warnings.push(
+				`The relative identifier on "${association.name}" is ignored: it needs a binary Association between two Entities.`
+			);
+		} else if (children.has(leg.target)) {
+			warnings.push(
+				`The relative identifier of ${entityNames.get(leg.target)} is ignored: an Inheritance child takes its key from its parent.`
+			);
+		} else {
+			links.push({ weak: leg.target, strong: other.target, association });
+		}
+	}
+	return links;
+}
+
+/**
+ * Keys each dependent Entity by the foreign key to its strong Entity's table,
+ * in front of its own Identifier, strong Entities first so that chains carry
+ * the whole key. What waits once nothing more can go is a cycle, or depends on
+ * one: ignored, with a warning. Adds the Associations it translated to `handled`.
+ */
+function applyRelativeLinks(
+	links: RelativeLink[],
+	tables: Map<string, Table>,
+	skip: Set<string>,
+	state: { handled: Set<string>; leading: Map<Table, string[]> },
+	entityNames: Map<string, string>,
+	warnings: string[]
+): void {
+	// An Entity pushed down has no table: the Association loop says so.
+	let left = links.filter(
+		(l) => !skip.has(l.weak) && !skip.has(l.strong) && tables.has(l.weak) && tables.has(l.strong)
+	);
+	while (left.length > 0) {
+		const waiting = new Set(left.map((l) => l.weak));
+		// A link is ready once its strong Entity has its whole key.
+		const ready = left.filter((l) => !waiting.has(l.strong));
+		if (ready.length === 0) break;
+		for (const { weak, strong, association } of ready) {
+			// Translated here even when it cannot reference: its warning is said once.
+			state.handled.add(association.id);
+			const table = tables.get(weak)!;
+			const columns = addForeignKey(table, tables.get(strong)!, association.name, false, warnings);
+			if (!columns) continue;
+			// The foreign keys lead the key and the columns, in the order of the Legs, as
+			// Looping writes it; the Entity's own Identifier comes after.
+			const leading = [...(state.leading.get(table) ?? []), ...columns];
+			state.leading.set(table, leading);
+			table.primaryKey = [...leading, ...table.primaryKey.filter((c) => !leading.includes(c))];
+			table.columns = [
+				...leading.map((name) => table.columns.find((c) => c.name === name)!),
+				...table.columns.filter((c) => !leading.includes(c.name))
+			];
+			for (const attribute of association.attributes ?? []) {
+				table.columns.push(attributeColumn(table, attribute, false));
+			}
+		}
+		left = left.filter((l) => !ready.includes(l));
+	}
+	if (left.length === 0) return;
+	// In a cycle: an Entity its strong Entities lead back to; the others only depend on one.
+	const strongOf = (id: string) => left.filter((l) => l.weak === id).map((l) => l.strong);
+	const inCycle = (start: string) => {
+		const seen = new Set<string>();
+		const next = [...strongOf(start)];
+		while (next.length > 0) {
+			const at = next.pop()!;
+			if (at === start) return true;
+			if (seen.has(at)) continue;
+			seen.add(at);
+			next.push(...strongOf(at));
+		}
+		return false;
+	};
+	const weak = [...new Set(left.map((l) => l.weak))];
+	const names = (ids: string[]) =>
+		ids
+			.map((id) => entityNames.get(id))
+			.sort()
+			.join(', ');
+	const cycle = weak.filter(inCycle);
+	const dependent = weak.filter((id) => !cycle.includes(id));
+	warnings.push(
+		`The relative identifiers of ${names(cycle)} form a cycle: they are ignored` +
+			(dependent.length > 0 ? `, with those depending on them (${names(dependent)}).` : '.')
+	);
 }
 
 const CONSTRAINT_WORDS = { X: 'at most', T: 'at least', XT: 'exactly' } as const;

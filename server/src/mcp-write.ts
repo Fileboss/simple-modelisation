@@ -2,6 +2,7 @@ import { isPerson } from '@simple-modelisation/model/component-types.ts';
 import { dataType, isDataType, type DataType } from '@simple-modelisation/model/data-types.ts';
 import {
 	CARDINALITIES,
+	canBeRelative,
 	COMPONENT_TYPE_IDS,
 	DISK_KINDS,
 	FLOWS,
@@ -912,15 +913,16 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_cardinality',
-		"Sets the Cardinality of an Association's Leg next to an Entity; for a reflexive Association, give the Leg's id.",
+		"Sets the Cardinality of an Association's Leg next to an Entity; for a reflexive Association, give the Leg's id. relative: true marks a 1,1 Leg of a binary Association as a relative identifier (the Entity is identified within the other one, whose key leads its table's key).",
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			association: z.string().describe('Association id or exact name.'),
 			entity: z.string().describe('Entity id or exact name, or the Leg id.'),
-			cardinality
+			cardinality,
+			relative: z.boolean().optional().describe('Default: unchanged (false once not 1,1).')
 		},
-		({ project, diagram, association, entity, cardinality: value }) =>
+		({ project, diagram, association, entity, cardinality: value, relative }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
 				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
@@ -936,8 +938,17 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 						`Give the Leg's id: ${legs.map((l) => `${l.id} (${l.cardinality})`).join(', ')}.`
 					);
 				}
-				p.setCardinality(d.id, matching[0].id, value);
-				return { id: matching[0].id };
+				// Checked before writing anything, with the Cardinality it is about to get.
+				const leg = matching[0];
+				const after = legs.map((l) => (l.id === leg.id ? { ...l, cardinality: value } : l));
+				if (relative && !canBeRelative(after, leg.id)) {
+					throw new ToolError(
+						'A relative identifier goes on a 1,1 Leg of a binary Association between two Entities.'
+					);
+				}
+				p.setCardinality(d.id, leg.id, value);
+				if (relative !== undefined) p.setRelative(d.id, leg.id, relative);
+				return { id: leg.id };
 			})
 	);
 

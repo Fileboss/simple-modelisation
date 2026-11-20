@@ -895,6 +895,47 @@ describe('MCP endpoint', () => {
 		);
 	});
 
+	it('marks a relative identifier with set_cardinality', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Order' });
+		await call(client, 'add_entity', {
+			...at,
+			name: 'Line',
+			attributes: [{ name: 'number', type: 'integer', identifier: true }]
+		});
+		await call(client, 'add_association', {
+			...at,
+			name: 'of',
+			from: { entity: 'Line', cardinality: '0,n' },
+			to: { entity: 'Order', cardinality: '0,n' }
+		});
+		const wrong = await call(client, 'set_cardinality', {
+			...at,
+			association: 'of',
+			entity: 'Line',
+			cardinality: '0,1',
+			relative: true
+		});
+		expect(wrong.error).toBe(
+			'A relative identifier goes on a 1,1 Leg of a binary Association between two Entities.'
+		);
+		await call(client, 'set_cardinality', {
+			...at,
+			association: 'of',
+			entity: 'Line',
+			cardinality: '1,1',
+			relative: true
+		});
+		const { associations } = await call(client, 'get_diagram', at);
+		expect(associations[0].legs).toMatchObject([
+			{ entity: 'Line', cardinality: '1,1', relative: true },
+			{ entity: 'Order', cardinality: '0,n', relative: false }
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('line = (#order_id, number INTEGER);');
+	});
+
 	it('explains ambiguous names, unknown names and wrong links', async () => {
 		const { client, id } = await setup();
 		await call(client, 'add_entity', { project: id, diagram: 'Data', name: 'Tag' });

@@ -79,6 +79,25 @@ describe('UML notation', () => {
 		]);
 	});
 
+	it('marks a composition on the Leg to the Entity another is relative to', () => {
+		const relative = {
+			...leg('l1', 'of', 'line', '1,1'),
+			data: { cardinality: '1,1', relative: true }
+		};
+		const { edges } = umlLayout(
+			[
+				node('line', 'entity', 0, 0),
+				node('order', 'entity', 400, 0),
+				node('of', 'association', 0, 0)
+			],
+			[relative, leg('l2', 'of', 'order', '0,n')]
+		);
+		expect(edges.map((e) => (e.data as { composition?: boolean }).composition)).toEqual([
+			undefined,
+			true
+		]);
+	});
+
 	it('puts the label of a reflexive Association beside its class', () => {
 		const { nodes } = umlLayout(
 			[node('employee', 'entity', 0, 0), node('manages', 'association', 500, 500, 60, 20)],

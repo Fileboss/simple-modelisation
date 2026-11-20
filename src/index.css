@@ -901,6 +901,19 @@ select {
 	white-space: nowrap;
 }
 
+.panel-check {
+	display: flex;
+	align-items: flex-start;
+	gap: 6px;
+	margin: -2px 0 10px;
+	font-size: 0.85rem;
+}
+
+/* A relative identifier: R beside the 1,1. */
+.relative-mark {
+	font-weight: 700;
+}
+
 /* An Inheritance, as in Looping: a triangle under the parent, its constraint inside. */
 .inheritance {
 	position: relative;
