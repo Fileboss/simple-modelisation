@@ -12,7 +12,6 @@ tags: [backlog]
 - Make the ghcr package public once the v0.1.0 image is published
 
 - Findings from the global review after pre-release-fixes (not yet verified):
-  - Stop sharing deletes the original before the Local copy's IndexedDB write is confirmed; a quota error leaves an empty copy (`src/storage/persistence.ts` `storeCopy`)
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
   - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
@@ -36,6 +35,7 @@ tags: [backlog]
 
 ## Done
 
+- stop-sharing-copy: Stop sharing keeps the original until the Local copy is read back from storage with the same content
 - [malformed-documents](docs/specs/malformed-documents/): a malformed entry in a Shared Project is left out, with a banner, instead of breaking the app for every Participant
 - collapsible-panels: on a wide screen, the palette and the properties fold into thin rails (Cmd/Ctrl+\ for both), remembered per browser
 - [mobile-layout](docs/specs/mobile-layout/): the canvas first on phones, Palette, Panel and SQL as drawers; tap to place, big handles, long-press menu on touch screens
