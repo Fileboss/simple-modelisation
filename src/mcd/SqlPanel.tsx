@@ -6,17 +6,10 @@ import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
 import { linesText, mldLines, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { copyText } from '../ui/clipboard';
 import { downloadText } from '../ui/download';
+import { readFlag, saveFlag } from '../ui/preference';
 import { strings } from '../ui/strings';
 
 const OPEN_KEY = 'simple-modelisation:sql-panel-open';
-
-function readOpen(): boolean {
-	try {
-		return localStorage.getItem(OPEN_KEY) !== 'false';
-	} catch {
-		return true;
-	}
-}
 
 /**
  * Under an MCD: its MLD and PostgreSQL script, live, in a panel that folds away;
@@ -25,7 +18,7 @@ function readOpen(): boolean {
 export function SqlPanel({ diagram, embedded }: { diagram: Diagram; embedded?: boolean }) {
 	const { project } = useCanvas();
 	useProjectVersion(project);
-	const [isFolded, setFolded] = useState(() => !readOpen());
+	const [isFolded, setFolded] = useState(() => !readFlag(OPEN_KEY));
 	const isOpen = embedded || !isFolded;
 	const [tab, setTab] = useState<'mld' | 'sql'>('mld');
 	const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -42,11 +35,7 @@ export function SqlPanel({ diagram, embedded }: { diagram: Diagram; embedded?: b
 
 	const toggle = () => {
 		setFolded(isOpen);
-		try {
-			localStorage.setItem(OPEN_KEY, String(!isOpen));
-		} catch {
-			// Blocked storage: the panel just forgets its state.
-		}
+		saveFlag(OPEN_KEY, !isOpen);
 	};
 
 	return (
