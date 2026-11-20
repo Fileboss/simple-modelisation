@@ -3,11 +3,15 @@ import { NOTE_ITEM } from '../canvas/palette-drag';
 import { PaletteItem } from '../canvas/PaletteItem';
 import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
+import { useProjectVersion } from '../app/project-hooks';
 import { setNotation, useNotation } from './notation';
 
 export function McdPalette() {
-	const { diagramId } = useCanvas();
+	const { project, diagramId } = useCanvas();
 	const notation = useNotation(diagramId);
+	// Shared with every Participant, unlike the Notation: the positions it produces are.
+	useProjectVersion(project);
+	const direction = project.diagram(diagramId)?.tidyDirection ?? 'horizontal';
 	return (
 		<aside className="palette">
 			<h2>{strings.mcd.notation}</h2>
@@ -21,6 +25,20 @@ export function McdPalette() {
 						onClick={() => setNotation(diagramId, value)}
 					>
 						{strings.mcd.notations[value]}
+					</button>
+				))}
+			</div>
+			<h2>{strings.mcd.tidyDirection}</h2>
+			<div className="notation-switch" role="radiogroup" aria-label={strings.mcd.tidyDirection}>
+				{(['horizontal', 'vertical'] as const).map((value) => (
+					<button
+						key={value}
+						role="radio"
+						aria-checked={direction === value}
+						className={direction === value ? 'notation-current' : ''}
+						onClick={() => project.setTidyDirection(diagramId, value)}
+					>
+						{strings.mcd.tidyDirections[value]}
 					</button>
 				))}
 			</div>

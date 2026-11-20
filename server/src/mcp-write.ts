@@ -996,32 +996,123 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'layout_diagram',
-		'Arranges a whole Diagram in layers from left to right along its Connections or Legs. Call it after adding several elements.',
-		{ project: projectArgument, diagram: diagramArgument },
-		async ({ project, diagram }) => {
+		'Arranges a whole Diagram in layers from left to right along its Connections or Legs (an MCD may go from top to bottom). Call it after adding several elements, then check the result (get_diagram gives places and sizes, export_diagram the image) and fix what it got wrong with move_elements.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			direction: z
+				.enum(['horizontal', 'vertical'])
+				.optional()
+				.describe(
+					"Which way to lay out; vertical for an MCD only. Omitted: the Diagram's own (horizontal unless set otherwise in the app)."
+				)
+		},
+		async ({ project, diagram, direction }) => {
 			// The layout is asynchronous: compute it from a read, then write it only if the
 			// Diagram did not change meanwhile; otherwise lay it out again.
 			for (let attempt = 0; attempt < 3; attempt++) {
-				const { id, kind, nodes, edges } = await access.read(project, (p) => {
+				const { id, kind, nodes, edges, own } = await access.read(project, (p) => {
 					const d = pickDiagram(p, diagram);
-					return { id: d.id, kind: d.kind, nodes: p.nodes(d.id), edges: p.edges(d.id) };
+					if (direction === 'vertical' && d.kind !== 'mcd') {
+						throw new ToolError('Only an MCD can be laid out vertically.');
+					}
+					return {
+						id: d.id,
+						kind: d.kind,
+						nodes: p.nodes(d.id),
+						edges: p.edges(d.id),
+						own: d.tidyDirection ?? ('horizontal' as const)
+					};
 				});
-				const before = layoutFingerprint(nodes, edges);
+				const before = layoutFingerprint(nodes, edges, direction ?? own);
 				const { positions, routes, zoneSizes } = await layoutDiagram(
 					nodes,
 					edges,
 					estimatedSize,
-					kind
+					kind,
+					direction ?? own
 				);
 				const written = await access.write(project, (p) => {
-					if (layoutFingerprint(p.nodes(id), p.edges(id)) !== before) return null;
+					const now = direction ?? p.diagram(id)?.tidyDirection ?? 'horizontal';
+					if (layoutFingerprint(p.nodes(id), p.edges(id), now) !== before) return null;
 					p.arrange(id, positions, routes, zoneSizes);
-					return { arranged: positions.size, routed: routes.size };
+					return {
+						arranged: positions.size,
+						routed: routes.size,
+						next: 'Check the layout (get_diagram: x, y, width, height of each element; export_diagram: the image) and fix overlaps, detours or misplaced Notes with move_elements.'
+					};
 				});
 				if (written) return written;
 			}
 			throw new ToolError('The Diagram keeps changing: try layout_diagram again.');
 		}
+	);
+
+	const move = z
+		.object({
+			element: z.string().describe('Element id or exact name.'),
+			x: z.number().optional(),
+			y: z.number().optional(),
+			dx: z.number().optional().describe('Offset to the right, with dy.'),
+			dy: z.number().optional().describe('Offset downwards, with dx.')
+		})
+		.refine(
+			(m) =>
+				(m.x !== undefined || m.y !== undefined) !== (m.dx !== undefined || m.dy !== undefined),
+			'Give x and y (a position) or dx and dy (an offset), not both.'
+		);
+	tool(
+		'move_elements',
+		"Moves elements of a Diagram (any kind: Components, Zones, Notes, Entities, Associations, CIFs, Inheritances) to a position (x, y: the top-left corner) or by an offset (dx, dy), all in one step. A Zone takes along what it holds. The routes of the moved elements' Connections or Legs are dropped, as when dragging. Use it to fix a layout after layout_diagram: get_diagram gives every element's place and size.",
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			moves: z.array(move).min(1).max(500)
+		},
+		({ project, diagram, moves }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram);
+				const nodes = nodesOf(p, d.id);
+				// Membership before anything moves, as when dragging.
+				const parents = zoneParents(nodes, estimatedSize);
+				const targets = new Map<string, { x: number; y: number }>();
+				// Each moved Zone's offset: what it holds follows the innermost one moved.
+				const offsets = new Map<string, { dx: number; dy: number }>();
+				for (const m of moves) {
+					const node = pick(nodes, m.element, 'element');
+					if (targets.has(node.id)) {
+						throw new ToolError(`"${m.element}" is moved twice: give it one move.`);
+					}
+					const to =
+						m.dx !== undefined || m.dy !== undefined
+							? { x: node.x + (m.dx ?? 0), y: node.y + (m.dy ?? 0) }
+							: { x: m.x ?? node.x, y: m.y ?? node.y };
+					targets.set(node.id, to);
+					if (node.type === 'zone') {
+						offsets.set(node.id, { dx: Math.round(to.x) - node.x, dy: Math.round(to.y) - node.y });
+					}
+				}
+				const all = new Map(targets);
+				for (const zone of offsets.keys()) {
+					for (const id of zoneContent(parents, zone)) {
+						// An element moved on its own goes where it was asked.
+						if (all.has(id)) continue;
+						let offset: { dx: number; dy: number } | undefined;
+						for (let at = parents.get(id); at && !offset; at = parents.get(at)) {
+							offset = offsets.get(at);
+						}
+						const inside = nodes.find((n) => n.id === id)!;
+						all.set(id, { x: inside.x + offset!.dx, y: inside.y + offset!.dy });
+					}
+				}
+				p.moveNodes(
+					d.id,
+					[...all].map(([id, at]) => ({ id, ...at }))
+				);
+				return {
+					moved: [...all].map(([id, at]) => ({ id, x: Math.round(at.x), y: Math.round(at.y) }))
+				};
+			})
 	);
 
 	tool(

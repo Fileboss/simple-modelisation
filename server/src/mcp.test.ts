@@ -82,6 +82,7 @@ describe('MCP endpoint', () => {
 			'get_mcd_sql',
 			'get_project',
 			'layout_diagram',
+			'move_elements',
 			'rename_element',
 			'set_cardinality',
 			'set_component',
@@ -379,7 +380,13 @@ describe('MCP endpoint', () => {
 		await call(client, 'set_note', { ...at, note, color: 'pink' });
 		const system = await call(client, 'get_diagram', at);
 		expect(system.notes).toEqual([
-			{ id: note, text: 'Syncs every night at 2 a.m.', color: 'pink', width: 180, zone: null }
+			expect.objectContaining({
+				id: note,
+				text: 'Syncs every night at 2 a.m.',
+				color: 'pink',
+				width: 180,
+				zone: null
+			})
 		]);
 		const unknown = await call(client, 'set_note', { ...at, note: 'nope', text: 'x' });
 		expect(unknown.error).toBe(`No note "nope". Known: ${note}.`);
@@ -878,7 +885,7 @@ describe('MCP endpoint', () => {
 		const legOf = (entity: string) =>
 			associations[0].legs.find((l: { entity: string }) => l.entity === entity).id;
 		expect(cifs).toEqual([
-			{
+			expect.objectContaining({
 				id: cif,
 				association: 'teaches',
 				determinants: [
@@ -886,7 +893,7 @@ describe('MCP endpoint', () => {
 					{ leg: legOf('Subject'), entity: 'Subject' }
 				],
 				determined: { leg: legOf('Teacher'), entity: 'Teacher' }
-			}
+			})
 		]);
 		const { mld } = await call(client, 'get_mcd_sql', at);
 		expect(mld).toContain('teaches = (#teacher_id, #class_id, #subject_id);');
@@ -939,13 +946,13 @@ describe('MCP endpoint', () => {
 		});
 		const { inheritances } = await call(client, 'get_diagram', at);
 		expect(inheritances).toEqual([
-			{
+			expect.objectContaining({
 				id: expect.any(String),
 				parent: 'Person',
 				children: ['Student', 'Teacher'],
 				constraint: 'XT',
 				translation: 'up'
-			}
+			})
 		]);
 		await call(client, 'set_inheritance', { ...at, entity: 'Teacher', parent: null });
 		expect((await call(client, 'get_diagram', at)).inheritances[0].children).toEqual(['Student']);
@@ -1128,5 +1135,131 @@ describe('MCP helpers', () => {
 		expect([...rows.values()]).toEqual([4, 4, 2]);
 		expect(placed[4]).toEqual({ id: '4', type: 'component', x: 0, y: SLOT.height });
 		expect(placed[5]).toEqual({ id: '5', type: 'component', x: SLOT.width, y: SLOT.height });
+	});
+});
+
+describe('MCP move_elements', () => {
+	it('gives each element its place and size, and moves elements by position or offset in one step', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API', x: 0, y: 0 });
+		await call(client, 'add_component', { ...at, type: 'database', name: 'DB', x: 400, y: 0 });
+		const before = await call(client, 'get_diagram', at);
+		const api = before.components.find((c: { name: string }) => c.name === 'API');
+		expect(api).toMatchObject({
+			x: 0,
+			y: 0,
+			width: expect.any(Number),
+			height: expect.any(Number)
+		});
+
+		const moved = await call(client, 'move_elements', {
+			...at,
+			moves: [
+				{ element: 'API', x: 40, y: 300 },
+				{ element: 'DB', dx: -100, dy: 20 }
+			]
+		});
+		expect(moved.moved).toHaveLength(2);
+		const after = await call(client, 'get_diagram', at);
+		const place = (name: string) => {
+			const c = after.components.find((c: { name: string }) => c.name === name);
+			return { x: c.x, y: c.y };
+		};
+		expect(place('API')).toEqual({ x: 40, y: 300 });
+		const db = before.components.find((c: { name: string }) => c.name === 'DB');
+		expect(place('DB')).toEqual({ x: db.x - 100, y: db.y + 20 });
+	});
+
+	it('takes a Zone’s content along, and refuses unknown elements and mixed moves', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		await call(client, 'add_zone', { ...at, name: 'VPC', x: 0, y: 0, width: 400, height: 300 });
+		await call(client, 'add_component', { ...at, type: 'service', name: 'API', zone: 'VPC' });
+		const before = (await call(client, 'get_diagram', at)).components[0];
+		await call(client, 'move_elements', { ...at, moves: [{ element: 'VPC', dx: 500, dy: 0 }] });
+		const after = await call(client, 'get_diagram', at);
+		expect(after.zones[0]).toMatchObject({ x: 500, y: 0 });
+		expect(after.components[0]).toMatchObject({
+			x: before.x + 500,
+			y: before.y,
+			zone: { name: 'VPC' }
+		});
+
+		const unknown = await call(client, 'move_elements', {
+			...at,
+			moves: [{ element: 'Nope', x: 0, y: 0 }]
+		});
+		expect(unknown.error).toMatch(/No element "Nope"/);
+		const mixed = await client.callTool({
+			name: 'move_elements',
+			arguments: { ...at, moves: [{ element: 'API', x: 0, dx: 5 }] }
+		});
+		expect(mixed.isError).toBe(true);
+	});
+
+	it('moves what a nested Zone holds with it, whatever the order of the moves', async () => {
+		for (const reversed of [false, true]) {
+			const { client, id } = await setup();
+			const at = { project: id, diagram: 'Architecture' };
+			await call(client, 'add_zone', { ...at, name: 'Cloud', x: 0, y: 0, width: 800, height: 600 });
+			await call(client, 'add_zone', { ...at, name: 'VPC', x: 40, y: 60, width: 400, height: 300 });
+			await call(client, 'add_component', { ...at, type: 'service', name: 'API', zone: 'VPC' });
+			const before = await call(client, 'get_diagram', at);
+			const api = before.components[0];
+			const vpc = before.zones.find((z: { name: string }) => z.name === 'VPC');
+			const moves = [
+				{ element: 'VPC', x: 2000, y: 60 },
+				{ element: 'Cloud', dx: 100, dy: 0 }
+			];
+			await call(client, 'move_elements', { ...at, moves: reversed ? moves.reverse() : moves });
+			const after = (await call(client, 'get_diagram', at)).components[0];
+			// API follows VPC, the innermost Zone moved, not Cloud's offset.
+			expect(after).toMatchObject({ x: api.x + 2000 - vpc.x, y: api.y + 60 - vpc.y });
+		}
+	});
+
+	it('moves MCD elements and Notes too', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Customer' });
+		const { id: note } = await call(client, 'add_note', { ...at, text: 'GDPR', near: 'Customer' });
+		await call(client, 'move_elements', {
+			...at,
+			moves: [
+				{ element: 'Customer', x: 100, y: 100 },
+				{ element: note, x: 300, y: 100 }
+			]
+		});
+		const data = await call(client, 'get_diagram', at);
+		expect(data.entities[0]).toMatchObject({ x: 100, y: 100 });
+		expect(data.notes[0]).toMatchObject({ x: 300, y: 100 });
+	});
+});
+
+describe('MCP layout_diagram direction', () => {
+	it('lays an MCD out vertically when asked, and refuses it on a System design diagram', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Customer' });
+		await call(client, 'add_entity', { ...at, name: 'Order' });
+		await call(client, 'add_association', {
+			...at,
+			name: 'places',
+			from: { entity: 'Customer', cardinality: '0,n' },
+			to: { entity: 'Order', cardinality: '1,1' }
+		});
+		const laid = await call(client, 'layout_diagram', { ...at, direction: 'vertical' });
+		expect(laid.next).toMatch(/move_elements/);
+		const { entities, associations } = await call(client, 'get_diagram', at);
+		const ys = entities.map((e: { y: number }) => e.y).sort((a: number, b: number) => a - b);
+		expect(ys[0] < associations[0].y && associations[0].y < ys[1]).toBe(true);
+
+		const refused = await call(client, 'layout_diagram', {
+			project: id,
+			diagram: 'Architecture',
+			direction: 'vertical'
+		});
+		expect(refused.error).toBe('Only an MCD can be laid out vertically.');
 	});
 });

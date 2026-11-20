@@ -199,6 +199,8 @@ export const strings = {
 		palette: 'MCD',
 		notation: 'Notation',
 		notations: { merise: 'Merise', uml: 'UML' },
+		tidyDirection: 'Tidy up',
+		tidyDirections: { horizontal: 'Horizontal', vertical: 'Vertical' },
 		entity: 'Entity',
 		association: 'Association',
 		leg: 'Leg',

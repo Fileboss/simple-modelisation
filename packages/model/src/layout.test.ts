@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	estimatedSize,
 	layoutDiagram,
+	layoutFingerprint,
 	NOTE_WIDTH,
 	noteLines,
 	noteSize,
@@ -83,23 +84,29 @@ describe('layoutDiagram', () => {
 		expect(overlapping(positions, sizeOf)).toBe(false);
 	});
 
-	it('leaves room between layers for the widest Connection pill', async () => {
+	it('widens only the gap a long Connection label crosses, enough for its pill', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const app = project.addComponent(d, 'service', 'platform', 0, 0);
 		const images = project.addComponent(d, 'service', 'getImage', 0, 0);
+		const store = project.addComponent(d, 'storage', 'bucket', 0, 0);
 		const c = project.addConnection(d, app, images)!;
-		const gap = async () => {
+		project.addConnection(d, images, store);
+		const gaps = async () => {
 			const nodes = project.nodes(d);
 			const { positions } = await layoutDiagram(nodes, project.edges(d), estimatedSize, 'system');
-			const appWidth = estimatedSize(nodes.find((n) => n.id === app)!).width;
-			return positions.get(images)!.x - positions.get(app)!.x - appWidth;
+			const right = (id: string) =>
+				positions.get(id)!.x + estimatedSize(nodes.find((n) => n.id === id)!).width;
+			return [positions.get(images)!.x - right(app), positions.get(store)!.x - right(images)];
 		};
-		expect(await gap()).toBe(110);
-		project.setEdgeLabel(d, c, 'REST, nightly');
+		const [plain, other] = await gaps();
+		project.setEdgeLabel(d, c, 'REST, nightly, with retries');
 		project.setConnectionFlow(d, c, 'read');
-		// "Read · REST, nightly": 20 characters at 6.5px, the pill's 14px, 50px for the routes.
-		expect(await gap()).toBe(20 * 6.5 + 14 + 50);
+		const [labelled, untouched] = await gaps();
+		// "Read · REST, nightly, with retries" at 6.5px a character, in its 14px pill.
+		expect(labelled).toBeGreaterThanOrEqual(34 * 6.5 + 14);
+		expect(labelled).toBeGreaterThan(plain);
+		expect(untouched).toBe(other);
 	});
 
 	it('puts each Association between its two Entities in an MCD', async () => {
@@ -265,37 +272,67 @@ describe('layoutDiagram, two-way Connections', () => {
 		expect(noteLines('x'.repeat(30))).toEqual(['x'.repeat(22), 'x'.repeat(8)]);
 	});
 
-	it('leaves Notes where they are', async () => {
+	it('keeps a Note beside the element it explains, on the same side, overlapping nothing', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
 		const a = project.addComponent(d, 'service', 'A', 500, 500);
-		const b = project.addComponent(d, 'database', 'B', 500, 500);
+		const b = project.addComponent(d, 'database', 'B', 900, 500);
 		project.addConnection(d, a, b);
-		const note = project.addNote(d, 37, 41, 'Nightly');
+		// Under A, 20px below it.
+		const size = estimatedSize(project.nodes(d).find((n) => n.id === a)!);
+		const note = project.addNote(d, 500, 500 + size.height + 20, 'Nightly');
 		const { positions } = await layoutDiagram(
 			project.nodes(d),
 			project.edges(d),
 			estimatedSize,
 			'system'
 		);
-		expect(positions.has(note)).toBe(false);
-		expect(positions.has(a)).toBe(true);
+		const placed = positions.get(note)!;
+		const at = positions.get(a)!;
+		expect(placed).toEqual({ x: at.x, y: at.y + size.height + 20 });
+		const nodes = new Map(project.nodes(d).map((n) => [n.id, n]));
+		expect(overlapping(positions, (id) => estimatedSize(nodes.get(id)!))).toBe(false);
 	});
 
-	it('lays a Note in a Zone out with its content, so the Zone still holds it', async () => {
+	it('puts a Note far from every element with the unlinked elements, under the rest', async () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('system');
-		const zone = project.addZone(d, 0, 0, 600, 400, 'VPC');
-		project.addComponent(d, 'service', 'A', 40, 60);
-		const note = project.addNote(d, 300, 200, 'Nightly');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'database', 'B', 400, 0);
+		project.addConnection(d, a, b);
+		const note = project.addNote(d, 2000, 2000, 'Far away');
 		const { positions } = await layoutDiagram(
 			project.nodes(d),
 			project.edges(d),
 			estimatedSize,
 			'system'
 		);
-		expect(positions.has(note)).toBe(true);
-		expect(positions.has(zone)).toBe(true);
+		expect(positions.get(note)!.y).toBeGreaterThan(positions.get(a)!.y);
+		expect(positions.get(note)!.x).toBe(0);
+	});
+
+	it('keeps a Note in a Zone beside its element, the Zone growing to hold it', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const zone = project.addZone(d, 0, 0, 900, 400, 'VPC');
+		const api = project.addComponent(d, 'service', 'API', 40, 60);
+		const db = project.addComponent(d, 'database', 'DB', 400, 60);
+		project.addConnection(d, api, db);
+		const dbSize = estimatedSize(project.nodes(d).find((n) => n.id === db)!);
+		// Right of DB, 30px away.
+		const note = project.addNote(d, 400 + dbSize.width + 30, 60, 'Nightly backups');
+		const { positions, zoneSizes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		const placed = positions.get(note)!;
+		expect(placed.x).toBe(positions.get(db)!.x + dbSize.width + 30);
+		const box = { ...positions.get(zone)!, ...zoneSizes.get(zone)! };
+		const noteSize = estimatedSize(project.nodes(d).find((n) => n.id === note)!);
+		expect(placed.x + noteSize.width).toBeLessThanOrEqual(box.x + box.width);
+		expect(placed.y + noteSize.height).toBeLessThanOrEqual(box.y + box.height);
 	});
 
 	it('puts Persons first, before the Clients they use, even when a Connection goes back to them', async () => {
@@ -487,6 +524,62 @@ describe('layoutDiagram with Zones', () => {
 		expect(x(inheritance)).toBeLessThan(x(student));
 		expect(x(inheritance)).toBeLessThan(x(teacher));
 		expect(routes.size).toBe(0);
+	});
+});
+
+describe('Tidy up direction', () => {
+	it('lays a vertical MCD out from top to bottom, each Association between its Entities', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('mcd');
+		const customer = project.addEntity(d, 0, 0, 'Customer');
+		const order = project.addEntity(d, 0, 0, 'Order');
+		const places = project.addAssociation(d, customer, order, 'places');
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'mcd',
+			'vertical'
+		);
+		const y = (id: string) => positions.get(id)!.y;
+		const [top, bottom] = [y(customer), y(order)].sort((a, b) => a - b);
+		expect(top < y(places) && y(places) < bottom).toBe(true);
+	});
+
+	it('is stored for every Participant, kept by a JSON file, and horizontal by default or when unknown', () => {
+		const project = new ProjectDocument();
+		const mcd = project.addDiagram('mcd');
+		const system = project.addDiagram('system');
+		expect(project.diagram(mcd)!.tidyDirection).toBeUndefined();
+		project.setTidyDirection(mcd, 'vertical');
+		expect(project.diagram(mcd)!.tidyDirection).toBe('vertical');
+		const copy = ProjectDocument.fromFile(JSON.parse(JSON.stringify(project.toFile())));
+		expect(copy.diagram(mcd)!.tidyDirection).toBe('vertical');
+		project.setTidyDirection(mcd, 'horizontal');
+		expect(project.diagram(mcd)!.tidyDirection).toBeUndefined();
+		expect(() => project.setTidyDirection(system, 'vertical')).toThrow();
+
+		const file = project.toFile();
+		file.diagrams[0] = { ...file.diagrams[0], tidyDirection: 'diagonal' as never };
+		expect(ProjectDocument.fromFile(file).diagram(mcd)!.tidyDirection).toBeUndefined();
+	});
+});
+
+describe('layoutFingerprint', () => {
+	it('changes with a Connection label or Flow, and with the direction', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'database', 'B', 400, 0);
+		const c = project.addConnection(d, a, b)!;
+		const print = () => layoutFingerprint(project.nodes(d), project.edges(d));
+		const before = print();
+		project.setEdgeLabel(d, c, 'SQL');
+		expect(print()).not.toBe(before);
+		const labelled = print();
+		project.setConnectionFlow(d, c, 'read');
+		expect(print()).not.toBe(labelled);
+		expect(layoutFingerprint(project.nodes(d), project.edges(d), 'vertical')).not.toBe(print());
 	});
 });
 

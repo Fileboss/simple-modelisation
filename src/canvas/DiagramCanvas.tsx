@@ -242,16 +242,22 @@ function Canvas({ project, diagram, kind }: Props) {
 			for (let attempt = 0; attempt < 3; attempt++) {
 				const nodes = project.nodes(diagram.id);
 				const edges = project.edges(diagram.id);
-				const before = layoutFingerprint(nodes, edges);
+				// Read now: a peer may have changed it since this Diagram was drawn.
+				const direction = () => project.diagram(diagram.id)?.tidyDirection ?? 'horizontal';
+				const before = layoutFingerprint(nodes, edges, direction());
 				const { positions, routes, zoneSizes } = await layoutDiagram(
 					nodes,
 					edges,
 					sizeOf,
-					diagram.kind
+					diagram.kind,
+					direction()
 				);
-				if (layoutFingerprint(project.nodes(diagram.id), project.edges(diagram.id)) !== before) {
-					continue;
-				}
+				const now = layoutFingerprint(
+					project.nodes(diagram.id),
+					project.edges(diagram.id),
+					direction()
+				);
+				if (now !== before) continue;
 				project.arrange(diagram.id, positions, routes, zoneSizes);
 				setFitPending(true);
 				return;
