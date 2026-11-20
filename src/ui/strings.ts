@@ -181,7 +181,7 @@ export const strings = {
 		association: 'Association',
 		leg: 'Leg',
 		paletteHint:
-			'Drag an Entity onto the canvas. Drag from a dot of an Entity to another Entity to create an Association, or to another dot of the same Entity for a reflexive one. Click a Cardinality to change it.',
+			'Drag an Entity onto the canvas. Drag from a dot of an Entity to another Entity to create an Association, or to another dot of the same Entity for a reflexive one. Drag between an Association and an Entity to add a Leg: three Legs or more make an N-ary Association. Click a Cardinality to change it.',
 		panelHint: 'Select an Entity, an Association or a Leg to edit it.',
 		attributes: 'Attributes',
 		identifier: 'Part of the Identifier',
@@ -193,6 +193,30 @@ export const strings = {
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
 		legs: 'Legs',
+		inheritance: 'Inheritance',
+		inheritsFrom: 'Inherits from',
+		noParent: 'None',
+		inheritanceHint:
+			'The children share the parent’s Attributes and Identifier. Choose a child’s parent in its panel.',
+		children: 'Children',
+		constraint: 'Constraint',
+		constraints: {
+			none: 'None',
+			X: 'X: at most one child',
+			T: 'T: at least one child',
+			XT: 'XT: exactly one child'
+		},
+		translation: 'In the MLD',
+		translations: {
+			reference: 'By reference: child tables reference the parent’s',
+			down: 'Push down: no parent table',
+			up: 'Push up: one parent table with a type column'
+		},
+		cif: 'CIF',
+		addCif: '+ CIF',
+		cifHint:
+			'The Entities on the determinant Legs fix the one on the determined Leg: the MLD leaves it out of the key.',
+		cifRoles: { determinant: 'Determinant', determined: 'Determined', none: 'Not involved' },
 		multiplicities: 'Multiplicities',
 		end: 'end'
 	}

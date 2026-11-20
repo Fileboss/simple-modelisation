@@ -6,7 +6,13 @@ import type {
 	Attribute,
 	EntityNode as EntityData
 } from '@simple-modelisation/model/project.ts';
-import { umlAttribute, useNotation, type AssociationClassSide } from './notation';
+import {
+	umlAttribute,
+	useNotation,
+	type AssociationClassSide,
+	type NaryAssociation
+} from './notation';
+import type { UmlConstraints } from './cif';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
@@ -35,13 +41,52 @@ export function EntityNode({ id, data, selected }: NodeProps) {
 
 /**
  * An Association: in Merise, Looping's cyan rounded box with its name above its
- * Attributes; in UML, its name on the line between its classes, with its
- * Attributes in an association class joined by a dashed line.
+ * Attributes; in UML, its name on the line between its classes (a diamond with
+ * its name under it when N-ary), with its Attributes in an association class
+ * joined by a dashed line.
  */
 export function AssociationNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
 	const association = data as AssociationData;
 	const isUml = useNotation(diagramId) === 'uml';
+	if (isUml && (data as NaryAssociation).umlNary) {
+		// The node is the diamond alone: Legs end on its box; name and class hang outside it.
+		return (
+			<div className={`uml-nary ${selected ? 'selected' : ''}`}>
+				<svg className="uml-diamond" viewBox="0 0 44 44" aria-hidden="true">
+					<path d="M22 2 L42 22 L22 42 L2 22 Z" />
+				</svg>
+				<EditableText
+					className="uml-nary-name"
+					value={association.name}
+					onChange={(name) => project.renameNode(diagramId, id, name)}
+				/>
+				{(data as UmlConstraints).umlConstraints && (
+					<div className="uml-constraints">
+						{(data as UmlConstraints).umlConstraints!.map(({ id: cif, text }) => (
+							<span key={cif}>{text}</span>
+						))}
+					</div>
+				)}
+				{association.attributes.length > 0 && (
+					<div
+						className={`uml-association-class uml-side-${(data as AssociationClassSide).umlSide ?? 'top'}`}
+					>
+						<AttributeList nodeId={id} attributes={association.attributes} isUml />
+					</div>
+				)}
+				<Handle
+					type="source"
+					position={Position.Top}
+					isConnectable={false}
+					className="hidden-handle"
+				/>
+				{SIDES.map((side) => (
+					<Handle key={side} id={side} type="source" position={side} className="handle" />
+				))}
+			</div>
+		);
+	}
 	if (isUml) {
 		return (
 			<div className={`uml-association ${selected ? 'selected' : ''}`}>
@@ -63,6 +108,10 @@ export function AssociationNode({ id, data, selected }: NodeProps) {
 					isConnectable={false}
 					className="hidden-handle"
 				/>
+				{/* Dragged to a class, they add a Leg. */}
+				{SIDES.map((side) => (
+					<Handle key={side} id={side} type="source" position={side} className="handle" />
+				))}
 			</div>
 		);
 	}
@@ -74,13 +123,17 @@ export function AssociationNode({ id, data, selected }: NodeProps) {
 				onChange={(name) => project.renameNode(diagramId, id, name)}
 			/>
 			<AttributeList nodeId={id} attributes={association.attributes} isUml={false} />
-			{/* React Flow draws an edge only between handles; Legs are created by the tool, not from here. */}
+			{/* React Flow draws an edge only between handles: the first, hidden, anchors the stored Legs. */}
 			<Handle
 				type="source"
 				position={Position.Top}
 				isConnectable={false}
 				className="hidden-handle"
 			/>
+			{/* Dragged to an Entity, they add a Leg. */}
+			{SIDES.map((side) => (
+				<Handle key={side} id={side} type="source" position={side} className="handle" />
+			))}
 		</div>
 	);
 }

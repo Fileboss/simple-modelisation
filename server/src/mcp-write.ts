@@ -6,6 +6,8 @@ import {
 	DISK_KINDS,
 	FLOWS,
 	HOSTINGS,
+	INHERITANCE_CONSTRAINTS,
+	INHERITANCE_TRANSLATIONS,
 	NOTE_COLORS,
 	PROVIDERS,
 	RUNTIMES,
@@ -745,36 +747,166 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			})
 	);
 
+	const legInput = z.object({ entity: z.string(), cardinality });
 	tool(
 		'add_association',
-		'Adds a binary Association between two Entities (the same one for a reflexive Association), with the Cardinality next to each.',
+		'Adds an Association: give legs, two or more { entity, cardinality } (three or more make an N-ary Association, the same Entity may appear twice), or from and to for a binary one.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			name: name(),
-			from: z.object({ entity: z.string(), cardinality }),
-			to: z.object({ entity: z.string(), cardinality }),
+			legs: z.array(legInput).min(2).max(20).optional(),
+			from: legInput.optional(),
+			to: legInput.optional(),
 			attributes: z
 				.array(attributeInput.omit({ identifier: true }))
 				.max(100)
 				.optional()
 		},
-		({ project, diagram, name, from, to, attributes = [] }) =>
+		({ project, diagram, name, legs, from, to, attributes = [] }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
 				attributes.forEach((a) => a.type && parseDataType(a.type));
+				if (legs && (from || to)) throw new ToolError('Give legs, or from and to, not both.');
+				const wanted = legs ?? (from && to ? [from, to] : null);
+				if (!wanted) throw new ToolError('Give legs (two or more), or from and to.');
 				const entities = nodesOf(p, d.id, 'entity');
-				const a = pick(entities, from.entity, 'entity');
-				const b = pick(entities, to.entity, 'entity');
-				const id = p.addAssociation(d.id, a.id, b.id, name);
-				// Each Leg by its Entity, not by order; a reflexive Association's two Legs are alike.
-				const legs = p.edges(d.id).filter((e) => e.source === id);
-				const legA = legs.find((l) => l.target === a.id)!;
-				const legB = legs.find((l) => l.id !== legA.id)!;
-				p.setCardinality(d.id, legA.id, from.cardinality);
-				p.setCardinality(d.id, legB.id, to.cardinality);
+				const targets = wanted.map((leg) => pick(entities, leg.entity, 'entity'));
+				const id = p.addAssociation(d.id, targets[0].id, targets[1].id, name);
+				for (const target of targets.slice(2)) p.addLeg(d.id, id, target.id);
+				// Each Leg takes the Cardinality given with its Entity; an Entity given twice
+				// (reflexive) has alike Legs, so any of them will do.
+				const unset = p.edges(d.id).filter((e) => e.source === id);
+				wanted.forEach((leg, i) => {
+					const made = unset.splice(
+						unset.findIndex((e) => e.target === targets[i].id),
+						1
+					)[0];
+					p.setCardinality(d.id, made.id, leg.cardinality);
+				});
 				addAttributes(p, d.id, id, attributes);
 				return { id };
+			})
+	);
+
+	tool(
+		'add_leg',
+		'Adds a Leg from an Association to an Entity: three Legs or more make an N-ary Association, which the MLD always turns into a table.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			association: z.string().describe('Association id or exact name.'),
+			entity: z.string().describe('Entity id or exact name.'),
+			cardinality: cardinality.optional().describe('Default 0,n.')
+		},
+		({ project, diagram, association, entity, cardinality: value }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
+				const to = pick(nodesOf(p, d.id, 'entity'), entity, 'entity');
+				const id = p.addLeg(d.id, target.id, to.id);
+				if (value) p.setCardinality(d.id, id, value);
+				return { id };
+			})
+	);
+
+	tool(
+		'add_cif',
+		'Puts a CIF (functional integrity constraint) on an N-ary Association: the Entities on the determinant Legs fix the one on the determined Leg, which the MLD then leaves out of the key. Name each Leg by its Entity, or by its id when the Entity is on several.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			association: z.string().describe('Association id or exact name.'),
+			determinants: z.array(z.string()).min(1).max(20),
+			determined: z.string()
+		},
+		({ project, diagram, association, determinants, determined }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
+				const legs = p.edges(d.id).filter((e) => e.source === target.id);
+				if (legs.length < 3) {
+					throw new ToolError('A CIF goes on an Association with three Legs or more.');
+				}
+				const entities = nodesOf(p, d.id, 'entity');
+				const legOf = (reference: string) => {
+					const byId = legs.find((l) => l.id === reference);
+					if (byId) return byId.id;
+					const matching = legs.filter((l) =>
+						entities.some((e) => e.id === l.target && (e.id === reference || e.name === reference))
+					);
+					if (matching.length === 0) {
+						throw new ToolError(`"${reference}" is not linked by this Association.`);
+					}
+					if (matching.length > 1) {
+						throw new ToolError(`"${reference}" is on several Legs: give a Leg id.`);
+					}
+					return matching[0].id;
+				};
+				const determinedLeg = legOf(determined);
+				const determinantLegs = [...new Set(determinants.map(legOf))];
+				if (determinantLegs.includes(determinedLeg)) {
+					throw new ToolError('The determined Leg cannot also be a determinant.');
+				}
+				const id = p.addCif(d.id, target.id);
+				p.setCifRole(d.id, id, determinedLeg, 'determined');
+				for (const leg of determinantLegs) p.setCifRole(d.id, id, leg, 'determinant');
+				for (const leg of legs) {
+					if (leg.id !== determinedLeg && !determinantLegs.includes(leg.id)) {
+						p.setCifRole(d.id, id, leg.id, 'none');
+					}
+				}
+				return { id };
+			})
+	);
+
+	tool(
+		'set_inheritance',
+		'Makes an Entity a child of a parent Entity (null: of none), sharing its Attributes and Identifier; one parent per Entity, no cycles.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			entity: z.string().describe('Child Entity id or exact name.'),
+			parent: z.string().nullable().describe('Parent Entity id or exact name, or null.')
+		},
+		({ project, diagram, entity, parent }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const entities = nodesOf(p, d.id, 'entity');
+				const child = pick(entities, entity, 'entity');
+				const to = parent === null ? null : pick(entities, parent, 'entity');
+				if (to && p.selfAndDescendants(d.id, child.id).has(to.id)) {
+					throw new ToolError('An Entity cannot inherit from itself or a descendant.');
+				}
+				p.setParent(d.id, child.id, to?.id ?? null);
+				return { ok: true };
+			})
+	);
+
+	tool(
+		'set_inheritance_options',
+		"Sets the Inheritance under a parent Entity: its constraint (none, X exclusion, T totality, XT partition) and how the MLD translates it (reference: child tables referencing the parent's; down: no parent table; up: one parent table with a type column).",
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			parent: z.string().describe('Parent Entity id or exact name.'),
+			constraint: z.enum(INHERITANCE_CONSTRAINTS).optional(),
+			translation: z.enum(INHERITANCE_TRANSLATIONS).optional()
+		},
+		({ project, diagram, parent, constraint, translation }) =>
+			access.write(project, (p) => {
+				if (!constraint && !translation)
+					throw new ToolError('Give a constraint, a translation or both.');
+				const d = pickDiagram(p, diagram, 'mcd');
+				const entity = pick(nodesOf(p, d.id, 'entity'), parent, 'entity');
+				// The first by id, as the MLD reads it, should peers have made two.
+				const inheritance = nodesOf(p, d.id, 'inheritance')
+					.filter((n) => n.parent === entity.id)
+					.sort((a, b) => a.id.localeCompare(b.id))[0];
+				if (!inheritance) throw new ToolError(`"${entity.name}" has no child Entities.`);
+				if (constraint) p.setInheritanceConstraint(d.id, inheritance.id, constraint);
+				if (translation) p.setInheritanceTranslation(d.id, inheritance.id, translation);
+				return { id: inheritance.id };
 			})
 	);
 

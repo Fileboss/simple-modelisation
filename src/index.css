@@ -865,6 +865,134 @@ select {
 	white-space: nowrap;
 }
 
+/* An N-ary Association in UML: a diamond, its name under it. */
+.uml-nary {
+	position: relative;
+	width: 44px;
+	height: 44px;
+}
+
+.uml-diamond {
+	display: block;
+	width: 44px;
+	height: 44px;
+	overflow: visible;
+}
+
+.uml-diamond path {
+	fill: #fff;
+	stroke: #1d1b22;
+	stroke-width: 1.5;
+}
+
+.uml-nary.selected .uml-diamond path {
+	stroke: var(--accent);
+	stroke-width: 2.5;
+}
+
+.uml-nary-name {
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 50%;
+	transform: translateX(-50%);
+	color: #000;
+	font-size: 12px;
+	font-style: italic;
+	white-space: nowrap;
+}
+
+/* An Inheritance, as in Looping: a triangle under the parent, its constraint inside. */
+.inheritance {
+	position: relative;
+	width: 56px;
+	height: 40px;
+}
+
+.inheritance svg {
+	display: block;
+	width: 56px;
+	height: 40px;
+	overflow: visible;
+}
+
+.inheritance path {
+	fill: #fff;
+	stroke: #1d1b22;
+	stroke-width: 1.5;
+}
+
+.inheritance.selected path {
+	stroke: var(--accent);
+	stroke-width: 2.5;
+}
+
+.inheritance-constraint {
+	position: absolute;
+	inset: 14px 0 0;
+	color: #000;
+	font-size: 11px;
+	font-weight: 700;
+	text-align: center;
+}
+
+.generalization-arrow {
+	fill: #fff;
+	stroke: #1d1b22;
+	stroke-width: 1.2;
+}
+
+.generalization-constraint {
+	position: absolute;
+	color: #000;
+	font-size: 12px;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+/* A CIF, as in Looping: a circle beside its Association, lines to its Entities. */
+.cif {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border: 1.5px solid #1d1b22;
+	border-radius: 50%;
+	background: #fff;
+	color: #000;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.cif.selected {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.cif-link {
+	stroke: #1d1b22;
+	stroke-width: 1.2;
+	stroke-dasharray: 4 3;
+}
+
+.cif-arrow {
+	fill: #1d1b22;
+}
+
+/* Under an N-ary diamond's name in UML, its CIFs as constraints, one per line. */
+.uml-constraints {
+	position: absolute;
+	top: calc(100% + 22px);
+	left: 50%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	transform: translateX(-50%);
+	color: #000;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
 /* An association class floats beside its line, joined by a dashed line. */
 .uml-association-class {
 	position: absolute;
