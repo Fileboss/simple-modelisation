@@ -32,7 +32,6 @@ tags: [backlog]
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
 - Zone colors, and Zones in Tidy up options (direction, spacing)
-- CIFs (functional integrity constraints) on N-ary Associations
 - Inheritance between Entities (X, T, XT constraints)
 - French UI
 - Revoke a Share link for everyone (needs Project owners)
@@ -41,6 +40,7 @@ tags: [backlog]
 
 ## Done
 
+- [cif-constraints](docs/specs/cif-constraints/): CIFs on N-ary Associations, drawn as in Looping, in the MLD and over MCP
 - sql-name-line-breaks: a line break in an Entity, Association or Diagram name no longer escapes the `--` comments of the PostgreSQL script
 - v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only

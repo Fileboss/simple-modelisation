@@ -809,6 +809,56 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	);
 
 	tool(
+		'add_cif',
+		'Puts a CIF (functional integrity constraint) on an N-ary Association: the Entities on the determinant Legs fix the one on the determined Leg, which the MLD then leaves out of the key. Name each Leg by its Entity, or by its id when the Entity is on several.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			association: z.string().describe('Association id or exact name.'),
+			determinants: z.array(z.string()).min(1).max(20),
+			determined: z.string()
+		},
+		({ project, diagram, association, determinants, determined }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
+				const legs = p.edges(d.id).filter((e) => e.source === target.id);
+				if (legs.length < 3) {
+					throw new ToolError('A CIF goes on an Association with three Legs or more.');
+				}
+				const entities = nodesOf(p, d.id, 'entity');
+				const legOf = (reference: string) => {
+					const byId = legs.find((l) => l.id === reference);
+					if (byId) return byId.id;
+					const matching = legs.filter((l) =>
+						entities.some((e) => e.id === l.target && (e.id === reference || e.name === reference))
+					);
+					if (matching.length === 0) {
+						throw new ToolError(`"${reference}" is not linked by this Association.`);
+					}
+					if (matching.length > 1) {
+						throw new ToolError(`"${reference}" is on several Legs: give a Leg id.`);
+					}
+					return matching[0].id;
+				};
+				const determinedLeg = legOf(determined);
+				const determinantLegs = [...new Set(determinants.map(legOf))];
+				if (determinantLegs.includes(determinedLeg)) {
+					throw new ToolError('The determined Leg cannot also be a determinant.');
+				}
+				const id = p.addCif(d.id, target.id);
+				p.setCifRole(d.id, id, determinedLeg, 'determined');
+				for (const leg of determinantLegs) p.setCifRole(d.id, id, leg, 'determinant');
+				for (const leg of legs) {
+					if (leg.id !== determinedLeg && !determinantLegs.includes(leg.id)) {
+						p.setCifRole(d.id, id, leg.id, 'none');
+					}
+				}
+				return { id };
+			})
+	);
+
+	tool(
 		'set_cardinality',
 		"Sets the Cardinality of an Association's Leg next to an Entity; for a reflexive Association, give the Leg's id.",
 		{

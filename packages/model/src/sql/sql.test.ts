@@ -205,8 +205,90 @@ describe('MLD', () => {
 		expect(tables.find((t) => t.name === 'teaches')?.primaryKey).toHaveLength(3);
 		expect(tables.find((t) => t.name === 'teacher')?.columns.map((c) => c.name)).toEqual(['id']);
 		expect(warnings).toEqual([
-			'Association "teaches" joins 3 Entities with a max of 1 on Teacher: a CIF will take it out of the key.'
+			'Association "teaches" joins 3 Entities with a max of 1 on Teacher: add a CIF to take it out of the key.'
 		]);
+	});
+
+	describe('CIF', () => {
+		const teaches = (cardinalities: [Cardinality, Cardinality, Cardinality]) => {
+			const m = mcd();
+			const teacher = m.entity('Teacher');
+			const klass = m.entity('Class');
+			const subject = m.entity('Subject');
+			const id = m.associate('teaches', [teacher, cardinalities[0]], [klass, cardinalities[1]]);
+			m.project.addLeg(m.diagram, id, subject);
+			const legs = m.project.edges(m.diagram).filter((e) => e.source === id);
+			m.project.setCardinality(m.diagram, legs[2].id, cardinalities[2]);
+			return { m, id, legs };
+		};
+
+		it('takes the determined Leg out of the key, as a NOT NULL column', () => {
+			const { m, id, legs } = teaches(['1,1', '0,n', '0,n']);
+			const cif = m.project.addCif(m.diagram, id);
+			expect(m.project.nodes(m.diagram).find((n) => n.id === cif)).toMatchObject({
+				determined: legs[0].id
+			});
+			const { tables, warnings } = m.mld();
+			expect(tables.find((t) => t.name === 'teaches')).toMatchObject({
+				primaryKey: ['class_id', 'subject_id'],
+				columns: [
+					{ name: 'teacher_id', nullable: false },
+					{ name: 'class_id' },
+					{ name: 'subject_id' }
+				]
+			});
+			expect(warnings).toEqual([]);
+			expect(postgresScript(m.mld(), 'School')).toContain('   teacher_id INTEGER NOT NULL,');
+		});
+
+		it('keeps the other Legs of a 4-ary in the key with a partial CIF', () => {
+			const { m, id, legs } = teaches(['0,n', '0,n', '0,n']);
+			const room = m.entity('Room');
+			const roomLeg = m.project.addLeg(m.diagram, id, room);
+			const cif = m.project.addCif(m.diagram, id);
+			// {Teacher, Class} → Subject; Room not involved.
+			m.project.setCifRole(m.diagram, cif, legs[2].id, 'determined');
+			m.project.setCifRole(m.diagram, cif, roomLeg, 'none');
+			expect(m.mld().tables.find((t) => t.name === 'teaches')?.primaryKey).toEqual([
+				'teacher_id',
+				'class_id',
+				'room_id'
+			]);
+		});
+
+		it('applies a further CIF only while its determinants are still in the key', () => {
+			const { m, id, legs } = teaches(['0,n', '0,n', '0,n']);
+			// {Teacher, Class} → Subject, then {Teacher, Subject} → Class: Subject has left the key.
+			const first = m.project.addCif(m.diagram, id);
+			const second = m.project.addCif(m.diagram, id);
+			m.project.setCifRole(m.diagram, second, legs[1].id, 'determined');
+			m.project.setCifRole(m.diagram, second, legs[2].id, 'determinant');
+			expect(m.project.nodes(m.diagram).find((n) => n.id === first)).toMatchObject({
+				determined: legs[2].id
+			});
+			const { tables, warnings } = m.mld();
+			expect(tables.find((t) => t.name === 'teaches')?.primaryKey).toEqual([
+				'teacher_id',
+				'class_id'
+			]);
+			expect(warnings).toEqual([
+				'A CIF on "teaches" is not applied: Subject is no longer in the key.'
+			]);
+		});
+
+		it('is ignored, with a warning, on an Association that is binary again', () => {
+			const { m, id, legs } = teaches(['0,n', '0,n', '0,n']);
+			m.project.addCif(m.diagram, id);
+			m.project.deleteElements(m.diagram, [], [legs[0].id]);
+			const { tables, warnings } = m.mld();
+			expect(tables.find((t) => t.name === 'teaches')?.primaryKey).toEqual([
+				'class_id',
+				'subject_id'
+			]);
+			expect(warnings).toEqual([
+				'The CIF on "teaches" is ignored: a CIF needs an Association with three Legs or more.'
+			]);
+		});
 	});
 
 	it('names tables and columns in snake_case', () => {

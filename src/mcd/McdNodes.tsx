@@ -12,6 +12,7 @@ import {
 	type AssociationClassSide,
 	type NaryAssociation
 } from './notation';
+import type { UmlConstraints } from './cif';
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
@@ -60,6 +61,13 @@ export function AssociationNode({ id, data, selected }: NodeProps) {
 					value={association.name}
 					onChange={(name) => project.renameNode(diagramId, id, name)}
 				/>
+				{(data as UmlConstraints).umlConstraints && (
+					<div className="uml-constraints">
+						{(data as UmlConstraints).umlConstraints!.map(({ id: cif, text }) => (
+							<span key={cif}>{text}</span>
+						))}
+					</div>
+				)}
 				{association.attributes.length > 0 && (
 					<div
 						className={`uml-association-class uml-side-${(data as AssociationClassSide).umlSide ?? 'top'}`}

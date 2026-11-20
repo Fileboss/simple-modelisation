@@ -1,6 +1,5 @@
 import { useCanvas } from '../canvas/canvas-context';
 import type { CanvasKind } from '../canvas/DiagramCanvas';
-import { asStored } from '../canvas/layout';
 import { dataType } from '@simple-modelisation/model/data-types.ts';
 import { estimatedSize, noteSize } from '@simple-modelisation/model/layout.ts';
 import { NoteNode } from '../canvas/NoteNode';
@@ -10,18 +9,27 @@ import { LegEdge } from './LegEdge';
 import { McdPalette } from './McdPalette';
 import { McdPanel } from './McdPanel';
 import { umlLayout, useNotation } from './notation';
+import { withCifConstraints, withCifLinks } from './cif';
+import { CifLinkEdge, CifNode } from './CifNode';
+import type { Layout } from '../canvas/layout';
 import { SqlPanel } from './SqlPanel';
 import { AssociationNode, EntityNode } from './McdNodes';
 
+// CIFs as constraint text under the diamond, once umlLayout has marked N-ary Associations.
+const umlCifLayout: Layout = (nodes, edges) => {
+	const laid = umlLayout(nodes, edges);
+	return withCifConstraints(laid.nodes, laid.edges);
+};
+
 export const mcdKind: CanvasKind = {
-	nodeTypes: { entity: EntityNode, association: AssociationNode, note: NoteNode },
-	edgeTypes: { leg: LegEdge },
+	nodeTypes: { entity: EntityNode, association: AssociationNode, note: NoteNode, cif: CifNode },
+	edgeTypes: { leg: LegEdge, cifLink: CifLinkEdge },
 	Palette: McdPalette,
 	Panel: McdPanel,
 	Footer: SqlPanel,
 	useLayout: function useMcdLayout() {
 		const { diagramId } = useCanvas();
-		return useNotation(diagramId) === 'uml' ? umlLayout : asStored;
+		return useNotation(diagramId) === 'uml' ? umlCifLayout : withCifLinks;
 	},
 	drop: (project, diagramId, item, x, y) => {
 		if (item === NOTE_ITEM) return project.addNote(diagramId, x, y);

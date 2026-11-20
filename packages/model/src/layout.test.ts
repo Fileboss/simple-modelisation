@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { estimatedSize, noteLines, layoutDiagram } from './layout.ts';
-import { ProjectDocument } from './project.ts';
+import { CIF_OFFSET, ProjectDocument } from './project.ts';
 
 const overlapping = (
 	positions: Map<string, { x: number; y: number }>,
@@ -441,5 +441,22 @@ describe('layoutDiagram with Zones', () => {
 		).toBe(false);
 		expect(within(queue, vpc) && within(worker, region) && !within(worker, vpc)).toBe(true);
 		expect(routes.size).toBe(7);
+	});
+
+	it('leaves a CIF out of the layout and puts it back above its Association', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('mcd');
+		const [a, b, c] = ['A', 'B', 'C'].map((name, i) => project.addEntity(d, i * 500, 900, name));
+		const abc = project.addAssociation(d, a, b, 'abc');
+		project.addLeg(d, abc, c);
+		const cif = project.addCif(d, abc);
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'mcd'
+		);
+		const at = positions.get(abc)!;
+		expect(positions.get(cif)).toEqual({ x: at.x + CIF_OFFSET.x, y: at.y + CIF_OFFSET.y });
 	});
 });

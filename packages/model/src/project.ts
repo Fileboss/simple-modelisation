@@ -173,6 +173,25 @@ export type AssociationNode = DiagramNode & {
 export const CARDINALITIES = ['0,1', '1,1', '0,n', '1,n'] as const;
 export type Cardinality = (typeof CARDINALITIES)[number];
 
+/**
+ * A CIF on an N-ary Association: the Entities on its determinant Legs fix the
+ * one on its determined Leg. Legs rather than Entities: an Entity may be on two.
+ */
+export type CifNode = DiagramNode & {
+	type: 'cif';
+	association: string;
+	determinants: string[];
+	determined: string;
+};
+
+/** Where a CIF sits from its Association's corner, when made and after a Tidy up. */
+export const CIF_OFFSET = { x: 20, y: -70 };
+/** A CIF's circle. */
+export const CIF_SIZE = { width: 44, height: 44 };
+
+/** A Leg's part in a CIF. */
+export type CifRole = 'determinant' | 'determined' | 'none';
+
 /** Joins an Association (source) to one of its Entities (target). */
 export type LegEdge = DiagramEdge & Route & { type: 'leg'; cardinality: Cardinality };
 
@@ -400,8 +419,10 @@ export class ProjectDocument {
 	}
 
 	/**
-	 * Deletes nodes and edges. The edges of a deleted node go with it, and an
-	 * Association left with fewer than two Legs is deleted with its last Leg.
+	 * Deletes nodes and edges. The edges of a deleted node go with it, an
+	 * Association left with fewer than two Legs is deleted with its last Leg,
+	 * and a CIF goes with its Association, its determined Leg or its last
+	 * determinant.
 	 */
 	deleteElements(diagramId: string, nodeIds: string[], edgeIds: string[]): void {
 		const nodes = this.nodeMap(diagramId);
@@ -420,6 +441,20 @@ export class ProjectDocument {
 				if (legs.length < 2) {
 					for (const leg of legs) edges.delete(leg.get('id') as string);
 					nodes.delete(id);
+				}
+			}
+			for (const [id, node] of nodes) {
+				if (node.get('type') !== 'cif') continue;
+				// Whatever a peer wrote: a list that is not one counts as empty.
+				const determinants = stringList(node.get('determinants')).filter((leg) => edges.has(leg));
+				if (
+					!nodes.has(node.get('association') as string) ||
+					!edges.has(node.get('determined') as string) ||
+					determinants.length === 0
+				) {
+					nodes.delete(id);
+				} else if (determinants.length !== stringList(node.get('determinants')).length) {
+					node.set('determinants', determinants);
 				}
 			}
 		});
@@ -565,16 +600,26 @@ export class ProjectDocument {
 		if (!kind || !Number.isFinite(dx) || !Number.isFinite(dy)) return [];
 		const { nodes, edges } = pasteable(clip, kind);
 		const fresh = new Map(nodes.map((n) => [n.id, crypto.randomUUID()]));
+		const freshEdges = new Map(edges.map((e) => [e.id, crypto.randomUUID()]));
 		const shift = (p: Point) => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) });
-		const pastedEdges: string[] = [];
+		// A CIF names its Association and Legs: the pasted ones.
+		const relinked = (node: DiagramNode): DiagramNode => {
+			if (node.type !== 'cif') return node;
+			const cif = node as CifNode;
+			return {
+				...cif,
+				association: fresh.get(cif.association)!,
+				determinants: cif.determinants.map((leg) => freshEdges.get(leg)!),
+				determined: freshEdges.get(cif.determined)!
+			} as CifNode;
+		};
 		this.doc.transact(() => {
 			for (const node of nodes) {
-				this.insertNode(diagramId, { ...node, id: fresh.get(node.id)!, ...shift(node) });
+				this.insertNode(diagramId, { ...relinked(node), id: fresh.get(node.id)!, ...shift(node) });
 			}
 			for (const edge of edges) {
 				const points = (edge as Route).points;
-				const id = crypto.randomUUID();
-				pastedEdges.push(id);
+				const id = freshEdges.get(edge.id)!;
 				this.insertEdge(diagramId, {
 					...edge,
 					id,
@@ -584,7 +629,7 @@ export class ProjectDocument {
 				});
 			}
 		});
-		return [...fresh.values(), ...pastedEdges];
+		return [...fresh.values(), ...freshEdges.values()];
 	}
 
 	/** Writes a Note at x, y, empty and yellow unless told otherwise. */
@@ -740,6 +785,60 @@ export class ProjectDocument {
 		};
 		this.insertEdge(diagramId, leg);
 		return leg.id;
+	}
+
+	/**
+	 * Puts a CIF on an N-ary Association, above it: it determines the Leg with
+	 * a max of 1 if there is one, else the last Leg, by all the others.
+	 */
+	addCif(diagramId: string, associationId: string): string {
+		const association = this.nodeMap(diagramId).get(associationId);
+		const legs = [...this.edgeMap(diagramId).values()]
+			.filter((e) => e.get('type') === 'leg' && e.get('source') === associationId)
+			.map((e) => ({
+				id: e.get('id') as string,
+				cardinality: e.get('cardinality') as Cardinality
+			}));
+		if (association?.get('type') !== 'association' || legs.length < 3) {
+			throw new Error('A CIF goes on an Association with three Legs or more');
+		}
+		const determined =
+			legs.find((l) => l.cardinality === '0,1' || l.cardinality === '1,1') ?? legs[legs.length - 1];
+		// Another CIF on the same Association goes beside the first, not on it.
+		const siblings = [...this.nodeMap(diagramId).values()].filter(
+			(n) => n.get('type') === 'cif' && n.get('association') === associationId
+		).length;
+		const cif: CifNode = {
+			id: crypto.randomUUID(),
+			type: 'cif',
+			x: (association.get('x') as number) + CIF_OFFSET.x + siblings * (CIF_SIZE.width + 12),
+			y: (association.get('y') as number) + CIF_OFFSET.y,
+			association: associationId,
+			determinants: legs.filter((l) => l !== determined).map((l) => l.id),
+			determined: determined.id
+		};
+		this.insertNode(diagramId, cif);
+		return cif.id;
+	}
+
+	/**
+	 * Gives a Leg of its Association a part in a CIF. A new determined Leg leaves
+	 * the former one out. Ignored: taking the determined Leg away (choose another
+	 * first) and removing the last determinant (a CIF needs one).
+	 */
+	setCifRole(diagramId: string, cifId: string, legId: string, role: CifRole): void {
+		const cif = this.nodeMap(diagramId).get(cifId);
+		const leg = this.edgeMap(diagramId).get(legId);
+		if (cif?.get('type') !== 'cif' || leg?.get('source') !== cif.get('association')) return;
+		const determinants = stringList(cif.get('determinants')).filter((id) => id !== legId);
+		const determined = cif.get('determined') as string;
+		if (role === 'determinant') determinants.push(legId);
+		if (determinants.length === 0) return;
+		this.doc.transact(() => {
+			if (role === 'determined') cif.set('determined', legId);
+			else if (determined === legId) return;
+			cif.set('determinants', determinants);
+		});
 	}
 
 	setCardinality(diagramId: string, legId: string, cardinality: Cardinality): void {
@@ -1073,6 +1172,19 @@ export function pasteable(
 		nodes = nodes.filter((n) => !lonely.has(n.id));
 		edges = edges.filter((e) => !lonely.has(e.source));
 	}
+	// A CIF comes only with its Association and the Legs it names.
+	const kept = new Set(nodes.map((n) => n.id));
+	const legIds = new Set(edges.map((e) => e.id));
+	nodes = nodes.filter((n) => {
+		if (n.type !== 'cif') return true;
+		const cif = n as CifNode;
+		return (
+			kept.has(cif.association) &&
+			legIds.has(cif.determined) &&
+			cif.determinants.length > 0 &&
+			cif.determinants.every((leg) => legIds.has(leg))
+		);
+	});
 	return { nodes, edges };
 }
 
@@ -1093,7 +1205,8 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	zone: ['x', 'y', 'name', 'width', 'height', 'provider'],
 	note: ['x', 'y', 'text', 'color'],
 	entity: ['x', 'y', 'name', 'attributes'],
-	association: ['x', 'y', 'name', 'attributes']
+	association: ['x', 'y', 'name', 'attributes'],
+	cif: ['x', 'y', 'association', 'determinants', 'determined']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
 	connection: ['source', 'target', 'label', 'flow', 'points'],
@@ -1153,6 +1266,10 @@ function parseFile(data: unknown): ProjectFile {
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 
+/** A stored list of ids, or none when a peer or a file wrote something else. */
+const stringList = (value: unknown): string[] =>
+	Array.isArray(value) ? value.filter(isString) : [];
+
 /** A Note's text as stored: no trailing blank lines or spaces, bounded like a name. */
 const noteText = (text: string) => text.trimEnd().slice(0, 2000);
 const isNumber = (value: unknown): value is number =>
@@ -1162,6 +1279,19 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 	if (!node || !isString(node.id) || !isNumber(node.x) || !isNumber(node.y)) return false;
 	// A Note, in either kind, has text (maybe empty) rather than a name.
 	if (node.type === 'note') return isString(node.text);
+	// A CIF has its Association and Legs instead.
+	if (node.type === 'cif') {
+		const determinants = node.determinants as unknown;
+		return (
+			kind === 'mcd' &&
+			isString(node.association) &&
+			isString(node.determined) &&
+			Array.isArray(determinants) &&
+			determinants.length > 0 &&
+			determinants.length <= 100 &&
+			determinants.every(isString)
+		);
+	}
 	if (!isString(node.name) || !node.name.trim()) return false;
 	if (kind === 'system') {
 		if (node.type === 'zone') {

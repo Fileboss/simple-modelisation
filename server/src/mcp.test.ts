@@ -68,6 +68,7 @@ describe('MCP endpoint', () => {
 		expect(tools.map((t) => t.name).sort()).toEqual([
 			'add_association',
 			'add_attribute',
+			'add_cif',
 			'add_component',
 			'add_diagram',
 			'add_entity',
@@ -786,6 +787,72 @@ describe('MCP endpoint', () => {
 		expect(
 			(await call(client, 'add_leg', { ...at, association: 'Room', entity: 'Slot' })).error
 		).toMatch(/No association "Room"/);
+	});
+
+	it('puts a CIF on an N-ary Association, by Entity names or Leg ids', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Teacher', 'Class', 'Subject']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'add_association', {
+			...at,
+			name: 'teaches',
+			legs: ['Teacher', 'Class', 'Subject'].map((entity) => ({ entity, cardinality: '0,n' }))
+		});
+		const { id: cif } = await call(client, 'add_cif', {
+			...at,
+			association: 'teaches',
+			determinants: ['Class', 'Subject'],
+			determined: 'Teacher'
+		});
+		const { cifs, associations } = await call(client, 'get_diagram', at);
+		const legOf = (entity: string) =>
+			associations[0].legs.find((l: { entity: string }) => l.entity === entity).id;
+		expect(cifs).toEqual([
+			{
+				id: cif,
+				association: 'teaches',
+				determinants: [
+					{ leg: legOf('Class'), entity: 'Class' },
+					{ leg: legOf('Subject'), entity: 'Subject' }
+				],
+				determined: { leg: legOf('Teacher'), entity: 'Teacher' }
+			}
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('teaches = (#teacher_id, #class_id, #subject_id);');
+		const { sql } = await call(client, 'get_mcd_sql', at);
+		expect(sql).toContain('PRIMARY KEY (class_id, subject_id)');
+
+		await call(client, 'delete_elements', { ...at, elements: [cif] });
+		const byLegs = await call(client, 'add_cif', {
+			...at,
+			association: 'teaches',
+			determinants: [legOf('Teacher')],
+			determined: legOf('Subject')
+		});
+		expect(byLegs.id).toBeTruthy();
+		expect(
+			(
+				await call(client, 'add_cif', {
+					...at,
+					association: 'teaches',
+					determinants: ['Teacher'],
+					determined: 'Teacher'
+				})
+			).error
+		).toBe('The determined Leg cannot also be a determinant.');
+		expect(
+			(
+				await call(client, 'add_cif', {
+					...at,
+					association: 'teaches',
+					determinants: ['Room'],
+					determined: 'Class'
+				})
+			).error
+		).toBe('"Room" is not linked by this Association.');
 	});
 
 	it('explains ambiguous names, unknown names and wrong links', async () => {

@@ -5,6 +5,8 @@ import {
 	CARDINALITIES,
 	type AssociationNode,
 	type Cardinality,
+	type CifNode,
+	type CifRole,
 	type EntityNode,
 	type LegEdge
 } from '@simple-modelisation/model/project.ts';
@@ -46,11 +48,16 @@ export function McdPanel({ selection }: { selection: Selection }) {
 						{strings.mcd.addReflexive}
 					</button>
 				) : (
-					<LegsEditor associationId={element.id} isUml={isUml} />
+					<>
+						<LegsEditor associationId={element.id} isUml={isUml} />
+						<AddCif associationId={element.id} />
+					</>
 				)}
 			</>
 		);
 	}
+
+	if (node?.type === 'cif') return <CifEditor cif={node as CifNode} />;
 
 	if (selection.edge?.type === 'leg') {
 		const leg = selection.edge as LegEdge;
@@ -209,6 +216,70 @@ function DataTypeField({ type, onChange }: { type: DataType; onChange: (type: Da
 				</>
 			)}
 		</span>
+	);
+}
+
+/** On an N-ary Association: puts a CIF above it. */
+function AddCif({ associationId }: { associationId: string }) {
+	const { project, diagramId } = useCanvas();
+	const legs = project.edges(diagramId).filter((e) => e.source === associationId);
+	if (legs.length < 3) return null;
+	return (
+		<button
+			className="panel-action"
+			onClick={() => {
+				project.stopCapturing();
+				project.addCif(diagramId, associationId);
+			}}
+		>
+			{strings.mcd.addCif}
+		</button>
+	);
+}
+
+/** A CIF: each Leg of its Association as a determinant, the determined one, or not involved. */
+function CifEditor({ cif }: { cif: CifNode }) {
+	const { project, diagramId } = useCanvas();
+	const legs = project
+		.edges(diagramId)
+		.filter((e): e is LegEdge => e.type === 'leg' && e.source === cif.association);
+	const names = new Map(project.nodes(diagramId).map((n) => [n.id, String(n.name ?? '')]));
+	const roleOf = (leg: string): CifRole =>
+		leg === cif.determined ? 'determined' : cif.determinants.includes(leg) ? 'determinant' : 'none';
+	return (
+		<>
+			<h2>{strings.mcd.cif}</h2>
+			<p className="panel-hint">{strings.mcd.cifHint}</p>
+			{legs.map((leg) => (
+				<label key={leg.id} className="panel-field leg-row">
+					<span>{names.get(leg.target)}</span>
+					<select
+						value={roleOf(leg.id)}
+						onChange={(e) => {
+							project.stopCapturing();
+							project.setCifRole(diagramId, cif.id, leg.id, e.currentTarget.value as CifRole);
+						}}
+					>
+						{(['determinant', 'determined', 'none'] as const).map((role) => (
+							// The determined Leg changes by choosing another one; the last determinant stays.
+							<option
+								key={role}
+								value={role}
+								disabled={
+									role !== roleOf(leg.id) &&
+									(roleOf(leg.id) === 'determined' ||
+										(role === 'none' &&
+											cif.determinants.length === 1 &&
+											roleOf(leg.id) === 'determinant'))
+								}
+							>
+								{strings.mcd.cifRoles[role]}
+							</option>
+						))}
+					</select>
+				</label>
+			))}
+		</>
 	);
 }
 

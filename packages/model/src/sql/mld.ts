@@ -3,6 +3,7 @@ import type {
 	AssociationNode,
 	Attribute,
 	Cardinality,
+	CifNode,
 	DiagramEdge,
 	DiagramNode,
 	EntityNode,
@@ -62,6 +63,7 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	}
 
 	const entityNames = new Map(entities.map((e) => [e.id, e.name]));
+	const cifs = nodes.filter((n): n is CifNode => n.type === 'cif');
 	const associationTables: Table[] = [];
 	for (const association of associations) {
 		const own = legs.filter((l) => l.source === association.id);
@@ -69,15 +71,41 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 		if (own.length < 2 || own.some((leg) => !target(leg))) continue;
 		const [a, b] = own;
 
+		const itsCifs = cifs.filter((c) => c.association === association.id);
 		if (own.length > 2) {
-			// N-ary: always a table, keyed by all its foreign keys until a CIF says otherwise.
-			for (const leg of own.filter((l) => maxIsOne(l.cardinality))) {
+			// N-ary: always a table, keyed by the foreign keys of the Legs no CIF determines.
+			// A CIF applies, in order, only while its determinants are all still in the key:
+			// the key then stays unique and never empty.
+			const ownIds = new Set(own.map((l) => l.id));
+			const determined = new Set<string>();
+			for (const cif of itsCifs) {
+				if (!ownIds.has(cif.determined) || determined.has(cif.determined)) continue;
+				const determinants = cif.determinants.filter((l) => ownIds.has(l));
+				const gone = determinants.find((l) => determined.has(l));
+				if (determinants.length === 0) continue;
+				if (gone) {
+					const leg = own.find((l) => l.id === gone)!;
+					warnings.push(
+						`A CIF on "${association.name}" is not applied: ${entityNames.get(leg.target)} is no longer in the key.`
+					);
+					continue;
+				}
+				determined.add(cif.determined);
+			}
+			for (const leg of own.filter((l) => maxIsOne(l.cardinality) && !determined.has(l.id))) {
 				warnings.push(
-					`Association "${association.name}" joins ${own.length} Entities with a max of 1 on ${entityNames.get(leg.target)}: a CIF will take it out of the key.`
+					`Association "${association.name}" joins ${own.length} Entities with a max of 1 on ${entityNames.get(leg.target)}: add a CIF to take it out of the key.`
 				);
 			}
-			associationTables.push(associationTable(association, own, target, warnings));
-		} else if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
+			associationTables.push(associationTable(association, own, target, warnings, determined));
+			continue;
+		}
+		if (itsCifs.length > 0) {
+			warnings.push(
+				`The CIF on "${association.name}" is ignored: a CIF needs an Association with three Legs or more.`
+			);
+		}
+		if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
 			// The key goes to a side of max 1: the 1,1 one when both are, else the second.
 			const receiving =
 				maxIsOne(a.cardinality) && maxIsOne(b.cardinality)
@@ -143,12 +171,16 @@ function attributeColumn(table: Table, attribute: Attribute, forceNullable: bool
 	};
 }
 
-/** An Association's own table: keyed by the foreign keys to all its Entities, with its Attributes. */
+/**
+ * An Association's own table: keyed by the foreign keys to its Entities, but
+ * those of `determined` Legs, with its Attributes.
+ */
 function associationTable(
 	association: AssociationNode,
 	legs: LegEdge[],
 	target: (leg: LegEdge) => Table | undefined,
-	warnings: string[]
+	warnings: string[],
+	determined: Set<string> = new Set()
 ): Table {
 	const table: Table = {
 		name: snakeCase(association.name),
@@ -159,7 +191,8 @@ function associationTable(
 	};
 	for (const leg of legs) {
 		const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
-		table.primaryKey.push(...(columns ?? []));
+		// A Leg a CIF determines is a NOT NULL column outside the key.
+		if (!determined.has(leg.id)) table.primaryKey.push(...(columns ?? []));
 	}
 	for (const attribute of association.attributes ?? []) {
 		table.columns.push(attributeColumn(table, attribute, false));

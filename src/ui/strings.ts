@@ -193,6 +193,11 @@ export const strings = {
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
 		legs: 'Legs',
+		cif: 'CIF',
+		addCif: '+ CIF',
+		cifHint:
+			'The Entities on the determinant Legs fix the one on the determined Leg: the MLD leaves it out of the key.',
+		cifRoles: { determinant: 'Determinant', determined: 'Determined', none: 'Not involved' },
 		multiplicities: 'Multiplicities',
 		end: 'end'
 	}

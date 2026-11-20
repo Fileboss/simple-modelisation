@@ -2,7 +2,7 @@ import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
-import { ZONE_PADDING } from './project.ts';
+import { CIF_OFFSET, CIF_SIZE, ZONE_PADDING } from './project.ts';
 import { pillText, roughWidth } from './label-placement.ts';
 import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
@@ -132,7 +132,10 @@ export async function layoutDiagram(
 	// Notes explain the Diagram: Tidy up leaves them where they are, except those in a
 	// Zone, laid out with its content so that the Zone fitted around it still holds them.
 	const inZone = zoneParents(allNodes, estimatedSize);
-	const nodes = allNodes.filter((n) => n.type !== 'note' || inZone.has(n.id)).sort(byId);
+	// A CIF goes back beside its Association afterwards.
+	const nodes = allNodes
+		.filter((n) => n.type !== 'cif' && (n.type !== 'note' || inZone.has(n.id)))
+		.sort(byId);
 	const edges = [...allEdges].sort(byId);
 	const links = linksOf(nodes, edges);
 	const linked = new Set(links.flatMap((link) => [link.from, link.to]));
@@ -245,6 +248,12 @@ export async function layoutDiagram(
 		x += size.width + gaps.node;
 		rowHeight = Math.max(rowHeight, size.height);
 	});
+	for (const cif of allNodes.filter((n) => n.type === 'cif')) {
+		const association = positions.get(String(cif.association));
+		if (association) {
+			positions.set(cif.id, { x: association.x + CIF_OFFSET.x, y: association.y + CIF_OFFSET.y });
+		}
+	}
 	return { positions, routes, zoneSizes };
 }
 
@@ -370,6 +379,7 @@ export function estimatedSize(node: DiagramNode): Size {
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
 	if (node.type === 'note') return noteSize(String(node.text ?? ''));
+	if (node.type === 'cif') return CIF_SIZE;
 	if (node.type === 'component' && isPerson(node.componentType)) {
 		// A silhouette: the avatar over the name and the role (the longest role, Customer, fits in 100px).
 		return { width: Math.max(100, name.length * 9 + 20), height: 100 };

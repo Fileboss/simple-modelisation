@@ -130,6 +130,10 @@ _Avoid_: Relation, relationship, link
 An Association with three Legs or more (a ternary has three); its MLD is always a table.
 _Avoid_: Multi-association, complex relation
 
+**CIF**:
+A functional integrity constraint on an N-ary Association: the Entities on some of its Legs (determinants) fix the one on another (determined), which the MLD then leaves out of the table's key.
+_Avoid_: Functional dependency, FD
+
 **Leg**:
 The line joining an Association to one of its Entities, labelled with a Cardinality.
 _Avoid_: Link, edge, branch

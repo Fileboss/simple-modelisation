@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { DataType } from './data-types.ts';
 import { estimatedSize } from './layout.ts';
-import { ProjectDocument, type Attribute } from './project.ts';
+import { ProjectDocument, type Attribute, type Cardinality, type CifNode } from './project.ts';
 import { effectiveProviders, zoneParents } from './zones.ts';
 import { systemSvg } from './svg/system.ts';
 import { ENGLISH_NAMES } from './names.ts';
@@ -198,6 +198,85 @@ describe('MCD', () => {
 		const copy = ProjectDocument.fromFile(project.toFile());
 		const [copied] = copy.diagrams();
 		expect(copy.edges(copied.id).filter((e) => e.source === lists)).toHaveLength(3);
+	});
+
+	describe('CIF', () => {
+		const ternary = (cardinalities: Cardinality[] = ['0,n', '0,n', '0,n']) => {
+			const { project, diagram, customer, order } = setup();
+			const product = project.addEntity(diagram, 200, 300, 'Product');
+			const lists = project.addAssociation(diagram, customer, order, 'lists');
+			project.addLeg(diagram, lists, product);
+			const legs = legsOf(project, diagram);
+			legs.forEach((leg, i) => project.setCardinality(diagram, leg.id, cardinalities[i]));
+			const cifOf = (id: string) =>
+				project.nodes(diagram).find((n) => n.id === id) as CifNode | undefined;
+			return { project, diagram, lists, legs, cifOf, customer };
+		};
+
+		it('determines the Leg with a max of 1, else the last, by the others', () => {
+			const withOne = ternary(['0,n', '1,1', '0,n']);
+			const id = withOne.project.addCif(withOne.diagram, withOne.lists);
+			expect(withOne.cifOf(id)).toMatchObject({
+				type: 'cif',
+				association: withOne.lists,
+				determined: withOne.legs[1].id,
+				determinants: [withOne.legs[0].id, withOne.legs[2].id]
+			});
+			const plain = ternary();
+			const other = plain.project.addCif(plain.diagram, plain.lists);
+			expect(plain.cifOf(other)?.determined).toBe(plain.legs[2].id);
+		});
+
+		it('is refused on a binary Association', () => {
+			const { project, diagram, customer, order } = setup();
+			const places = project.addAssociation(diagram, customer, order);
+			expect(() => project.addCif(diagram, places)).toThrow();
+		});
+
+		it('changes the role of a Leg, one determined at a time, at least one determinant', () => {
+			const { project, diagram, lists, legs, cifOf } = ternary();
+			const id = project.addCif(diagram, lists);
+			project.setCifRole(diagram, id, legs[0].id, 'determined');
+			// The former determined Leg is left out; the new one leaves the determinants.
+			expect(cifOf(id)).toMatchObject({ determined: legs[0].id, determinants: [legs[1].id] });
+			project.setCifRole(diagram, id, legs[2].id, 'determinant');
+			expect(cifOf(id)?.determinants).toEqual([legs[1].id, legs[2].id]);
+			project.setCifRole(diagram, id, legs[1].id, 'none');
+			project.setCifRole(diagram, id, legs[2].id, 'none');
+			// The last determinant stays: a CIF needs one.
+			expect(cifOf(id)?.determinants).toEqual([legs[2].id]);
+		});
+
+		it('goes with its Association or its determined Leg, and loses a deleted determinant', () => {
+			const a = ternary();
+			const first = a.project.addCif(a.diagram, a.lists);
+			a.project.deleteElements(a.diagram, [], [a.legs[0].id]);
+			// Binary again: the CIF loses Leg 0 but keeps Leg 1 → Leg 2.
+			expect(a.cifOf(first)).toMatchObject({ determinants: [a.legs[1].id] });
+			a.project.deleteElements(a.diagram, [], [a.legs[2].id]);
+			expect(a.cifOf(first)).toBeUndefined();
+
+			const b = ternary();
+			const second = b.project.addCif(b.diagram, b.lists);
+			b.project.deleteElements(b.diagram, [b.lists], []);
+			expect(b.cifOf(second)).toBeUndefined();
+
+			const c = ternary();
+			const third = c.project.addCif(c.diagram, c.lists);
+			c.project.deleteElements(c.diagram, [c.customer], []);
+			// Deleting an Entity deletes its Leg (a determinant): the CIF keeps the other.
+			expect(c.cifOf(third)?.determinants).toEqual([c.legs[1].id]);
+		});
+
+		it('keeps a CIF through a file round trip', () => {
+			const { project, diagram, lists } = ternary();
+			const id = project.addCif(diagram, lists);
+			const copy = ProjectDocument.fromFile(project.toFile());
+			expect(copy.nodes(copy.diagrams()[0].id).find((n) => n.id === id)).toMatchObject({
+				type: 'cif',
+				association: lists
+			});
+		});
 	});
 
 	it('deletes the Legs and Associations of a deleted Entity', () => {
