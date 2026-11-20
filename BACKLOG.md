@@ -35,6 +35,7 @@ tags: [backlog]
 
 ## Done
 
+- thin-borders-zoomed-out: MCD box borders stay one screen pixel wide when zoomed out, instead of losing pieces on a non-Retina screen
 - stop-sharing-copy: Stop sharing keeps the original until the Local copy is read back from storage with the same content
 - [malformed-documents](docs/specs/malformed-documents/): a malformed entry in a Shared Project is left out, with a banner, instead of breaking the app for every Participant
 - collapsible-panels: on a wide screen, the palette and the properties fold into thin rails (Cmd/Ctrl+\ for both), remembered per browser

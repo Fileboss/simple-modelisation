@@ -11,6 +11,7 @@ import {
 	ReactFlow,
 	ReactFlowProvider,
 	useReactFlow,
+	useStore,
 	type Edge,
 	type EdgeChange,
 	type EdgeTypes,
@@ -953,6 +954,7 @@ function Canvas({ project, diagram, kind }: Props) {
 						proOptions={{ hideAttribution: true }}
 					>
 						<Background gap={16} />
+						<ZoomVariable exporting={exporting} />
 						<ViewportPortal>
 							{preview && (
 								<div
@@ -1112,6 +1114,20 @@ function SideToggle({ side, open, onToggle, selected }: SideToggleProps) {
 			{hidden && <span className="dock-dot side-dot" aria-hidden="true" />}
 		</button>
 	);
+}
+
+/**
+ * Gives the canvas its zoom as `--zoom`, so that thin borders stay one screen
+ * pixel wide when zoomed out (a thinner one loses pieces on a non-Retina
+ * screen). An export draws at scale 1, so it sets 1 for the time of the capture.
+ */
+function ZoomVariable({ exporting }: { exporting: boolean }) {
+	const zoom = useStore((s) => s.transform[2]);
+	const domNode = useStore((s) => s.domNode);
+	useEffect(() => {
+		domNode?.style.setProperty('--zoom', String(exporting ? 1 : zoom));
+	}, [domNode, zoom, exporting]);
+	return null;
 }
 
 // On a Mac, Ctrl+click is a right click: it opens the context menu.
