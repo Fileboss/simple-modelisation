@@ -7,8 +7,6 @@ tags: [backlog]
 
 ## In progress
 
-- [nary-associations](docs/specs/nary-associations/): Associations between three Entities or more, in both Notations, the MLD and MCP
-
 ## To do
 
 - Make the ghcr package public once the v0.1.0 image is published
@@ -31,6 +29,7 @@ tags: [backlog]
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
+- Selecting several elements by touch (a selection mode or a lasso)
 - Zone colors, and Zones in Tidy up options (direction, spacing)
 - French UI
 - Revoke a Share link for everyone (needs Project owners)
@@ -39,9 +38,11 @@ tags: [backlog]
 
 ## Done
 
+- [mobile-layout](docs/specs/mobile-layout/): the canvas first on phones, Palette, Panel and SQL as drawers; tap to place, big handles, long-press menu on touch screens
 - [relative-identifier](docs/specs/relative-identifier/): Entities identified relative to others, a 1,1 Leg marked R, in the MLD, both Notations and MCP
 - [entity-inheritance](docs/specs/entity-inheritance/): parent and child Entities with X / T / XT, three MLD translations, both Notations, MCP
 - [cif-constraints](docs/specs/cif-constraints/): CIFs on N-ary Associations, drawn as in Looping, in the MLD and over MCP
+- [nary-associations](docs/specs/nary-associations/): Associations between three Entities or more, in both Notations, the MLD and MCP
 - sql-name-line-breaks: a line break in an Entity, Association or Diagram name no longer escapes the `--` comments of the PostgreSQL script
 - v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only

@@ -44,6 +44,7 @@ export const mcdKind: CanvasKind = {
 	Palette: McdPalette,
 	Panel: McdPanel,
 	Footer: SqlPanel,
+	footerLabel: strings.sql.title,
 	useLayout: function useMcdLayout() {
 		const { diagramId } = useCanvas();
 		return useNotation(diagramId) === 'uml' ? umlMcdLayout : meriseLayout;

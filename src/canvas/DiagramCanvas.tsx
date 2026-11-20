@@ -28,7 +28,8 @@ import {
 	useState,
 	type ComponentType,
 	type CSSProperties,
-	type DragEvent
+	type DragEvent,
+	type MouseEvent as ReactMouseEvent
 } from 'react';
 import type {
 	Diagram,
@@ -54,6 +55,8 @@ import {
 import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
 import { useTransientNote } from '../ui/transient-note';
+import { useCoarsePointer, useSmallScreen } from '../ui/media';
+import { Drawer } from '../ui/Drawer';
 import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
 import { captureViewport, drawnBounds, exportFrame, rasterizeSvg } from './export-image';
@@ -62,6 +65,7 @@ import type { Layout } from './layout';
 import type { Box } from './geometry';
 import type { Size } from '@simple-modelisation/model/layout.ts';
 import { useSnapGestures } from './use-snap-gestures';
+import { LongPress } from './long-press';
 import { isCanvasClipboard, selectionShortcut, withSelection } from './selection';
 import {
 	clipBounds,
@@ -69,7 +73,15 @@ import {
 	readClip,
 	type Clip
 } from '@simple-modelisation/model/clipboard.ts';
-import { draggedPaletteItem, endPaletteDrag, PALETTE_MIME } from './palette-drag';
+import {
+	armedPaletteItem,
+	armPaletteItem,
+	draggedPaletteItem,
+	endPaletteDrag,
+	onArmedChange,
+	PALETTE_MIME,
+	useArmedItem
+} from './palette-drag';
 
 /** The selected elements a Participant shows others, at most (Presence is bounded). */
 const MAX_SHARED_SELECTION = 500;
@@ -108,8 +120,12 @@ export type CanvasKind = {
 		sizeOf: (node: DiagramNode) => { width: number; height: number },
 		legend: boolean
 	) => string;
-	/** Shown under the canvas (the MCD's MLD and SQL). */
-	Footer?: ComponentType<{ diagram: Diagram }>;
+	/**
+	 * Shown under the canvas (the MCD's MLD and SQL); in a drawer on a small
+	 * screen, `embedded` then, under the button named `footerLabel`.
+	 */
+	Footer?: ComponentType<{ diagram: Diagram; embedded?: boolean }>;
+	footerLabel?: string;
 	/** Adds a palette item with its top-left corner at x, y; the new element's id. */
 	drop: (
 		project: ProjectDocument,
@@ -147,6 +163,31 @@ export function DiagramCanvas(props: Props) {
 function Canvas({ project, diagram, kind }: Props) {
 	const { screenToFlowPosition, fitView, getNodes } = useReactFlow();
 	const flowRef = useRef<HTMLDivElement>(null);
+	const coarsePointer = useCoarsePointer();
+	// On a small screen the palette, the panel and the footer are drawers, one open at a time.
+	const smallScreen = useSmallScreen();
+	const [drawer, setDrawer] = useState<'palette' | 'panel' | 'footer' | null>(null);
+	const toggleDrawer = (name: NonNullable<typeof drawer>) =>
+		setDrawer((open) => (open === name ? null : name));
+	// A tapped palette item waits for a tap on the canvas, the palette's drawer out of the way.
+	const armedItem = useArmedItem();
+	const armed = armedItem?.diagramId === diagram.id ? armedItem.item : null;
+	useEffect(
+		() =>
+			onArmedChange(() => {
+				if (armedPaletteItem()?.diagramId === diagram.id) setDrawer(null);
+			}),
+		[diagram.id]
+	);
+	useEffect(() => () => armPaletteItem(null), []);
+	useEffect(() => {
+		if (!armed) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') armPaletteItem(null);
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	}, [armed]);
 
 	// Fit once the tidied positions have reached React Flow, not before.
 	const [fitPending, setFitPending] = useState(false);
@@ -491,6 +532,84 @@ function Canvas({ project, diagram, kind }: Props) {
 	const canvasActive = useRef(false);
 	// A short message over the canvas when the clipboard was refused.
 	const [clipboardNote, showClipboardNote] = useTransientNote();
+	const menuActions = useRef<{
+		clipboard: (action: 'copy' | 'cut' | 'paste') => void;
+		duplicate: () => void;
+	} | null>(null);
+
+	// On a touch screen, a long press opens a menu of what the keyboard does elsewhere:
+	// on an element (selected first), or on the background.
+	const [menu, setMenu] = useState<(Point & { on: 'node' | 'edge' | 'pane' }) | null>(null);
+	const longPress = useRef<LongPress | null>(null);
+	// Whether a press began on the menu: the click that ends the long press may land on it.
+	const menuPress = useRef(false);
+	useEffect(() => {
+		const press = new LongPress((at, target) => {
+			const flow = flowRef.current;
+			const element = target instanceof Element ? target : null;
+			if (!flow || element?.closest('input, textarea, button, .react-flow__controls')) return;
+			const node = element?.closest('.react-flow__node');
+			const edge = node ? null : element?.closest('.react-flow__edge');
+			const id = (node ?? edge)?.getAttribute('data-id');
+			if (id) {
+				setNodes((current) => current.map((n) => ({ ...n, selected: node ? n.id === id : false })));
+				setEdges((current) => current.map((e) => ({ ...e, selected: edge ? e.id === id : false })));
+			}
+			pointerAt.current = at;
+			// Beside the finger (on its left near the right edge), wholly inside the canvas.
+			const bounds = flow.getBoundingClientRect();
+			const clamp = (value: number, max: number) => Math.max(8, Math.min(value, max - 8));
+			const x = at.x - bounds.left;
+			const fitsRight = x + 8 + MENU_SIZE.width <= bounds.width - 8;
+			menuPress.current = false;
+			setMenu({
+				x: clamp(fitsRight ? x + 8 : x - 8 - MENU_SIZE.width, bounds.width - MENU_SIZE.width),
+				y: clamp(at.y - bounds.top - MENU_SIZE.height / 2, bounds.height - MENU_SIZE.height),
+				on: !id ? 'pane' : node ? 'node' : 'edge'
+			});
+		});
+		longPress.current = press;
+		return () => press.cancel();
+	}, [setNodes, setEdges]);
+	useEffect(() => {
+		if (!menu) return;
+		const close = (e: Event) => {
+			if (
+				e instanceof KeyboardEvent
+					? e.key === 'Escape'
+					: !(e.target as Element).closest?.('.context-menu')
+			)
+				setMenu(null);
+		};
+		window.addEventListener('pointerdown', close, true);
+		window.addEventListener('keydown', close);
+		return () => {
+			window.removeEventListener('pointerdown', close, true);
+			window.removeEventListener('keydown', close);
+		};
+	}, [menu]);
+	const runMenu = (action: MenuAction) => {
+		if (!menuPress.current) return;
+		setMenu(null);
+		if (action === 'properties') return setDrawer('panel');
+		if (action === 'delete') return deleteSelected();
+		if (action === 'selectAll') {
+			setNodes((current) => withSelection(current, true));
+			setEdges((current) => withSelection(current, true));
+			return;
+		}
+		if (action === 'duplicate') return menuActions.current?.duplicate();
+		menuActions.current?.clipboard(action);
+	};
+	const deleteSelected = () => {
+		project.stopCapturing();
+		project.deleteElements(
+			diagram.id,
+			selectedNodes.map((n) => n.id),
+			selectedEdges.map((e) => e.id)
+		);
+	};
+	const [connecting, setConnecting] = useState(false);
 
 	// Keyboard and clipboard, while the canvas was the last thing clicked: Cmd/Ctrl+A selects
 	// everything, Escape nothing; copy, cut, paste and Cmd/Ctrl+D duplicate the selection.
@@ -537,28 +656,39 @@ function Canvas({ project, diagram, kind }: Props) {
 			setTimeout(() => {
 				if (pending !== action) return;
 				pending = null;
-				// The browser may refuse the Clipboard API out of the key press: say so, and lose nothing.
-				const clipboard = navigator.clipboard as Clipboard | undefined;
-				if (action === 'paste') {
-					if (!clipboard) return showClipboardNote(strings.clipboard.pasteFailed);
-					void clipboard
-						.readText()
-						.then((text) => {
-							const clip = readClip(text);
-							if (clip) pasteClip(clip, true);
-						})
-						.catch(() => showClipboardNote(strings.clipboard.pasteFailed));
-				} else {
-					const clip = copied();
-					if (!clip) return;
-					if (!clipboard) return showClipboardNote(strings.clipboard.copyFailed);
-					// A cut removes only once the clipboard holds what it removes.
-					void clipboard.writeText(JSON.stringify(clip)).then(
-						() => action === 'cut' && remove(clip),
-						() => showClipboardNote(strings.clipboard.copyFailed)
-					);
-				}
+				viaClipboardApi(action);
 			});
+		};
+		const viaClipboardApi = (action: 'copy' | 'cut' | 'paste') => {
+			// The browser may refuse the Clipboard API out of a user gesture: say so, and lose nothing.
+			const clipboard = navigator.clipboard as Clipboard | undefined;
+			if (action === 'paste') {
+				if (!clipboard) return showClipboardNote(strings.clipboard.pasteFailed);
+				void clipboard
+					.readText()
+					.then((text) => {
+						const clip = readClip(text);
+						if (clip) pasteClip(clip, true);
+					})
+					.catch(() => showClipboardNote(strings.clipboard.pasteFailed));
+			} else {
+				const clip = copied();
+				if (!clip) return;
+				if (!clipboard) return showClipboardNote(strings.clipboard.copyFailed);
+				// A cut removes only once the clipboard holds what it removes.
+				void clipboard.writeText(JSON.stringify(clip)).then(
+					() => action === 'cut' && remove(clip),
+					() => showClipboardNote(strings.clipboard.copyFailed)
+				);
+			}
+		};
+		// The long-press menu: called from its tap, the Clipboard API is allowed.
+		menuActions.current = {
+			clipboard: viaClipboardApi,
+			duplicate: () => {
+				const clip = copied();
+				if (clip) pasteClip(clip, false);
+			}
 		};
 		const onKey = (e: KeyboardEvent) => {
 			const shortcut = selectionShortcut(e, canvasActive.current);
@@ -650,11 +780,28 @@ function Canvas({ project, diagram, kind }: Props) {
 		const box = previewAt(event, item);
 		clearPreview();
 		endPaletteDrag();
-		if (!box) return;
+		if (box) place(item, box, event.altKey);
+	};
+	// The armed palette item, placed where the canvas is tapped: on the background or on
+	// a node (into a Zone).
+	const placeArmed = (event: ReactMouseEvent) => {
+		// The click a long press ends with is not a tap.
+		if (longPress.current?.fired) return;
+		const current = armedPaletteItem();
+		if (current?.diagramId !== diagram.id) return;
+		const { item } = current;
+		armPaletteItem(null);
+		const { width, height } = kind.dropPreview(item);
+		const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+		const box = snapping.placeCentred(at, { width, height }, event.altKey);
+		snapping.clearGuides();
+		place(item, box, event.altKey);
+	};
+	const place = (item: string, box: Box, free: boolean) => {
 		project.stopCapturing();
 		framed.current = true;
 		const id = kind.drop(project, diagram.id, item, box.x, box.y);
-		if (id) dropped.current = { id, centre: centreOf(box), free: event.altKey };
+		if (id) dropped.current = { id, centre: centreOf(box), free };
 	};
 	// The preview has the model's estimated size: once the canvas has measured the new
 	// element, it is centred where the preview was (snapped again at its real size),
@@ -679,13 +826,22 @@ function Canvas({ project, diagram, kind }: Props) {
 		if (!dropped.current) setFitPending(true);
 	}, [nodes]);
 
+	const panel =
+		// A Note is the same in every kind of Diagram.
+		selection.node?.type === 'note' ? (
+			<NotePanel key={selection.node.id} note={selection.node as NoteNode} />
+		) : (
+			<kind.Panel selection={selection} />
+		);
+	const selected = selectedNodes.length + selectedEdges.length > 0;
+
 	return (
 		<div className="workspace">
-			<kind.Palette />
+			{!smallScreen && <kind.Palette />}
 			<div className="flow-column">
 				<div
 					ref={flowRef}
-					className="flow"
+					className={`flow ${connecting ? 'flow-connecting' : ''}`}
 					onDrop={onDrop}
 					onDragOver={onDragOver}
 					onDragLeave={onDragLeave}
@@ -697,6 +853,15 @@ function Canvas({ project, diagram, kind }: Props) {
 					onPointerLeave={() => {
 						pointerAt.current = null;
 						cursor.leave();
+					}}
+					onPointerDownCapture={(e) => longPress.current?.pointerDown(e)}
+					onPointerMoveCapture={(e) => longPress.current?.pointerMove(e)}
+					onPointerUpCapture={() => longPress.current?.pointerUp()}
+					onPointerCancelCapture={() => longPress.current?.pointerUp()}
+					// Our long-press menu replaces the browser's for a finger; a mouse keeps its own.
+					onContextMenu={(e) => {
+						const type = (e.nativeEvent as Partial<PointerEvent>).pointerType;
+						if (type ? type !== 'mouse' : coarsePointer) e.preventDefault();
 					}}
 				>
 					<ReactFlow
@@ -713,6 +878,17 @@ function Canvas({ project, diagram, kind }: Props) {
 						onSelectionDragStart={(_event, dragged) => onNodeDragStart(dragged)}
 						onSelectionDrag={(_event, dragged) => onNodeDrag(dragged)}
 						onSelectionDragStop={(_event, dragged) => onNodeDragStop(dragged)}
+						onPaneClick={placeArmed}
+						onNodeClick={placeArmed}
+						onNodeDoubleClick={(event, node) => {
+							// A double tap opens the panel, except where it edits text in place.
+							const target = event.target as Element;
+							if (smallScreen && node.type !== 'note' && !target.closest('[data-editable]'))
+								setDrawer('panel');
+						}}
+						onConnectStart={() => setConnecting(true)}
+						onConnectEnd={() => setConnecting(false)}
+						connectionRadius={coarsePointer ? 44 : 20}
 						onConnect={({ source, target }) => {
 							project.stopCapturing();
 							kind.connect(project, diagram.id, source, target);
@@ -774,7 +950,7 @@ function Canvas({ project, diagram, kind }: Props) {
 							)}
 						</ViewportPortal>
 						<RemoteCursors diagramId={diagram.id} />
-						<Controls showInteractive={false}>
+						<Controls showInteractive={false} position={smallScreen ? 'top-right' : 'bottom-left'}>
 							<ControlButton
 								onClick={() => void tidyUp()}
 								title={strings.canvas.tidyUp}
@@ -789,22 +965,83 @@ function Canvas({ project, diagram, kind }: Props) {
 							</ControlButton>
 						</Controls>
 					</ReactFlow>
+					{menu && (
+						<div
+							className="context-menu"
+							role="menu"
+							style={{ left: menu.x, top: menu.y }}
+							onPointerDown={() => (menuPress.current = true)}
+						>
+							{menuActionsOn(menu.on, smallScreen).map((action) => (
+								<button key={action} role="menuitem" onClick={() => runMenu(action)}>
+									{strings.menu[action]}
+								</button>
+							))}
+						</div>
+					)}
+					{armed && (
+						<p className="canvas-note armed-note" role="status">
+							{strings.canvas.tapToPlace(kind.dropPreview(armed).label)}
+							<button onClick={() => armPaletteItem(null)}>{strings.canvas.cancel}</button>
+						</p>
+					)}
 					{clipboardNote && (
 						<p className="canvas-note" role="status">
 							{clipboardNote}
 						</p>
 					)}
 				</div>
-				{kind.Footer && <kind.Footer diagram={diagram} />}
+				{kind.Footer && !smallScreen && <kind.Footer diagram={diagram} />}
 			</div>
-			<aside className="panel">
-				{/* A Note is the same in every kind of Diagram. */}
-				{selection.node?.type === 'note' ? (
-					<NotePanel key={selection.node.id} note={selection.node as NoteNode} />
-				) : (
-					<kind.Panel selection={selection} />
-				)}
-			</aside>
+			{smallScreen ? (
+				<div className="dock">
+					<div className="dock-buttons">
+						<button
+							className={`dock-button ${drawer === 'palette' ? 'dock-button-open' : ''}`}
+							aria-label={strings.drawer.palette}
+							aria-expanded={drawer === 'palette'}
+							onClick={() => (armed ? armPaletteItem(null) : toggleDrawer('palette'))}
+						>
+							+
+						</button>
+						<span className="dock-spacer" />
+						{kind.Footer && (
+							<button
+								className={`dock-button dock-button-text ${drawer === 'footer' ? 'dock-button-open' : ''}`}
+								aria-expanded={drawer === 'footer'}
+								onClick={() => toggleDrawer('footer')}
+							>
+								{kind.footerLabel}
+							</button>
+						)}
+						<button
+							className={`dock-button ${drawer === 'panel' ? 'dock-button-open' : ''}`}
+							aria-label={strings.drawer.panel}
+							aria-expanded={drawer === 'panel'}
+							onClick={() => toggleDrawer('panel')}
+						>
+							⚙{selected && <span className="dock-dot" aria-hidden="true" />}
+						</button>
+					</div>
+					{drawer === 'palette' && (
+						<Drawer title={strings.drawer.palette} onClose={() => setDrawer(null)}>
+							<kind.Palette />
+						</Drawer>
+					)}
+					{drawer === 'panel' && (
+						<Drawer title={strings.drawer.panel} onClose={() => setDrawer(null)}>
+							<aside className="panel">{panel}</aside>
+						</Drawer>
+					)}
+					{drawer === 'footer' && kind.Footer && (
+						<Drawer title={kind.footerLabel ?? ''} tall onClose={() => setDrawer(null)}>
+							<kind.Footer diagram={diagram} embedded />
+						</Drawer>
+					)}
+				</div>
+			) : (
+				<aside className="panel">{panel}</aside>
+			)}
 		</div>
 	);
 }
@@ -814,7 +1051,19 @@ const MULTI_SELECTION_KEYS =
 	typeof navigator !== 'undefined' && /Mac|iP(hone|ad)/.test(navigator.userAgent)
 		? ['Shift', 'Meta']
 		: ['Shift', 'Control'];
-const coarsePointer = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
+type MenuAction = keyof typeof strings.menu;
+
+/** The long-press menu at its largest (five 44px entries), to keep it inside the canvas. */
+const MENU_SIZE = { width: 176, height: 5 * 44 + 10 };
+
+/** What the long-press menu offers on what was pressed; the panel is a drawer only on a small screen. */
+function menuActionsOn(on: 'node' | 'edge' | 'pane', smallScreen: boolean): MenuAction[] {
+	if (on === 'pane') return ['paste', 'selectAll'];
+	const properties: MenuAction[] = smallScreen ? ['properties'] : [];
+	const clipboard: MenuAction[] = on === 'node' ? ['duplicate', 'copy', 'cut'] : [];
+	return [...properties, ...clipboard, 'delete'];
+}
 
 const pairKey = (e: DiagramEdge) => `${e.source}|${e.target}`;
 const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });

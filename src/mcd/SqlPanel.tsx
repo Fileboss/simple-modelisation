@@ -18,11 +18,15 @@ function readOpen(): boolean {
 	}
 }
 
-/** Under an MCD: its MLD and PostgreSQL script, live, in a panel that folds away. */
-export function SqlPanel({ diagram }: { diagram: Diagram }) {
+/**
+ * Under an MCD: its MLD and PostgreSQL script, live, in a panel that folds away;
+ * `embedded` in a drawer, always open.
+ */
+export function SqlPanel({ diagram, embedded }: { diagram: Diagram; embedded?: boolean }) {
 	const { project } = useCanvas();
 	useProjectVersion(project);
-	const [isOpen, setOpen] = useState(readOpen);
+	const [isFolded, setFolded] = useState(() => !readOpen());
+	const isOpen = embedded || !isFolded;
 	const [tab, setTab] = useState<'mld' | 'sql'>('mld');
 	const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
 	useEffect(() => {
@@ -37,7 +41,7 @@ export function SqlPanel({ diagram }: { diagram: Diagram }) {
 	const text = !isOpen ? '' : tab === 'mld' ? linesText(lines) : postgresScript(mld, diagram.name);
 
 	const toggle = () => {
-		setOpen(!isOpen);
+		setFolded(isOpen);
 		try {
 			localStorage.setItem(OPEN_KEY, String(!isOpen));
 		} catch {
@@ -46,16 +50,20 @@ export function SqlPanel({ diagram }: { diagram: Diagram }) {
 	};
 
 	return (
-		<section className={`sql-panel ${isOpen ? 'sql-panel-open' : ''}`}>
+		<section
+			className={`sql-panel ${isOpen ? 'sql-panel-open' : ''} ${embedded ? 'sql-panel-embedded' : ''}`}
+		>
 			<header className="sql-panel-bar">
-				<button
-					className="sql-panel-toggle"
-					aria-expanded={isOpen}
-					onClick={toggle}
-					title={isOpen ? strings.sql.collapse : strings.sql.expand}
-				>
-					{isOpen ? '▾' : '▸'}
-				</button>
+				{!embedded && (
+					<button
+						className="sql-panel-toggle"
+						aria-expanded={isOpen}
+						onClick={toggle}
+						title={isOpen ? strings.sql.collapse : strings.sql.expand}
+					>
+						{isOpen ? '▾' : '▸'}
+					</button>
+				)}
 				{(['mld', 'sql'] as const).map((name) => (
 					<button
 						key={name}

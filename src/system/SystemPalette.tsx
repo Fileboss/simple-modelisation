@@ -1,4 +1,5 @@
-import { endPaletteDrag, NOTE_ITEM, startPaletteDrag } from '../canvas/palette-drag';
+import { NOTE_ITEM } from '../canvas/palette-drag';
+import { PaletteItem } from '../canvas/PaletteItem';
 import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
 import { COMPONENT_TYPES, ZONE_ITEM } from './catalog';
@@ -9,37 +10,21 @@ export function SystemPalette() {
 		<aside className="palette">
 			<h2>{strings.system.palette}</h2>
 			{COMPONENT_TYPES.map((info) => (
-				<div
-					key={info.type}
-					className="palette-item"
-					draggable
-					onDragStart={(e) => startPaletteDrag(e, info.type)}
-					onDragEnd={endPaletteDrag}
-				>
+				<PaletteItem key={info.type} item={info.type}>
 					<GenericIcon type={info.type} color={info.color} />
 					{info.label}
-				</div>
+				</PaletteItem>
 			))}
-			<div
-				className="palette-item"
-				draggable
-				onDragStart={(e) => startPaletteDrag(e, ZONE_ITEM)}
-				onDragEnd={endPaletteDrag}
-			>
+			<PaletteItem item={ZONE_ITEM}>
 				<svg className="zone-icon" viewBox="0 0 24 24" aria-hidden="true">
 					<rect x="2.5" y="4.5" width="19" height="15" rx="2" />
 				</svg>
 				{strings.system.zone}
-			</div>
-			<div
-				className="palette-item"
-				draggable
-				onDragStart={(e) => startPaletteDrag(e, NOTE_ITEM)}
-				onDragEnd={endPaletteDrag}
-			>
+			</PaletteItem>
+			<PaletteItem item={NOTE_ITEM}>
 				<span className="palette-note" aria-hidden="true" />
 				{strings.note.title}
-			</div>
+			</PaletteItem>
 			<p className="palette-hint">{strings.system.paletteHint}</p>
 			<GesturesHint />
 		</aside>

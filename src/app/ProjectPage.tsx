@@ -14,6 +14,8 @@ import { allDiagramsZip, fileName } from '../system/export-all';
 import { readIncludeLegend, saveIncludeLegend } from './legend-preference';
 import { strings } from '../ui/strings';
 import { useTransientNote } from '../ui/transient-note';
+import { useSmallScreen } from '../ui/media';
+import { useMenuDismiss } from '../ui/menu';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
 import { reportPresence, usePresence } from '../presence/presence-context';
@@ -34,6 +36,7 @@ export function ProjectPage() {
 	const { status, awareness } = useSync(projectId, project, summary?.shared ?? false);
 	const registry = useRegistry();
 	const navigate = useNavigate();
+	const smallScreen = useSmallScreen();
 
 	// Stopping sharing opens the Local copy; the Shared Project is dropped once its page
 	// has closed (its document, sync and list subscriptions gone), not before.
@@ -61,28 +64,37 @@ export function ProjectPage() {
 	return (
 		<PresenceProvider awareness={awareness}>
 			<div className="project">
-				<header className="project-header">
-					<Link to="/">← {strings.project.backHome}</Link>
-					<h1>
-						{project ? (
-							<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
-						) : (
-							summary.name
+				{smallScreen && project ? (
+					<CompactHeader
+						project={project}
+						projectId={projectId}
+						status={status}
+						onCopied={openCopy}
+					/>
+				) : (
+					<header className="project-header">
+						<Link to="/">← {strings.project.backHome}</Link>
+						<h1>
+							{project ? (
+								<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
+							) : (
+								summary.name
+							)}
+						</h1>
+						<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
+						{project && <Avatars project={project} />}
+						{project && (
+							<ProjectActions
+								project={project}
+								projectId={projectId}
+								status={status}
+								onCopied={openCopy}
+							/>
 						)}
-					</h1>
-					<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
-					{project && <Avatars project={project} />}
-					{project && (
-						<ProjectActions
-							project={project}
-							projectId={projectId}
-							status={status}
-							onCopied={openCopy}
-						/>
-					)}
-				</header>
+					</header>
+				)}
 				{project ? (
-					<ProjectWorkspace project={project} />
+					<ProjectWorkspace project={project} tabs={!smallScreen} />
 				) : (
 					<main className="status">{strings.loading}</main>
 				)}
@@ -96,9 +108,170 @@ type ActionsProps = {
 	projectId: string;
 	status: SyncStatus;
 	onCopied: (copyId: string) => void;
+	/** In the ☰ menu: undo and redo stay outside it. */
+	inMenu?: boolean;
 };
 
-function ProjectActions({ project, projectId, status, onCopied }: ActionsProps) {
+/**
+ * The header on a small screen, on one line: ☰ for the Project's actions, the
+ * open Diagram as a picker, undo and redo.
+ */
+function CompactHeader(props: ActionsProps) {
+	const { project, status } = props;
+	useProjectVersion(project);
+	const menu = useRef<HTMLDetailsElement>(null);
+	useMenuDismiss(menu);
+	const [renaming, setRenaming] = useState(false);
+	return (
+		<header className="project-header compact-header">
+			<details className="header-menu" ref={menu}>
+				<summary aria-label={strings.project.menu}>☰</summary>
+				<div className="header-menu-options">
+					<Link to="/">← {strings.project.backHome}</Link>
+					<div className="header-menu-name">
+						<EditableText
+							value={project.name()}
+							onChange={(name) => project.rename(name)}
+							isEditing={renaming}
+							onEditingChange={setRenaming}
+						/>
+						{!renaming && (
+							<button onClick={() => setRenaming(true)}>{strings.project.rename}</button>
+						)}
+					</div>
+					<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
+					<ProjectActions {...props} inMenu />
+				</div>
+			</details>
+			<DiagramPicker project={project} />
+			<Avatars project={project} />
+			<button
+				className="header-icon"
+				aria-label={strings.project.undo}
+				title={strings.project.undo}
+				onClick={() => project.undo()}
+			>
+				↶
+			</button>
+			<button
+				className="header-icon"
+				aria-label={strings.project.redo}
+				title={strings.project.redo}
+				onClick={() => project.redo()}
+			>
+				↷
+			</button>
+		</header>
+	);
+}
+
+/** The open Diagram's name, opening the list of Diagrams: switch, add, rename, delete. */
+function DiagramPicker({ project }: { project: ProjectDocument }) {
+	const { diagrams, open, select, add } = useOpenDiagram(project);
+	const menu = useRef<HTMLDetailsElement>(null);
+	useMenuDismiss(menu);
+	const [renaming, setRenaming] = useState(false);
+	// Deleting asks once: the entries are close together under a finger.
+	const [confirming, setConfirming] = useState(false);
+	const close = () => {
+		menu.current?.removeAttribute('open');
+		setConfirming(false);
+	};
+
+	if (open && renaming) {
+		return (
+			<div className="diagram-picker">
+				<EditableText
+					value={open.name}
+					onChange={(name) => project.renameDiagram(open.id, name)}
+					isEditing
+					onEditingChange={setRenaming}
+				/>
+			</div>
+		);
+	}
+	return (
+		<details className="diagram-picker" ref={menu}>
+			<summary>
+				{open ? <DiagramLabel diagram={open} /> : strings.project.diagrams}
+				<span aria-hidden="true"> ▾</span>
+			</summary>
+			<div className="header-menu-options" onClick={close}>
+				{diagrams.map((d) => (
+					<button
+						key={d.id}
+						className={d.id === open?.id ? 'diagram-picker-open' : ''}
+						onClick={() => select(d.id)}
+					>
+						<DiagramLabel diagram={d} />
+					</button>
+				))}
+				<hr />
+				<button onClick={() => add('system')}>{strings.project.addSystem}</button>
+				<button onClick={() => add('mcd')}>{strings.project.addMcd}</button>
+				{open && (
+					<>
+						<hr />
+						<button onClick={() => setRenaming(true)}>{strings.project.renameDiagram}</button>
+						{confirming ? (
+							<span className="confirm-inline">
+								<span>{strings.project.confirmDeleteDiagram(open.name)}</span>
+								<button className="danger" onClick={() => project.deleteDiagram(open.id)}>
+									{strings.home.delete}
+								</button>
+								<button
+									onClick={(e) => {
+										e.stopPropagation();
+										setConfirming(false);
+									}}
+								>
+									{strings.home.cancel}
+								</button>
+							</span>
+						) : (
+							<button
+								onClick={(e) => {
+									e.stopPropagation();
+									setConfirming(true);
+								}}
+							>
+								{strings.project.deleteDiagram}
+							</button>
+						)}
+					</>
+				)}
+			</div>
+		</details>
+	);
+}
+
+function DiagramKindBadge({ kind }: { kind: DiagramKind }) {
+	return <span className={`tab-kind tab-kind-${kind}`}>{kind === 'mcd' ? 'MCD' : 'SD'}</span>;
+}
+
+function DiagramLabel({ diagram }: { diagram: Diagram }) {
+	return (
+		<span className="tab-name">
+			<DiagramKindBadge kind={diagram.kind} />
+			<span className="diagram-label-name">{diagram.name}</span>
+		</span>
+	);
+}
+
+/** The Diagram open in the page (from the URL), and the ways to change it. */
+function useOpenDiagram(project: ProjectDocument) {
+	const [searchParams, setSearchParams] = useSearchParams();
+	const diagrams = project.diagrams();
+	const open = diagrams.find((d) => d.id === searchParams.get('d')) ?? diagrams[0];
+	const select = (id: string) => setSearchParams({ d: id }, { replace: true });
+	const add = (kind: DiagramKind) => {
+		project.stopCapturing();
+		select(project.addDiagram(kind));
+	};
+	return { diagrams, open, select, add };
+}
+
+function ProjectActions({ project, projectId, status, onCopied, inMenu }: ActionsProps) {
 	useUndoShortcuts(project);
 	const registry = useRegistry();
 	const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle');
@@ -136,8 +309,8 @@ function ProjectActions({ project, projectId, status, onCopied }: ActionsProps) 
 			{status !== 'local' && (
 				<StopSharing project={project} projectId={projectId} onCopied={onCopied} />
 			)}
-			<button onClick={() => project.undo()}>{strings.project.undo}</button>
-			<button onClick={() => project.redo()}>{strings.project.redo}</button>
+			{!inMenu && <button onClick={() => project.undo()}>{strings.project.undo}</button>}
+			{!inMenu && <button onClick={() => project.redo()}>{strings.project.redo}</button>}
 			<ExportMenu project={project} />
 		</div>
 	);
@@ -202,20 +375,7 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 	};
 
 	// Closes on a click elsewhere or on Escape, like a menu.
-	useEffect(() => {
-		const close = (e: Event) => {
-			const details = menu.current;
-			if (!details?.open) return;
-			if (e instanceof KeyboardEvent ? e.key === 'Escape' : !details.contains(e.target as Node))
-				details.open = false;
-		};
-		document.addEventListener('pointerdown', close);
-		document.addEventListener('keydown', close);
-		return () => {
-			document.removeEventListener('pointerdown', close);
-			document.removeEventListener('keydown', close);
-		};
-	}, []);
+	useMenuDismiss(menu);
 	const exportAll = async () => {
 		try {
 			const result = await allDiagramsZip(project, { legend });
@@ -275,12 +435,10 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 	);
 }
 
-function ProjectWorkspace({ project }: { project: ProjectDocument }) {
+/** The open Diagram, under its tabs (`tabs`; on a small screen the header picks it). */
+function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: boolean }) {
 	useProjectVersion(project);
-	const [searchParams, setSearchParams] = useSearchParams();
-	const diagrams = project.diagrams();
-	const open = diagrams.find((d) => d.id === searchParams.get('d')) ?? diagrams[0];
-	const select = (id: string) => setSearchParams({ d: id }, { replace: true });
+	const { diagrams, open, select, add } = useOpenDiagram(project);
 
 	// Others see which Diagram this Participant is on; the canvas reports its own cursor and selection.
 	const { awareness } = usePresence();
@@ -289,27 +447,24 @@ function ProjectWorkspace({ project }: { project: ProjectDocument }) {
 		reportPresence(awareness, { diagramId: openId });
 	}, [awareness, openId]);
 
-	const add = (kind: DiagramKind) => {
-		project.stopCapturing();
-		select(project.addDiagram(kind));
-	};
-
 	return (
 		<>
-			<nav className="tabs">
-				{diagrams.map((d) => (
-					<DiagramTab
-						key={d.id}
-						diagram={d}
-						isOpen={d.id === open?.id}
-						onSelect={() => select(d.id)}
-						onRename={(name) => project.renameDiagram(d.id, name)}
-						onDelete={() => project.deleteDiagram(d.id)}
-					/>
-				))}
-				<button onClick={() => add('system')}>{strings.project.addSystem}</button>
-				<button onClick={() => add('mcd')}>{strings.project.addMcd}</button>
-			</nav>
+			{tabs && (
+				<nav className="tabs">
+					{diagrams.map((d) => (
+						<DiagramTab
+							key={d.id}
+							diagram={d}
+							isOpen={d.id === open?.id}
+							onSelect={() => select(d.id)}
+							onRename={(name) => project.renameDiagram(d.id, name)}
+							onDelete={() => project.deleteDiagram(d.id)}
+						/>
+					))}
+					<button onClick={() => add('system')}>{strings.project.addSystem}</button>
+					<button onClick={() => add('mcd')}>{strings.project.addMcd}</button>
+				</nav>
+			)}
 			<main className="canvas">
 				{open ? (
 					<DiagramCanvas key={open.id} project={project} diagram={open} kind={KINDS[open.kind]} />
@@ -333,9 +488,7 @@ function DiagramTab({ diagram, isOpen, onSelect, onRename, onDelete }: TabProps)
 	return (
 		<div className={`tab ${isOpen ? 'tab-open' : ''}`}>
 			<div className="tab-name" role="button" tabIndex={0} onClick={onSelect}>
-				<span className={`tab-kind tab-kind-${diagram.kind}`}>
-					{diagram.kind === 'mcd' ? 'MCD' : 'SD'}
-				</span>
+				<DiagramKindBadge kind={diagram.kind} />
 				<EditableText value={diagram.name} onChange={onRename} />
 			</div>
 			{isOpen && (

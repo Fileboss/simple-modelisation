@@ -26,6 +26,11 @@ export const strings = {
 		addSystem: '+ System design',
 		addMcd: '+ MCD',
 		deleteDiagram: 'Delete diagram',
+		renameDiagram: 'Rename diagram',
+		confirmDeleteDiagram: (name: string) => `Delete ${name}?`,
+		diagrams: 'Diagrams',
+		menu: 'Menu',
+		rename: 'Rename',
 		export: 'Export',
 		exportProject: 'Project (JSON)',
 		exportImage: { png: 'Diagram as PNG', svg: 'Diagram as SVG' },
@@ -54,7 +59,22 @@ export const strings = {
 			'Stop sharing on this device? You keep a local copy; others keep the shared Project.',
 		stopSharingFailed: 'Could not make the local copy'
 	},
+	menu: {
+		properties: 'Properties',
+		duplicate: 'Duplicate',
+		copy: 'Copy',
+		cut: 'Cut',
+		delete: 'Delete',
+		paste: 'Paste here',
+		selectAll: 'Select all'
+	},
+	drawer: {
+		palette: 'Add',
+		panel: 'Properties',
+		close: 'Close'
+	},
 	sql: {
+		title: 'SQL',
 		tabs: { mld: 'MLD', sql: 'PostgreSQL' },
 		expand: 'Show the MLD and SQL',
 		collapse: 'Hide the MLD and SQL',
@@ -151,6 +171,10 @@ export const strings = {
 	},
 	canvas: {
 		tidyUp: 'Tidy up: arrange along the links',
+		touchGestures:
+			'Tap an item, then tap the canvas to place it. One finger pans, two fingers zoom. Drag from a dot to connect; press and hold an element for its actions.',
+		tapToPlace: (label: string) => `Tap the canvas to place: ${label}`,
+		cancel: 'Cancel',
 		gestures:
 			'Drag on the background to select, Shift+click to add, Cmd/Ctrl+A for all, Escape for none, Delete to remove; Cmd/Ctrl+C, X, V copy, cut and paste, Cmd/Ctrl+D duplicates. Pan with two fingers, a right-drag or Space+drag. Hold Alt while moving to place freely.'
 	},

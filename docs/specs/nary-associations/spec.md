@@ -2,7 +2,7 @@
 title: nary-associations - Associations between three Entities or more
 tags: [spec]
 date: 2026-11-20
-status: draft
+status: done
 ---
 
 # nary-associations

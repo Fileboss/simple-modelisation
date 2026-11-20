@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import { useSyncExternalStore, type DragEvent } from 'react';
 
 /** What both palettes drag to write a Note. */
 export const NOTE_ITEM = 'note';
@@ -33,3 +33,31 @@ export const draggedPaletteItem = () => paletteItem;
 export function endPaletteDrag() {
 	paletteItem = null;
 }
+
+/** A palette item tapped on a touch screen, for the Diagram whose palette it is in. */
+export type ArmedItem = { item: string; diagramId: string };
+
+// The next tap on that Diagram's canvas places it; another Diagram ignores it.
+let armedItem: ArmedItem | null = null;
+const armListeners = new Set<() => void>();
+
+/** Arms a palette item, or disarms with null. */
+export function armPaletteItem(armed: ArmedItem | null) {
+	if (armed?.item === armedItem?.item && armed?.diagramId === armedItem?.diagramId) return;
+	armedItem = armed;
+	armListeners.forEach((listener) => listener());
+}
+
+/** The armed palette item, if any. */
+export const armedPaletteItem = () => armedItem;
+
+/** Calls `listener` whenever the armed item changes; returns the unsubscribe. */
+export function onArmedChange(listener: () => void) {
+	armListeners.add(listener);
+	return () => {
+		armListeners.delete(listener);
+	};
+}
+
+/** The armed palette item, following its changes. */
+export const useArmedItem = () => useSyncExternalStore(onArmedChange, armedPaletteItem, () => null);
