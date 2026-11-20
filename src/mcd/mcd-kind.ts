@@ -11,25 +11,42 @@ import { McdPanel } from './McdPanel';
 import { umlLayout, useNotation } from './notation';
 import { withCifConstraints, withCifLinks } from './cif';
 import { CifLinkEdge, CifNode } from './CifNode';
+import { withGeneralizations, withInheritanceLines } from './inheritance';
+import { GeneralizationEdge, InheritanceNode, IsaEdge } from './InheritanceNode';
 import type { Layout } from '../canvas/layout';
 import { SqlPanel } from './SqlPanel';
 import { AssociationNode, EntityNode } from './McdNodes';
 
+/** Applies layouts one after the other. */
+const chain =
+	(...layouts: Layout[]): Layout =>
+	(nodes, edges) =>
+		layouts.reduce((laid, layout) => layout(laid.nodes, laid.edges), { nodes, edges });
+
+const meriseLayout = chain(withCifLinks, withInheritanceLines);
 // CIFs as constraint text under the diamond, once umlLayout has marked N-ary Associations.
-const umlCifLayout: Layout = (nodes, edges) => {
-	const laid = umlLayout(nodes, edges);
-	return withCifConstraints(laid.nodes, laid.edges);
-};
+const umlMcdLayout = chain(umlLayout, withCifConstraints, withGeneralizations);
 
 export const mcdKind: CanvasKind = {
-	nodeTypes: { entity: EntityNode, association: AssociationNode, note: NoteNode, cif: CifNode },
-	edgeTypes: { leg: LegEdge, cifLink: CifLinkEdge },
+	nodeTypes: {
+		entity: EntityNode,
+		association: AssociationNode,
+		note: NoteNode,
+		cif: CifNode,
+		inheritance: InheritanceNode
+	},
+	edgeTypes: {
+		leg: LegEdge,
+		cifLink: CifLinkEdge,
+		isa: IsaEdge,
+		generalization: GeneralizationEdge
+	},
 	Palette: McdPalette,
 	Panel: McdPanel,
 	Footer: SqlPanel,
 	useLayout: function useMcdLayout() {
 		const { diagramId } = useCanvas();
-		return useNotation(diagramId) === 'uml' ? umlCifLayout : withCifLinks;
+		return useNotation(diagramId) === 'uml' ? umlMcdLayout : meriseLayout;
 	},
 	drop: (project, diagramId, item, x, y) => {
 		if (item === NOTE_ITEM) return project.addNote(diagramId, x, y);

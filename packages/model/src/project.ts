@@ -189,6 +189,32 @@ export const CIF_OFFSET = { x: 20, y: -70 };
 /** A CIF's circle. */
 export const CIF_SIZE = { width: 44, height: 44 };
 
+export const INHERITANCE_CONSTRAINTS = ['none', 'X', 'T', 'XT'] as const;
+/** X: a parent is at most one child; T: at least one; XT: exactly one. */
+export type InheritanceConstraint = (typeof INHERITANCE_CONSTRAINTS)[number];
+export const INHERITANCE_TRANSLATIONS = ['reference', 'down', 'up'] as const;
+/** How the MLD translates an Inheritance: child tables referencing the parent's, or one side's table only. */
+export type InheritanceTranslation = (typeof INHERITANCE_TRANSLATIONS)[number];
+
+/**
+ * A parent Entity specialised by child Entities (its `isa` edges). Constraint
+ * and translation absent mean none and by reference.
+ */
+export type InheritanceNode = DiagramNode & {
+	type: 'inheritance';
+	parent: string;
+	constraint?: Exclude<InheritanceConstraint, 'none'>;
+	translation?: Exclude<InheritanceTranslation, 'reference'>;
+};
+
+/** Joins an Inheritance (source) to one of its child Entities (target). */
+export type IsaEdge = DiagramEdge & { type: 'isa' };
+
+/** Where a new Inheritance sits from its parent's corner. */
+export const INHERITANCE_OFFSET = { x: 0, y: 120 };
+/** An Inheritance's triangle. */
+export const INHERITANCE_SIZE = { width: 56, height: 40 };
+
 /** A Leg's part in a CIF. */
 export type CifRole = 'determinant' | 'determined' | 'none';
 
@@ -421,8 +447,8 @@ export class ProjectDocument {
 	/**
 	 * Deletes nodes and edges. The edges of a deleted node go with it, an
 	 * Association left with fewer than two Legs is deleted with its last Leg,
-	 * and a CIF goes with its Association, its determined Leg or its last
-	 * determinant.
+	 * a CIF goes with its Association, its determined Leg or its last
+	 * determinant, and an Inheritance with its parent or its last child.
 	 */
 	deleteElements(diagramId: string, nodeIds: string[], edgeIds: string[]): void {
 		const nodes = this.nodeMap(diagramId);
@@ -443,6 +469,7 @@ export class ProjectDocument {
 					nodes.delete(id);
 				}
 			}
+			this.pruneInheritances(diagramId);
 			for (const [id, node] of nodes) {
 				if (node.get('type') !== 'cif') continue;
 				// Whatever a peer wrote: a list that is not one counts as empty.
@@ -602,8 +629,9 @@ export class ProjectDocument {
 		const fresh = new Map(nodes.map((n) => [n.id, crypto.randomUUID()]));
 		const freshEdges = new Map(edges.map((e) => [e.id, crypto.randomUUID()]));
 		const shift = (p: Point) => ({ x: Math.round(p.x + dx), y: Math.round(p.y + dy) });
-		// A CIF names its Association and Legs: the pasted ones.
+		// A CIF names its Association and Legs, an Inheritance its parent: the pasted ones.
 		const relinked = (node: DiagramNode): DiagramNode => {
+			if (node.type === 'inheritance') return { ...node, parent: fresh.get(String(node.parent))! };
 			if (node.type !== 'cif') return node;
 			const cif = node as CifNode;
 			return {
@@ -839,6 +867,140 @@ export class ProjectDocument {
 			else if (determined === legId) return;
 			cif.set('determinants', determinants);
 		});
+	}
+
+	/** The parent of an Entity, through the Inheritance it is a child of; null when it has none. */
+	parentOf(diagramId: string, entityId: string): string | null {
+		const nodes = this.nodeMap(diagramId);
+		for (const edge of this.edgeMap(diagramId).values()) {
+			if (edge.get('type') !== 'isa' || edge.get('target') !== entityId) continue;
+			const parent = nodes.get(edge.get('source') as string)?.get('parent');
+			if (isString(parent)) return parent;
+		}
+		return null;
+	}
+
+	/**
+	 * The Entity itself and all its descendants: the parents it cannot take
+	 * without a cycle. One pass over the edges.
+	 */
+	selfAndDescendants(diagramId: string, entityId: string): Set<string> {
+		const nodes = this.nodeMap(diagramId);
+		const childrenOf = new Map<string, string[]>();
+		for (const edge of this.edgeMap(diagramId).values()) {
+			if (edge.get('type') !== 'isa') continue;
+			const parent = nodes.get(edge.get('source') as string)?.get('parent');
+			if (!isString(parent)) continue;
+			childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), edge.get('target') as string]);
+		}
+		const found = new Set([entityId]);
+		for (const id of found) for (const child of childrenOf.get(id) ?? []) found.add(child);
+		return found;
+	}
+
+	/**
+	 * Makes `childId` a child of `parentId` (null: of none), under the parent's
+	 * Inheritance, made under the parent when it has none. An Inheritance left
+	 * without children is deleted. A parent that is the child or one of its
+	 * descendants is refused.
+	 */
+	setParent(diagramId: string, childId: string, parentId: string | null): void {
+		const nodes = this.nodeMap(diagramId);
+		const edges = this.edgeMap(diagramId);
+		if (nodes.get(childId)?.get('type') !== 'entity') throw new Error('Only an Entity inherits');
+		if (parentId !== null) {
+			if (nodes.get(parentId)?.get('type') !== 'entity')
+				throw new Error('Only an Entity is a parent');
+			if (this.selfAndDescendants(diagramId, childId).has(parentId)) {
+				throw new Error('An Entity cannot inherit from itself or a descendant');
+			}
+		}
+		this.doc.transact(() => {
+			for (const [id, edge] of edges) {
+				if (edge.get('type') === 'isa' && edge.get('target') === childId) edges.delete(id);
+			}
+			if (parentId !== null) {
+				// The parent's first Inheritance by id, as the MLD reads it, should peers have made two.
+				let inheritance = [...nodes.values()]
+					.filter((n) => n.get('type') === 'inheritance' && n.get('parent') === parentId)
+					.sort((a, b) => String(a.get('id')).localeCompare(String(b.get('id'))))[0];
+				if (!inheritance) {
+					const parent = nodes.get(parentId)!;
+					const made: InheritanceNode = {
+						id: crypto.randomUUID(),
+						type: 'inheritance',
+						x: (parent.get('x') as number) + INHERITANCE_OFFSET.x,
+						y: (parent.get('y') as number) + INHERITANCE_OFFSET.y,
+						parent: parentId
+					};
+					this.insertNode(diagramId, made);
+					inheritance = nodes.get(made.id)!;
+				}
+				const isa: IsaEdge = {
+					id: crypto.randomUUID(),
+					type: 'isa',
+					source: inheritance.get('id') as string,
+					target: childId
+				};
+				this.insertEdge(diagramId, isa);
+			}
+			this.pruneInheritances(diagramId);
+		});
+	}
+
+	setInheritanceConstraint(
+		diagramId: string,
+		inheritanceId: string,
+		constraint: InheritanceConstraint
+	): void {
+		const node = this.nodeMap(diagramId).get(inheritanceId);
+		if (node?.get('type') !== 'inheritance' || !INHERITANCE_CONSTRAINTS.includes(constraint))
+			return;
+		if (constraint === 'none') node.delete('constraint');
+		else node.set('constraint', constraint);
+	}
+
+	setInheritanceTranslation(
+		diagramId: string,
+		inheritanceId: string,
+		translation: InheritanceTranslation
+	): void {
+		const node = this.nodeMap(diagramId).get(inheritanceId);
+		if (node?.get('type') !== 'inheritance' || !INHERITANCE_TRANSLATIONS.includes(translation)) {
+			return;
+		}
+		if (translation === 'reference') node.delete('translation');
+		else node.set('translation', translation);
+	}
+
+	/**
+	 * Merges the Inheritances two peers made for one parent into its first by
+	 * id, then deletes those without parent or without children, with their edges.
+	 */
+	private pruneInheritances(diagramId: string): void {
+		const nodes = this.nodeMap(diagramId);
+		const edges = this.edgeMap(diagramId);
+		const first = new Map<string, string>();
+		const byId = [...nodes.entries()]
+			.filter(([, n]) => n.get('type') === 'inheritance')
+			.sort(([a], [b]) => a.localeCompare(b));
+		for (const [id, node] of byId) {
+			const parent = String(node.get('parent'));
+			const kept = first.get(parent);
+			if (!kept) {
+				first.set(parent, id);
+				continue;
+			}
+			for (const edge of edges.values()) if (edge.get('source') === id) edge.set('source', kept);
+		}
+		for (const [id, node] of nodes) {
+			if (node.get('type') !== 'inheritance') continue;
+			const children = [...edges.values()].filter((e) => e.get('source') === id);
+			if (!nodes.has(node.get('parent') as string) || children.length === 0) {
+				for (const child of children) edges.delete(child.get('id') as string);
+				nodes.delete(id);
+			}
+		}
 	}
 
 	setCardinality(diagramId: string, legId: string, cardinality: Cardinality): void {
@@ -1103,7 +1265,10 @@ const NODE_CHOICES: [string, readonly string[]][] = [
 	['provider', PROVIDERS],
 	['diskKind', DISK_KINDS],
 	['runtime', RUNTIMES],
-	['color', NOTE_COLORS]
+	['color', NOTE_COLORS],
+	// Stored only when not the default (none, by reference).
+	['constraint', INHERITANCE_CONSTRAINTS.filter((c) => c !== 'none')],
+	['translation', INHERITANCE_TRANSLATIONS.filter((t) => t !== 'reference')]
 ];
 
 /**
@@ -1172,6 +1337,22 @@ export function pasteable(
 		nodes = nodes.filter((n) => !lonely.has(n.id));
 		edges = edges.filter((e) => !lonely.has(e.source));
 	}
+	// An Inheritance comes only with its parent and at least one child.
+	const present = new Set(nodes.map((n) => n.id));
+	const orphans = new Set(
+		nodes
+			.filter(
+				(n) =>
+					n.type === 'inheritance' &&
+					(!present.has(String(n.parent)) ||
+						!edges.some((e) => e.type === 'isa' && e.source === n.id))
+			)
+			.map((n) => n.id)
+	);
+	if (orphans.size > 0) {
+		nodes = nodes.filter((n) => !orphans.has(n.id));
+		edges = edges.filter((e) => !orphans.has(e.source));
+	}
 	// A CIF comes only with its Association and the Legs it names.
 	const kept = new Set(nodes.map((n) => n.id));
 	const legIds = new Set(edges.map((e) => e.id));
@@ -1206,11 +1387,13 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	note: ['x', 'y', 'text', 'color'],
 	entity: ['x', 'y', 'name', 'attributes'],
 	association: ['x', 'y', 'name', 'attributes'],
-	cif: ['x', 'y', 'association', 'determinants', 'determined']
+	cif: ['x', 'y', 'association', 'determinants', 'determined'],
+	inheritance: ['x', 'y', 'parent', 'constraint', 'translation']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
 	connection: ['source', 'target', 'label', 'flow', 'points'],
-	leg: ['source', 'target', 'cardinality', 'points']
+	leg: ['source', 'target', 'cardinality', 'points'],
+	isa: ['source', 'target', 'points']
 };
 
 /** An element with only its type's known fields (those it has). */
@@ -1279,6 +1462,17 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 	if (!node || !isString(node.id) || !isNumber(node.x) || !isNumber(node.y)) return false;
 	// A Note, in either kind, has text (maybe empty) rather than a name.
 	if (node.type === 'note') return isString(node.text);
+	// An Inheritance has its parent Entity instead.
+	if (node.type === 'inheritance') {
+		return (
+			kind === 'mcd' &&
+			isString(node.parent) &&
+			(node.constraint === undefined ||
+				INHERITANCE_CONSTRAINTS.includes(node.constraint as InheritanceConstraint)) &&
+			(node.translation === undefined ||
+				INHERITANCE_TRANSLATIONS.includes(node.translation as InheritanceTranslation))
+		);
+	}
 	// A CIF has its Association and Legs instead.
 	if (node.type === 'cif') {
 		const determinants = node.determinants as unknown;
@@ -1341,6 +1535,9 @@ function isValidEdge(
 			nodeTypes.get(edge.source) === 'component' &&
 			nodeTypes.get(edge.target) === 'component'
 		);
+	}
+	if (edge.type === 'isa') {
+		return nodeTypes.get(edge.source) === 'inheritance' && nodeTypes.get(edge.target) === 'entity';
 	}
 	return (
 		edge.type === 'leg' &&

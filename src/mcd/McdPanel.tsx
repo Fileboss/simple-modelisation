@@ -7,6 +7,11 @@ import {
 	type Cardinality,
 	type CifNode,
 	type CifRole,
+	INHERITANCE_CONSTRAINTS,
+	INHERITANCE_TRANSLATIONS,
+	type InheritanceConstraint,
+	type InheritanceNode,
+	type InheritanceTranslation,
 	type EntityNode,
 	type LegEdge
 } from '@simple-modelisation/model/project.ts';
@@ -37,6 +42,7 @@ export function McdPanel({ selection }: { selection: Selection }) {
 					onChange={(name) => project.renameNode(diagramId, element.id, name)}
 				/>
 				<AttributesEditor element={element} />
+				{isEntity && <ParentPicker entityId={element.id} />}
 				{isEntity ? (
 					<button
 						className="panel-action"
@@ -58,6 +64,8 @@ export function McdPanel({ selection }: { selection: Selection }) {
 	}
 
 	if (node?.type === 'cif') return <CifEditor cif={node as CifNode} />;
+	if (node?.type === 'inheritance')
+		return <InheritanceEditor inheritance={node as InheritanceNode} />;
 
 	if (selection.edge?.type === 'leg') {
 		const leg = selection.edge as LegEdge;
@@ -216,6 +224,98 @@ function DataTypeField({ type, onChange }: { type: DataType; onChange: (type: Da
 				</>
 			)}
 		</span>
+	);
+}
+
+/** An Entity's parent: any other Entity but its own descendants. */
+function ParentPicker({ entityId }: { entityId: string }) {
+	const { project, diagramId } = useCanvas();
+	const entities = project.nodes(diagramId).filter((n) => n.type === 'entity');
+	const excluded = project.selfAndDescendants(diagramId, entityId);
+	return (
+		<label className="panel-field">
+			{strings.mcd.inheritsFrom}
+			<select
+				value={project.parentOf(diagramId, entityId) ?? ''}
+				onChange={(e) => {
+					project.stopCapturing();
+					try {
+						project.setParent(diagramId, entityId, e.currentTarget.value || null);
+					} catch (error) {
+						// A peer made it a descendant meanwhile: the list redraws without it.
+						console.warn('Parent refused', error);
+					}
+				}}
+			>
+				<option value="">{strings.mcd.noParent}</option>
+				{entities
+					.filter((e) => !excluded.has(e.id))
+					.map((e) => (
+						<option key={e.id} value={e.id}>
+							{String(e.name)}
+						</option>
+					))}
+			</select>
+		</label>
+	);
+}
+
+/** An Inheritance: its children, its constraint and its MLD translation. */
+function InheritanceEditor({ inheritance }: { inheritance: InheritanceNode }) {
+	const { project, diagramId } = useCanvas();
+	const names = new Map(project.nodes(diagramId).map((n) => [n.id, String(n.name ?? '')]));
+	const children = project
+		.edges(diagramId)
+		.filter((e) => e.type === 'isa' && e.source === inheritance.id)
+		.map((e) => names.get(e.target));
+	return (
+		<>
+			<h2>{strings.mcd.inheritance}</h2>
+			<p className="panel-hint">{strings.mcd.inheritanceHint}</p>
+			<p className="panel-field">
+				{names.get(inheritance.parent)} → {children.join(', ')}
+			</p>
+			<label className="panel-field">
+				{strings.mcd.constraint}
+				<select
+					value={inheritance.constraint ?? 'none'}
+					onChange={(e) => {
+						project.stopCapturing();
+						project.setInheritanceConstraint(
+							diagramId,
+							inheritance.id,
+							e.currentTarget.value as InheritanceConstraint
+						);
+					}}
+				>
+					{INHERITANCE_CONSTRAINTS.map((c) => (
+						<option key={c} value={c}>
+							{strings.mcd.constraints[c]}
+						</option>
+					))}
+				</select>
+			</label>
+			<label className="panel-field">
+				{strings.mcd.translation}
+				<select
+					value={inheritance.translation ?? 'reference'}
+					onChange={(e) => {
+						project.stopCapturing();
+						project.setInheritanceTranslation(
+							diagramId,
+							inheritance.id,
+							e.currentTarget.value as InheritanceTranslation
+						);
+					}}
+				>
+					{INHERITANCE_TRANSLATIONS.map((t) => (
+						<option key={t} value={t}>
+							{strings.mcd.translations[t]}
+						</option>
+					))}
+				</select>
+			</label>
+		</>
 	);
 }
 

@@ -88,6 +88,8 @@ describe('MCP endpoint', () => {
 			'set_connection',
 			'set_disk_kind',
 			'set_hosting',
+			'set_inheritance',
+			'set_inheritance_options',
 			'set_note',
 			'set_provider',
 			'set_runtime',
@@ -853,6 +855,44 @@ describe('MCP endpoint', () => {
 				})
 			).error
 		).toBe('"Room" is not linked by this Association.');
+	});
+
+	it('makes Inheritances and sets their constraint and translation', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Person', 'Student', 'Teacher']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'set_inheritance', { ...at, entity: 'Student', parent: 'Person' });
+		await call(client, 'set_inheritance', { ...at, entity: 'Teacher', parent: 'Person' });
+		await call(client, 'set_inheritance_options', {
+			...at,
+			parent: 'Person',
+			constraint: 'XT',
+			translation: 'up'
+		});
+		const { inheritances } = await call(client, 'get_diagram', at);
+		expect(inheritances).toEqual([
+			{
+				id: expect.any(String),
+				parent: 'Person',
+				children: ['Student', 'Teacher'],
+				constraint: 'XT',
+				translation: 'up'
+			}
+		]);
+		await call(client, 'set_inheritance', { ...at, entity: 'Teacher', parent: null });
+		expect((await call(client, 'get_diagram', at)).inheritances[0].children).toEqual(['Student']);
+		expect(
+			(await call(client, 'set_inheritance', { ...at, entity: 'Person', parent: 'Student' })).error
+		).toBe('An Entity cannot inherit from itself or a descendant.');
+		expect(
+			(await call(client, 'set_inheritance_options', { ...at, parent: 'Teacher', constraint: 'X' }))
+				.error
+		).toBe('"Teacher" has no child Entities.');
+		expect((await call(client, 'set_inheritance_options', { ...at, parent: 'Person' })).error).toBe(
+			'Give a constraint, a translation or both.'
+		);
 	});
 
 	it('explains ambiguous names, unknown names and wrong links', async () => {

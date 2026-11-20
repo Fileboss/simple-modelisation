@@ -6,6 +6,8 @@ import {
 	DISK_KINDS,
 	FLOWS,
 	HOSTINGS,
+	INHERITANCE_CONSTRAINTS,
+	INHERITANCE_TRANSLATIONS,
 	NOTE_COLORS,
 	PROVIDERS,
 	RUNTIMES,
@@ -855,6 +857,56 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					}
 				}
 				return { id };
+			})
+	);
+
+	tool(
+		'set_inheritance',
+		'Makes an Entity a child of a parent Entity (null: of none), sharing its Attributes and Identifier; one parent per Entity, no cycles.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			entity: z.string().describe('Child Entity id or exact name.'),
+			parent: z.string().nullable().describe('Parent Entity id or exact name, or null.')
+		},
+		({ project, diagram, entity, parent }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const entities = nodesOf(p, d.id, 'entity');
+				const child = pick(entities, entity, 'entity');
+				const to = parent === null ? null : pick(entities, parent, 'entity');
+				if (to && p.selfAndDescendants(d.id, child.id).has(to.id)) {
+					throw new ToolError('An Entity cannot inherit from itself or a descendant.');
+				}
+				p.setParent(d.id, child.id, to?.id ?? null);
+				return { ok: true };
+			})
+	);
+
+	tool(
+		'set_inheritance_options',
+		"Sets the Inheritance under a parent Entity: its constraint (none, X exclusion, T totality, XT partition) and how the MLD translates it (reference: child tables referencing the parent's; down: no parent table; up: one parent table with a type column).",
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			parent: z.string().describe('Parent Entity id or exact name.'),
+			constraint: z.enum(INHERITANCE_CONSTRAINTS).optional(),
+			translation: z.enum(INHERITANCE_TRANSLATIONS).optional()
+		},
+		({ project, diagram, parent, constraint, translation }) =>
+			access.write(project, (p) => {
+				if (!constraint && !translation)
+					throw new ToolError('Give a constraint, a translation or both.');
+				const d = pickDiagram(p, diagram, 'mcd');
+				const entity = pick(nodesOf(p, d.id, 'entity'), parent, 'entity');
+				// The first by id, as the MLD reads it, should peers have made two.
+				const inheritance = nodesOf(p, d.id, 'inheritance')
+					.filter((n) => n.parent === entity.id)
+					.sort((a, b) => a.id.localeCompare(b.id))[0];
+				if (!inheritance) throw new ToolError(`"${entity.name}" has no child Entities.`);
+				if (constraint) p.setInheritanceConstraint(d.id, inheritance.id, constraint);
+				if (translation) p.setInheritanceTranslation(d.id, inheritance.id, translation);
+				return { id: inheritance.id };
 			})
 	);
 

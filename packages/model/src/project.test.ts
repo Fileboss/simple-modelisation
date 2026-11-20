@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import type { DataType } from './data-types.ts';
 import { estimatedSize } from './layout.ts';
-import { ProjectDocument, type Attribute, type Cardinality, type CifNode } from './project.ts';
+import {
+	ProjectDocument,
+	type Attribute,
+	type Cardinality,
+	type CifNode,
+	type InheritanceNode
+} from './project.ts';
 import { effectiveProviders, zoneParents } from './zones.ts';
 import { systemSvg } from './svg/system.ts';
 import { ENGLISH_NAMES } from './names.ts';
@@ -276,6 +282,123 @@ describe('MCD', () => {
 				type: 'cif',
 				association: lists
 			});
+		});
+	});
+
+	describe('Inheritance', () => {
+		const people = () => {
+			const project = new ProjectDocument();
+			const diagram = project.addDiagram('mcd');
+			const person = project.addEntity(diagram, 300, 0, 'Person');
+			const student = project.addEntity(diagram, 0, 400, 'Student');
+			const teacher = project.addEntity(diagram, 600, 400, 'Teacher');
+			const nodes = () => project.nodes(diagram);
+			const inheritances = () =>
+				nodes().filter((n): n is InheritanceNode => n.type === 'inheritance');
+			const childrenOf = (id: string) =>
+				project
+					.edges(diagram)
+					.filter((e) => e.type === 'isa' && e.source === id)
+					.map((e) => e.target);
+			return { project, diagram, person, student, teacher, inheritances, childrenOf };
+		};
+
+		it('makes one Inheritance under the parent, shared by its children', () => {
+			const { project, diagram, person, student, teacher, inheritances, childrenOf } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, teacher, person);
+			const [inheritance] = inheritances();
+			expect(inheritances()).toHaveLength(1);
+			expect(inheritance).toMatchObject({ parent: person, x: 300, y: 120 });
+			expect(childrenOf(inheritance.id)).toEqual([student, teacher]);
+			expect(project.parentOf(diagram, teacher)).toBe(person);
+		});
+
+		it('moves a child to another parent and deletes an Inheritance left empty', () => {
+			const { project, diagram, person, student, teacher, inheritances } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, student, teacher);
+			expect(inheritances().map((i) => i.parent)).toEqual([teacher]);
+			project.setParent(diagram, student, null);
+			expect(inheritances()).toEqual([]);
+		});
+
+		it('refuses a parent that is the Entity itself or one of its descendants', () => {
+			const { project, diagram, person, student, teacher } = people();
+			project.setParent(diagram, student, person);
+			project.setParent(diagram, teacher, student);
+			expect(() => project.setParent(diagram, person, teacher)).toThrow();
+			expect(() => project.setParent(diagram, person, person)).toThrow();
+		});
+
+		it('merges two Inheritances that peers made for one parent at once', () => {
+			const { project, diagram, person, student, teacher, inheritances, childrenOf } = people();
+			// A peer starts from the same document, and each side gives Person a child.
+			const peer = new ProjectDocument();
+			Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(project.doc));
+			project.setParent(diagram, student, person);
+			peer.setParent(diagram, teacher, person);
+			Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(peer.doc));
+			expect(inheritances()).toHaveLength(2);
+			// The next change merges them into the first by id.
+			project.setInheritanceConstraint(diagram, inheritances()[0].id, 'X');
+			project.setParent(diagram, student, person);
+			expect(inheritances()).toHaveLength(1);
+			expect(childrenOf(inheritances()[0].id).sort()).toEqual([student, teacher].sort());
+		});
+
+		it('sets the constraint and the translation, unknown values ignored', () => {
+			const { project, diagram, person, student, inheritances } = people();
+			project.setParent(diagram, student, person);
+			const id = inheritances()[0].id;
+			project.setInheritanceConstraint(diagram, id, 'XT');
+			project.setInheritanceTranslation(diagram, id, 'up');
+			project.setInheritanceConstraint(diagram, id, 'Q' as never);
+			expect(inheritances()[0]).toMatchObject({ constraint: 'XT', translation: 'up' });
+			project.setInheritanceConstraint(diagram, id, 'none');
+			project.setInheritanceTranslation(diagram, id, 'reference');
+			expect(inheritances()[0].constraint).toBeUndefined();
+			expect(inheritances()[0].translation).toBeUndefined();
+		});
+
+		it('goes with its parent or its last child, and frees its children when deleted', () => {
+			const a = people();
+			a.project.setParent(a.diagram, a.student, a.person);
+			a.project.deleteElements(a.diagram, [a.person], []);
+			expect(a.inheritances()).toEqual([]);
+
+			const b = people();
+			b.project.setParent(b.diagram, b.student, b.person);
+			b.project.deleteElements(b.diagram, [b.student], []);
+			expect(b.inheritances()).toEqual([]);
+
+			const c = people();
+			c.project.setParent(c.diagram, c.student, c.person);
+			c.project.deleteElements(c.diagram, [c.inheritances()[0].id], []);
+			expect(c.project.parentOf(c.diagram, c.student)).toBeNull();
+			expect(c.project.edges(c.diagram)).toEqual([]);
+		});
+
+		it('keeps an Inheritance through a file round trip and a paste', () => {
+			const { project, diagram, person, student, inheritances } = people();
+			project.setParent(diagram, student, person);
+			const copy = ProjectDocument.fromFile(project.toFile());
+			expect(copy.parentOf(copy.diagrams()[0].id, student)).toBe(person);
+
+			const pasted = project.paste(
+				diagram,
+				{ nodes: project.nodes(diagram), edges: project.edges(diagram) },
+				0,
+				600
+			);
+			expect(inheritances()).toHaveLength(2);
+			const pastedStudent = pasted.find(
+				(id) => project.nodes(diagram).find((n) => n.id === id)?.name === 'Student'
+			)!;
+			const pastedPerson = pasted.find(
+				(id) => project.nodes(diagram).find((n) => n.id === id)?.name === 'Person'
+			)!;
+			expect(project.parentOf(diagram, pastedStudent)).toBe(pastedPerson);
 		});
 	});
 

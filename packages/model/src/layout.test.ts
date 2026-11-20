@@ -459,4 +459,26 @@ describe('layoutDiagram with Zones', () => {
 		const at = positions.get(abc)!;
 		expect(positions.get(cif)).toEqual({ x: at.x + CIF_OFFSET.x, y: at.y + CIF_OFFSET.y });
 	});
+
+	it('ranks an Inheritance after its parent and before its children, its lines unrouted', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('mcd');
+		const [person, student, teacher] = ['Person', 'Student', 'Teacher'].map((name, i) =>
+			project.addEntity(d, i * 300, 0, name)
+		);
+		project.setParent(d, student, person);
+		project.setParent(d, teacher, person);
+		const inheritance = project.nodes(d).find((n) => n.type === 'inheritance')!.id;
+		const { positions, routes } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'mcd'
+		);
+		const x = (id: string) => positions.get(id)!.x;
+		expect(x(person)).toBeLessThan(x(inheritance));
+		expect(x(inheritance)).toBeLessThan(x(student));
+		expect(x(inheritance)).toBeLessThan(x(teacher));
+		expect(routes.size).toBe(0);
+	});
 });

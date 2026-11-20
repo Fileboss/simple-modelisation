@@ -291,6 +291,152 @@ describe('MLD', () => {
 		});
 	});
 
+	describe('Inheritance', () => {
+		/** Person (id, name) with children Student (school) and Teacher (subject), no Identifier of their own. */
+		const people = () => {
+			const m = mcd();
+			const person = m.entity('Person', [['name']]);
+			const child = (name: string, attribute: string) => {
+				const id = m.entity(name, [[attribute]]);
+				const node = m.project.nodes(m.diagram).find((n) => n.id === id)!;
+				const own = (node.attributes as { id: string; identifier: boolean }[]).find(
+					(a) => a.identifier
+				)!;
+				m.project.toggleIdentifier(m.diagram, id, own.id);
+				m.project.removeAttribute(m.diagram, id, own.id);
+				m.project.setParent(m.diagram, id, person);
+				return id;
+			};
+			const student = child('Student', 'school');
+			const teacher = child('Teacher', 'subject');
+			const inheritance = m.project.nodes(m.diagram).find((n) => n.type === 'inheritance')!.id;
+			return { m, person, student, teacher, inheritance };
+		};
+
+		it('by reference: each child keyed by a foreign key to its parent', () => {
+			const { m } = people();
+			expect(mldText(m.mld())).toBe(
+				[
+					'person = (id SERIAL, name TEXT);',
+					'student = (#person_id, school TEXT);',
+					'teacher = (#person_id, subject TEXT);'
+				].join('\n')
+			);
+			expect(m.mld().warnings).toEqual([]);
+		});
+
+		it('by reference, nested: a grandchild references its parent’s table', () => {
+			const { m, student } = people();
+			const phd = m.entity('Phd', [['thesis']]);
+			const node = m.project.nodes(m.diagram).find((n) => n.id === phd)!;
+			m.project.removeAttribute(m.diagram, phd, (node.attributes as { id: string }[])[0].id);
+			m.project.setParent(m.diagram, phd, student);
+			expect(mldText(m.mld())).toContain('phd = (#student_person_id, thesis TEXT);');
+		});
+
+		it('warns that a child’s own Identifier is ignored', () => {
+			const m = mcd();
+			const person = m.entity('Person');
+			const student = m.entity('Student');
+			m.project.setParent(m.diagram, student, person);
+			expect(m.mld().warnings).toEqual([
+				'Entity "Student" inherits its Identifier from Person: its own is ignored.'
+			]);
+			expect(mldText(m.mld())).toContain('student = (#person_id);');
+		});
+
+		it('push down: no parent table, its Attributes in each child; an Association to it is left out', () => {
+			const { m, person, inheritance } = people();
+			m.project.setInheritanceTranslation(m.diagram, inheritance, 'down');
+			const city = m.entity('City');
+			m.associate('lives in', [person, '1,1'], [city, '0,n']);
+			const { tables, warnings } = m.mld();
+			expect(mldText(m.mld())).toBe(
+				[
+					'student = (id SERIAL, name TEXT, school TEXT);',
+					'teacher = (id SERIAL, name TEXT, subject TEXT);',
+					'city = (id SERIAL);'
+				].join('\n')
+			);
+			expect(tables.some((t) => t.name === 'person')).toBe(false);
+			expect(warnings).toEqual([
+				'Association "lives in" is left out: Person is pushed down into its children.'
+			]);
+		});
+
+		it('push up: one parent table with the children’s Attributes and a checked type column', () => {
+			const { m, person, student, inheritance } = people();
+			m.project.setInheritanceTranslation(m.diagram, inheritance, 'up');
+			m.project.setInheritanceConstraint(m.diagram, inheritance, 'XT');
+			const school = m.entity('School');
+			m.associate('enrolled', [student, '1,1'], [school, '0,n']);
+			const { tables } = m.mld();
+			expect(tables.map((t) => t.name)).toEqual(['school', 'person']);
+			expect(tables[1].columns).toMatchObject([
+				{ name: 'id' },
+				{ name: 'name' },
+				{ name: 'person_type', nullable: false, check: ['Student', 'Teacher'] },
+				{ name: 'school', nullable: true },
+				{ name: 'subject', nullable: true },
+				{ name: 'school_id', foreign: true }
+			]);
+			const script = postgresScript(m.mld(), 'People');
+			expect(script).toContain(
+				"   person_type VARCHAR(50) NOT NULL CHECK (person_type IN ('Student', 'Teacher')),"
+			);
+			void person;
+		});
+
+		it('push down: notes the Persons it cannot store, and warns of a parent without key', () => {
+			const { m, person, inheritance } = people();
+			m.project.setInheritanceTranslation(m.diagram, inheritance, 'down');
+			expect(m.mld().notes).toEqual([
+				'Inheritance of Person pushed down: a Person that is none of Student, Teacher cannot be stored.'
+			]);
+			const node = m.project.nodes(m.diagram).find((n) => n.id === person)!;
+			const id = (node.attributes as { id: string; identifier: boolean }[]).find(
+				(a) => a.identifier
+			)!;
+			m.project.toggleIdentifier(m.diagram, person, id.id);
+			expect(m.mld().warnings).toEqual([
+				'Entity "Person" has no Identifier: the tables it is pushed down into have no primary key.'
+			]);
+		});
+
+		it('translates by reference a push down under a pushed-up parent', () => {
+			const { m, student, inheritance } = people();
+			m.project.setInheritanceTranslation(m.diagram, inheritance, 'up');
+			const phd = m.entity('Phd', [['thesis']]);
+			const node = m.project.nodes(m.diagram).find((n) => n.id === phd)!;
+			m.project.removeAttribute(m.diagram, phd, (node.attributes as { id: string }[])[0].id);
+			m.project.setParent(m.diagram, phd, student);
+			const below = m.project
+				.nodes(m.diagram)
+				.find((n) => n.type === 'inheritance' && n.parent === student)!.id;
+			m.project.setInheritanceTranslation(m.diagram, below, 'down');
+			expect(m.mld().warnings).toContain(
+				'Inheritance of Student cannot be pushed down: Student is pushed up into its own parent. Translated by reference.'
+			);
+			expect(mldText(m.mld())).toContain('phd = (#person_id, thesis TEXT);');
+		});
+
+		it('notes in the script what a translation does not enforce', () => {
+			const { m, inheritance } = people();
+			m.project.setInheritanceConstraint(m.diagram, inheritance, 'XT');
+			expect(m.mld().notes).toEqual([
+				'Inheritance of Person: XT (a Person is exactly one of Student, Teacher) is not enforced by this script.'
+			]);
+			expect(postgresScript(m.mld(), 'People')).toContain(
+				'-- Note: Inheritance of Person: XT (a Person is exactly one of Student, Teacher) is not enforced by this script.'
+			);
+			m.project.setInheritanceTranslation(m.diagram, inheritance, 'up');
+			m.project.setInheritanceConstraint(m.diagram, inheritance, 'T');
+			expect(m.mld().notes).toEqual([
+				'Inheritance of Person pushed up: one type per row, so a Person is at most one of Student, Teacher.'
+			]);
+		});
+	});
+
 	it('names tables and columns in snake_case', () => {
 		expect(snakeCase('Bon de commande')).toBe('bon_de_commande');
 		expect(snakeCase('Adresse électronique')).toBe('adresse_electronique');

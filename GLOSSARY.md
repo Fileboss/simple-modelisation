@@ -142,6 +142,10 @@ _Avoid_: Link, edge, branch
 The min,max count on a Leg: one of 0,1 / 1,1 / 0,n / 1,n.
 _Avoid_: Multiplicity (the UML Notation's word for it)
 
+**Inheritance**:
+A parent Entity specialised by child Entities, which share its Attributes and Identifier; constrained X (exclusion), T (totality) or XT (partition), and translated into the MLD by reference, push down or push up.
+_Avoid_: Generalisation (the UML Notation's word for it), subtype, is-a
+
 **MLD**:
 The relational model derived from an MCD: its tables, their columns, primary keys and foreign keys, written in Looping's textual notation.
 _Avoid_: Schema, physical model, ERD

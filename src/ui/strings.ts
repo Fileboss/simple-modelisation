@@ -193,6 +193,25 @@ export const strings = {
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
 		legs: 'Legs',
+		inheritance: 'Inheritance',
+		inheritsFrom: 'Inherits from',
+		noParent: 'None',
+		inheritanceHint:
+			'The children share the parent’s Attributes and Identifier. Choose a child’s parent in its panel.',
+		children: 'Children',
+		constraint: 'Constraint',
+		constraints: {
+			none: 'None',
+			X: 'X: at most one child',
+			T: 'T: at least one child',
+			XT: 'XT: exactly one child'
+		},
+		translation: 'In the MLD',
+		translations: {
+			reference: 'By reference: child tables reference the parent’s',
+			down: 'Push down: no parent table',
+			up: 'Push up: one parent table with a type column'
+		},
 		cif: 'CIF',
 		addCif: '+ CIF',
 		cifHint:
