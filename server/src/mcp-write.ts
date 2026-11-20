@@ -745,35 +745,65 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			})
 	);
 
+	const legInput = z.object({ entity: z.string(), cardinality });
 	tool(
 		'add_association',
-		'Adds a binary Association between two Entities (the same one for a reflexive Association), with the Cardinality next to each.',
+		'Adds an Association: give legs, two or more { entity, cardinality } (three or more make an N-ary Association, the same Entity may appear twice), or from and to for a binary one.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			name: name(),
-			from: z.object({ entity: z.string(), cardinality }),
-			to: z.object({ entity: z.string(), cardinality }),
+			legs: z.array(legInput).min(2).max(20).optional(),
+			from: legInput.optional(),
+			to: legInput.optional(),
 			attributes: z
 				.array(attributeInput.omit({ identifier: true }))
 				.max(100)
 				.optional()
 		},
-		({ project, diagram, name, from, to, attributes = [] }) =>
+		({ project, diagram, name, legs, from, to, attributes = [] }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
 				attributes.forEach((a) => a.type && parseDataType(a.type));
+				if (legs && (from || to)) throw new ToolError('Give legs, or from and to, not both.');
+				const wanted = legs ?? (from && to ? [from, to] : null);
+				if (!wanted) throw new ToolError('Give legs (two or more), or from and to.');
 				const entities = nodesOf(p, d.id, 'entity');
-				const a = pick(entities, from.entity, 'entity');
-				const b = pick(entities, to.entity, 'entity');
-				const id = p.addAssociation(d.id, a.id, b.id, name);
-				// Each Leg by its Entity, not by order; a reflexive Association's two Legs are alike.
-				const legs = p.edges(d.id).filter((e) => e.source === id);
-				const legA = legs.find((l) => l.target === a.id)!;
-				const legB = legs.find((l) => l.id !== legA.id)!;
-				p.setCardinality(d.id, legA.id, from.cardinality);
-				p.setCardinality(d.id, legB.id, to.cardinality);
+				const targets = wanted.map((leg) => pick(entities, leg.entity, 'entity'));
+				const id = p.addAssociation(d.id, targets[0].id, targets[1].id, name);
+				for (const target of targets.slice(2)) p.addLeg(d.id, id, target.id);
+				// Each Leg takes the Cardinality given with its Entity; an Entity given twice
+				// (reflexive) has alike Legs, so any of them will do.
+				const unset = p.edges(d.id).filter((e) => e.source === id);
+				wanted.forEach((leg, i) => {
+					const made = unset.splice(
+						unset.findIndex((e) => e.target === targets[i].id),
+						1
+					)[0];
+					p.setCardinality(d.id, made.id, leg.cardinality);
+				});
 				addAttributes(p, d.id, id, attributes);
+				return { id };
+			})
+	);
+
+	tool(
+		'add_leg',
+		'Adds a Leg from an Association to an Entity: three Legs or more make an N-ary Association, which the MLD always turns into a table.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			association: z.string().describe('Association id or exact name.'),
+			entity: z.string().describe('Entity id or exact name.'),
+			cardinality: cardinality.optional().describe('Default 0,n.')
+		},
+		({ project, diagram, association, entity, cardinality: value }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
+				const to = pick(nodesOf(p, d.id, 'entity'), entity, 'entity');
+				const id = p.addLeg(d.id, target.id, to.id);
+				if (value) p.setCardinality(d.id, id, value);
 				return { id };
 			})
 	);

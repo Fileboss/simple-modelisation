@@ -166,6 +166,40 @@ describe('MCD', () => {
 		expect(seen).toEqual(['1,n', '0,1', '1,1', '0,n']);
 	});
 
+	it('adds a 0,n Leg to make an N-ary Association, and only from an Association to an Entity', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		const leg = project.addLeg(diagram, lists, product);
+		expect(legsOf(project, diagram).find((l) => l.id === leg)).toMatchObject({
+			source: lists,
+			target: product,
+			cardinality: '0,n'
+		});
+		expect(() => project.addLeg(diagram, customer, product)).toThrow();
+		expect(() => project.addLeg(diagram, lists, lists)).toThrow();
+		expect(legsOf(project, diagram)).toHaveLength(3);
+	});
+
+	it('leaves a binary Association when a Leg of a ternary is deleted', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		const leg = project.addLeg(diagram, lists, product);
+		project.deleteElements(diagram, [], [leg]);
+		expect(project.nodes(diagram).some((n) => n.id === lists)).toBe(true);
+		expect(legsOf(project, diagram).map((l) => l.target)).toEqual([customer, order]);
+	});
+
+	it('keeps the Legs of an N-ary Association through a file round trip', () => {
+		const { project, diagram, customer, order } = setup();
+		const lists = project.addAssociation(diagram, customer, order, 'lists');
+		project.addLeg(diagram, lists, customer);
+		const copy = ProjectDocument.fromFile(project.toFile());
+		const [copied] = copy.diagrams();
+		expect(copy.edges(copied.id).filter((e) => e.source === lists)).toHaveLength(3);
+	});
+
 	it('deletes the Legs and Associations of a deleted Entity', () => {
 		const { project, diagram, customer, order } = setup();
 		project.addAssociation(diagram, customer, order);

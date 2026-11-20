@@ -44,8 +44,12 @@ export const mcdKind: CanvasKind = {
 					}),
 					label: strings.mcd.entity
 				},
-	// Dragging between two Entities (or two dots of one Entity) draws an Association.
+	// Entity to Entity (or two dots of one Entity) makes an Association; an Association and an
+	// Entity, a Leg (N-ary from three); anything else joins nothing.
 	connect: (project, diagramId, source, target) => {
-		project.addAssociation(diagramId, source, target);
+		const [from, to] = [project.nodeType(diagramId, source), project.nodeType(diagramId, target)];
+		if (from === 'entity' && to === 'entity') project.addAssociation(diagramId, source, target);
+		else if (from === 'association' && to === 'entity') project.addLeg(diagramId, source, target);
+		else if (from === 'entity' && to === 'association') project.addLeg(diagramId, target, source);
 	}
 };

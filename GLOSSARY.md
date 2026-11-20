@@ -123,8 +123,12 @@ The Attribute(s) that uniquely identify an Entity, shown underlined.
 _Avoid_: Primary key, ID
 
 **Association**:
-A named relationship between Entities, possibly reflexive and possibly carrying Attributes.
+A named relationship between two Entities or more (the same Entity may appear twice: reflexive), possibly carrying Attributes.
 _Avoid_: Relation, relationship, link
+
+**N-ary Association**:
+An Association with three Legs or more (a ternary has three); its MLD is always a table.
+_Avoid_: Multi-association, complex relation
 
 **Leg**:
 The line joining an Association to one of its Entities, labelled with a Cardinality.

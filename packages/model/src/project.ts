@@ -713,6 +713,35 @@ export class ProjectDocument {
 		return id;
 	}
 
+	/** A node's type, without reading the whole Diagram. */
+	nodeType(diagramId: string, nodeId: string): string | undefined {
+		const type = this.nodeMap(diagramId).get(nodeId)?.get('type');
+		return typeof type === 'string' ? type : undefined;
+	}
+
+	/**
+	 * Adds a 0,n Leg from an Association to an Entity (the same Entity again
+	 * for a reflexive one): three Legs or more make an N-ary Association.
+	 */
+	addLeg(diagramId: string, associationId: string, entityId: string): string {
+		const nodes = this.nodeMap(diagramId);
+		if (
+			nodes.get(associationId)?.get('type') !== 'association' ||
+			nodes.get(entityId)?.get('type') !== 'entity'
+		) {
+			throw new Error('A Leg joins an Association to an Entity');
+		}
+		const leg: LegEdge = {
+			id: crypto.randomUUID(),
+			type: 'leg',
+			source: associationId,
+			target: entityId,
+			cardinality: '0,n'
+		};
+		this.insertEdge(diagramId, leg);
+		return leg.id;
+	}
+
 	setCardinality(diagramId: string, legId: string, cardinality: Cardinality): void {
 		this.edgeMap(diagramId).get(legId)?.set('cardinality', cardinality);
 	}

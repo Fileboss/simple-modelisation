@@ -7,6 +7,8 @@ tags: [backlog]
 
 ## In progress
 
+- [nary-associations](docs/specs/nary-associations/): Associations between three Entities or more, in both Notations, the MLD and MCP
+
 ## To do
 
 - Make the ghcr package public once the v0.1.0 image is published
@@ -30,7 +32,8 @@ tags: [backlog]
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
 - Zone colors, and Zones in Tidy up options (direction, spacing)
-- Ternary Associations, inheritance and CIF in MCDs
+- CIFs (functional integrity constraints) on N-ary Associations
+- Inheritance between Entities (X, T, XT constraints)
 - French UI
 - Revoke a Share link for everyone (needs Project owners)
 - End-to-end tests in CI (Playwright), once the product settles; until then they are run by hand per item

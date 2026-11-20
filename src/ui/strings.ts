@@ -181,7 +181,7 @@ export const strings = {
 		association: 'Association',
 		leg: 'Leg',
 		paletteHint:
-			'Drag an Entity onto the canvas. Drag from a dot of an Entity to another Entity to create an Association, or to another dot of the same Entity for a reflexive one. Click a Cardinality to change it.',
+			'Drag an Entity onto the canvas. Drag from a dot of an Entity to another Entity to create an Association, or to another dot of the same Entity for a reflexive one. Drag between an Association and an Entity to add a Leg: three Legs or more make an N-ary Association. Click a Cardinality to change it.',
 		panelHint: 'Select an Entity, an Association or a Leg to edit it.',
 		attributes: 'Attributes',
 		identifier: 'Part of the Identifier',

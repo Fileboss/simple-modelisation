@@ -865,6 +865,42 @@ select {
 	white-space: nowrap;
 }
 
+/* An N-ary Association in UML: a diamond, its name under it. */
+.uml-nary {
+	position: relative;
+	width: 44px;
+	height: 44px;
+}
+
+.uml-diamond {
+	display: block;
+	width: 44px;
+	height: 44px;
+	overflow: visible;
+}
+
+.uml-diamond path {
+	fill: #fff;
+	stroke: #1d1b22;
+	stroke-width: 1.5;
+}
+
+.uml-nary.selected .uml-diamond path {
+	stroke: var(--accent);
+	stroke-width: 2.5;
+}
+
+.uml-nary-name {
+	position: absolute;
+	top: calc(100% + 4px);
+	left: 50%;
+	transform: translateX(-50%);
+	color: #000;
+	font-size: 12px;
+	font-style: italic;
+	white-space: nowrap;
+}
+
 /* An association class floats beside its line, joined by a dashed line. */
 .uml-association-class {
 	position: absolute;

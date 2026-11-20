@@ -41,7 +41,8 @@ const maxIsOne = (cardinality: Cardinality) => cardinality.endsWith(',1');
  * Derives the MLD of an MCD with the Merise rules: an Entity is a table keyed
  * by its Identifier; a binary Association with a Leg of max 1 adds a foreign
  * key (and its Attributes) to the Entity on that side, UNIQUE when both Legs
- * have max 1; any other Association becomes a table keyed by both foreign keys.
+ * have max 1; any other Association, and every N-ary one, becomes a table
+ * keyed by its foreign keys.
  */
 export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	const warnings: string[] = [];
@@ -60,16 +61,23 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 		tables.set(entity.id, table);
 	}
 
+	const entityNames = new Map(entities.map((e) => [e.id, e.name]));
 	const associationTables: Table[] = [];
 	for (const association of associations) {
-		const [a, b] = legs.filter((l) => l.source === association.id);
-		if (!a || !b) continue;
+		const own = legs.filter((l) => l.source === association.id);
 		const target = (leg: LegEdge) => tables.get(leg.target);
-		const tableA = target(a);
-		const tableB = target(b);
-		if (!tableA || !tableB) continue;
+		if (own.length < 2 || own.some((leg) => !target(leg))) continue;
+		const [a, b] = own;
 
-		if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
+		if (own.length > 2) {
+			// N-ary: always a table, keyed by all its foreign keys until a CIF says otherwise.
+			for (const leg of own.filter((l) => maxIsOne(l.cardinality))) {
+				warnings.push(
+					`Association "${association.name}" joins ${own.length} Entities with a max of 1 on ${entityNames.get(leg.target)}: a CIF will take it out of the key.`
+				);
+			}
+			associationTables.push(associationTable(association, own, target, warnings));
+		} else if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
 			// The key goes to a side of max 1: the 1,1 one when both are, else the second.
 			const receiving =
 				maxIsOne(a.cardinality) && maxIsOne(b.cardinality)
@@ -92,21 +100,7 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 				table.columns.push(attributeColumn(table, attribute, optional));
 			}
 		} else {
-			const table: Table = {
-				name: snakeCase(association.name),
-				columns: [],
-				primaryKey: [],
-				foreignKeys: [],
-				unique: []
-			};
-			for (const leg of [a, b]) {
-				const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
-				table.primaryKey.push(...(columns ?? []));
-			}
-			for (const attribute of association.attributes ?? []) {
-				table.columns.push(attributeColumn(table, attribute, false));
-			}
-			associationTables.push(table);
+			associationTables.push(associationTable(association, own, target, warnings));
 		}
 	}
 
@@ -147,6 +141,30 @@ function attributeColumn(table: Table, attribute: Attribute, forceNullable: bool
 		type: nullable && attribute.type.kind === 'serial' ? dataType('integer') : attribute.type,
 		nullable
 	};
+}
+
+/** An Association's own table: keyed by the foreign keys to all its Entities, with its Attributes. */
+function associationTable(
+	association: AssociationNode,
+	legs: LegEdge[],
+	target: (leg: LegEdge) => Table | undefined,
+	warnings: string[]
+): Table {
+	const table: Table = {
+		name: snakeCase(association.name),
+		columns: [],
+		primaryKey: [],
+		foreignKeys: [],
+		unique: []
+	};
+	for (const leg of legs) {
+		const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
+		table.primaryKey.push(...(columns ?? []));
+	}
+	for (const attribute of association.attributes ?? []) {
+		table.columns.push(attributeColumn(table, attribute, false));
+	}
+	return table;
 }
 
 /** Adds to `table` the columns and foreign key referencing `referenced`; null when it cannot. */

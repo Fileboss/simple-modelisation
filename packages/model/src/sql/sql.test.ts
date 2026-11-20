@@ -162,6 +162,53 @@ describe('MLD', () => {
 		expect(mldText(m.mld())).toContain('tag = (id SERIAL);');
 	});
 
+	it('makes an N-ary Association a table keyed by all its foreign keys', () => {
+		const m = mcd();
+		const teacher = m.entity('Teacher');
+		const room = m.entity('Room');
+		const slot = m.entity('Slot');
+		const teaches = m.associate('teaches', [teacher, '0,n'], [room, '0,n'], ['subject']);
+		m.project.addLeg(m.diagram, teaches, slot);
+		const { tables, warnings } = m.mld();
+		expect(tables.find((t) => t.name === 'teaches')).toMatchObject({
+			primaryKey: ['teacher_id', 'room_id', 'slot_id'],
+			foreignKeys: [
+				{ columns: ['teacher_id'], table: 'teacher' },
+				{ columns: ['room_id'], table: 'room' },
+				{ columns: ['slot_id'], table: 'slot' }
+			]
+		});
+		expect(mldText(m.mld())).toContain(
+			'teaches = (#teacher_id, #room_id, #slot_id, subject TEXT);'
+		);
+		expect(warnings).toEqual([]);
+	});
+
+	it('gives each Leg of an N-ary Association to the same Entity its own column', () => {
+		const m = mcd();
+		const person = m.entity('Person');
+		const event = m.entity('Event');
+		const introduces = m.associate('introduces', [person, '0,n'], [person, '0,n']);
+		m.project.addLeg(m.diagram, introduces, event);
+		const table = m.mld().tables.find((t) => t.name === 'introduces')!;
+		expect(new Set(table.primaryKey).size).toBe(3);
+	});
+
+	it('takes an N-ary Association to a table even with a max of 1, and warns', () => {
+		const m = mcd();
+		const teacher = m.entity('Teacher');
+		const room = m.entity('Room');
+		const slot = m.entity('Slot');
+		const teaches = m.associate('teaches', [teacher, '1,1'], [room, '0,n']);
+		m.project.addLeg(m.diagram, teaches, slot);
+		const { tables, warnings } = m.mld();
+		expect(tables.find((t) => t.name === 'teaches')?.primaryKey).toHaveLength(3);
+		expect(tables.find((t) => t.name === 'teacher')?.columns.map((c) => c.name)).toEqual(['id']);
+		expect(warnings).toEqual([
+			'Association "teaches" joins 3 Entities with a max of 1 on Teacher: a CIF will take it out of the key.'
+		]);
+	});
+
 	it('names tables and columns in snake_case', () => {
 		expect(snakeCase('Bon de commande')).toBe('bon_de_commande');
 		expect(snakeCase('Adresse électronique')).toBe('adresse_electronique');

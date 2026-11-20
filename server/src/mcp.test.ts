@@ -71,6 +71,7 @@ describe('MCP endpoint', () => {
 			'add_component',
 			'add_diagram',
 			'add_entity',
+			'add_leg',
 			'add_note',
 			'add_zone',
 			'connect_components',
@@ -727,6 +728,64 @@ describe('MCP endpoint', () => {
 		expect(mld).toBe(
 			'customer = (id SERIAL, email VARCHAR(120));\norder = (id SERIAL, #customer_id);'
 		);
+	});
+
+	it('models N-ary Associations with legs and add_leg', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		for (const name of ['Teacher', 'Room', 'Slot', 'Subject']) {
+			await call(client, 'add_entity', { ...at, name });
+		}
+		await call(client, 'add_association', {
+			...at,
+			name: 'teaches',
+			legs: [
+				{ entity: 'Teacher', cardinality: '0,n' },
+				{ entity: 'Room', cardinality: '1,n' },
+				{ entity: 'Slot', cardinality: '0,n' }
+			]
+		});
+		const { id: leg } = await call(client, 'add_leg', {
+			...at,
+			association: 'teaches',
+			entity: 'Subject',
+			cardinality: '1,n'
+		});
+		const { associations } = await call(client, 'get_diagram', at);
+		expect(associations[0].legs).toMatchObject([
+			{ entity: 'Teacher', cardinality: '0,n' },
+			{ entity: 'Room', cardinality: '1,n' },
+			{ entity: 'Slot', cardinality: '0,n' },
+			{ id: leg, entity: 'Subject', cardinality: '1,n' }
+		]);
+		const { mld } = await call(client, 'get_mcd_sql', at);
+		expect(mld).toContain('teaches = (#teacher_id, #room_id, #slot_id, #subject_id);');
+
+		expect(
+			(
+				await call(client, 'add_association', {
+					...at,
+					name: 'x',
+					legs: [{ entity: 'Room', cardinality: '0,n' }]
+				})
+			).error
+		).toMatch(/legs/);
+		const both = await call(client, 'add_association', {
+			...at,
+			name: 'x',
+			legs: [
+				{ entity: 'Room', cardinality: '0,n' },
+				{ entity: 'Slot', cardinality: '0,n' }
+			],
+			from: { entity: 'Room', cardinality: '0,n' }
+		});
+		expect(both.error).toBe('Give legs, or from and to, not both.');
+		expect((await call(client, 'add_association', { ...at, name: 'x' })).error).toBe(
+			'Give legs (two or more), or from and to.'
+		);
+		expect(
+			(await call(client, 'add_leg', { ...at, association: 'Room', entity: 'Slot' })).error
+		).toMatch(/No association "Room"/);
 	});
 
 	it('explains ambiguous names, unknown names and wrong links', async () => {
