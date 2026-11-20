@@ -45,24 +45,88 @@ export async function renameStoredProject(id: string, name: string): Promise<voi
 	close();
 }
 
+/** What `storeCopy` needs of a browser storage: IndexedDB, or a stand-in in tests. */
+export type CopyStorage = {
+	whenSynced: Promise<unknown>;
+	destroy: () => Promise<void>;
+	/** Deletes the stored copy; resolves once it is gone. */
+	clearData: () => Promise<void>;
+};
+export type OpenStorage = (name: string, doc: Y.Doc) => CopyStorage;
+
+const openIndexedDb: OpenStorage = (name, doc) => {
+	const persistence = new IndexeddbPersistence(name, doc);
+	return {
+		whenSynced: persistence.whenSynced,
+		destroy: () => persistence.destroy(),
+		// y-indexeddb does not wait for the database to be deleted: this does.
+		clearData: async () => {
+			await persistence.destroy();
+			await new Promise<void>((resolve) => {
+				const request = indexedDB.deleteDatabase(name);
+				request.onsuccess = request.onerror = request.onblocked = () => resolve();
+			});
+		}
+	};
+};
+
 /**
  * Stores a copy of a Project document under a new Project id (stopping
- * sharing): taken once the new storage is open, so it holds every change made
- * until then; a failed copy leaves nothing behind. Its undo history is empty.
+ * sharing). Resolves only once the copy, read back from storage, holds exactly
+ * what was written: IndexedDB writes in the background and y-indexeddb swallows
+ * a full quota, so the original must not go before. Changes made to `source`
+ * meanwhile do not count against it. A failed copy is deleted and the error
+ * rethrown. Its undo history is empty.
  */
-export async function storeCopy(id: string, source: Y.Doc): Promise<void> {
+export async function storeCopy(
+	id: string,
+	source: Y.Doc,
+	open: OpenStorage = openIndexedDb
+): Promise<void> {
+	const name = projectDbName(id);
+	// What is written, taken once: the reference the copy is checked against.
+	const update = Y.encodeStateAsUpdate(source);
+	const written = new Y.Doc();
+	Y.applyUpdate(written, update);
+
 	const doc = new Y.Doc();
-	const persistence = new IndexeddbPersistence(projectDbName(id), doc);
+	const writing = open(name, doc);
 	try {
-		await persistence.whenSynced;
-		Y.applyUpdate(doc, Y.encodeStateAsUpdate(source));
+		await writing.whenSynced;
+		Y.applyUpdate(doc, update);
+		await writing.destroy();
 	} catch (error) {
-		await persistence.clearData();
+		await discard(writing);
 		throw error;
 	} finally {
-		// Closing waits for the copy's write to finish.
-		void persistence.destroy();
 		doc.destroy();
+	}
+
+	// A read opened after the write is ordered after it by IndexedDB, whether the
+	// write commits or aborts: it sees exactly what was stored.
+	const check = new Y.Doc();
+	const reading = open(name, check);
+	try {
+		await reading.whenSynced;
+		if (!Y.equalSnapshots(Y.snapshot(check), Y.snapshot(written))) {
+			throw new Error('The local copy could not be stored');
+		}
+		await reading.destroy();
+	} catch (error) {
+		await discard(reading);
+		throw error;
+	} finally {
+		check.destroy();
+		written.destroy();
+	}
+}
+
+/** Deletes a failed copy; a failure to delete must not hide why the copy failed. */
+async function discard(storage: CopyStorage): Promise<void> {
+	try {
+		await storage.clearData();
+	} catch (error) {
+		console.error('A failed local copy could not be deleted', error);
 	}
 }
 

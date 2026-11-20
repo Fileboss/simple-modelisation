@@ -13,7 +13,6 @@ tags: [backlog]
 
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Malformed shared document entries (diagram not a Y.Map, unknown kind, primitive node or edge, non-string name) crash the app for every participant, survive in IndexedDB and Stop sharing, and break JSON export; no React error boundary (`packages/model/src/project.ts`, `src/app/ProjectPage.tsx`)
-  - Stop sharing deletes the original before the Local copy's IndexedDB write is confirmed; a quota error leaves an empty copy (`src/storage/persistence.ts` `storeCopy`)
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
   - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
@@ -38,6 +37,7 @@ tags: [backlog]
 
 ## Done
 
+- stop-sharing-copy: Stop sharing keeps the original until the Local copy is read back from storage with the same content
 - [mobile-layout](docs/specs/mobile-layout/): the canvas first on phones, Palette, Panel and SQL as drawers; tap to place, big handles, long-press menu on touch screens
 - [relative-identifier](docs/specs/relative-identifier/): Entities identified relative to others, a 1,1 Leg marked R, in the MLD, both Notations and MCP
 - [entity-inheritance](docs/specs/entity-inheritance/): parent and child Entities with X / T / XT, three MLD translations, both Notations, MCP
