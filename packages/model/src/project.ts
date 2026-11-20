@@ -10,7 +10,12 @@ export type Diagram = {
 	kind: DiagramKind;
 	name: string;
 	createdAt: number;
+	/** An MCD tidied from top to bottom; absent, from left to right. */
+	tidyDirection?: 'vertical';
 };
+
+/** Which way Tidy up lays a Diagram out: only an MCD can be vertical. */
+export type TidyDirection = 'horizontal' | 'vertical';
 
 /** A box on a Diagram (Component, Entity, Association): its kind-specific fields sit beside the position. */
 export type DiagramNode = { id: string; type: string; x: number; y: number } & Record<
@@ -309,7 +314,11 @@ export class ProjectDocument {
 					// A peer may write anything: a name that is not text, or a time that is not a
 					// number, reads as the default.
 					name: typeof name === 'string' ? name : DEFAULT_DIAGRAM_NAMES[kind],
-					createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0
+					createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0,
+					// Any other value, from a newer version, reads as horizontal.
+					...(kind === 'mcd' && d.get('tidyDirection') === 'vertical'
+						? { tidyDirection: 'vertical' as const }
+						: {})
 				};
 			})
 			.sort((a, b) => a.createdAt - b.createdAt);
@@ -368,6 +377,14 @@ export class ProjectDocument {
 	renameDiagram(id: string, name: string): void {
 		const diagram = this.requireDiagram(id);
 		diagram.set('name', name.trim() || DEFAULT_DIAGRAM_NAMES[diagram.get('kind') as DiagramKind]);
+	}
+
+	/** Sets which way Tidy up lays an MCD out, for every Participant. */
+	setTidyDirection(id: string, direction: TidyDirection): void {
+		const diagram = this.requireDiagram(id);
+		if (diagram.get('kind') !== 'mcd') throw new Error('Only an MCD can be tidied vertically');
+		if (direction === 'vertical') diagram.set('tidyDirection', 'vertical');
+		else diagram.delete('tidyDirection');
 	}
 
 	deleteDiagram(id: string): void {
@@ -1235,6 +1252,9 @@ export class ProjectDocument {
 				diagram.set('kind', d.kind);
 				diagram.set('name', d.name);
 				diagram.set('createdAt', d.createdAt);
+				if (d.kind === 'mcd' && d.tidyDirection === 'vertical') {
+					diagram.set('tidyDirection', 'vertical');
+				}
 				diagram.set(
 					'nodes',
 					toFieldsMap(d.nodes.map((n) => known(withCompleteAttributes(n), NODE_FIELDS)))
