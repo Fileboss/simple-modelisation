@@ -34,6 +34,7 @@ tags: [backlog]
 
 ## Done
 
+- [note-resize](docs/specs/note-resize/): Notes can be made wider or narrower; other elements later
 - [mcd-svg](docs/specs/mcd-svg/): MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
 - thin-borders-zoomed-out: MCD box borders stay one screen pixel wide when zoomed out, instead of losing pieces on a non-Retina screen
 - stop-sharing-copy: Stop sharing keeps the original until the Local copy is read back from storage with the same content

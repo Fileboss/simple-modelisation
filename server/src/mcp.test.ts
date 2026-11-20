@@ -379,12 +379,19 @@ describe('MCP endpoint', () => {
 		await call(client, 'set_note', { ...at, note, color: 'pink' });
 		const system = await call(client, 'get_diagram', at);
 		expect(system.notes).toEqual([
-			{ id: note, text: 'Syncs every night at 2 a.m.', color: 'pink', zone: null }
+			{ id: note, text: 'Syncs every night at 2 a.m.', color: 'pink', width: 180, zone: null }
 		]);
 		const unknown = await call(client, 'set_note', { ...at, note: 'nope', text: 'x' });
 		expect(unknown.error).toBe(`No note "nope". Known: ${note}.`);
 		const empty = await call(client, 'set_note', { ...at, note });
-		expect(empty.error).toBe('Give a text or a color.');
+		expect(empty.error).toBe('Give a text, a color or a width.');
+		await call(client, 'set_note', { ...at, note, width: 320 });
+		expect((await call(client, 'get_diagram', at)).notes[0].width).toBe(320);
+		const wide = await client.callTool({
+			name: 'set_note',
+			arguments: { ...at, note, width: 5000 }
+		});
+		expect(wide.isError).toBe(true);
 
 		await call(client, 'add_diagram', { project: id, kind: 'mcd', name: 'Rules' });
 		const added = await call(client, 'add_note', {

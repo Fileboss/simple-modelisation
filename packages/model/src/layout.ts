@@ -3,7 +3,14 @@ import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
 import type { Notation } from './mcd-drawing.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
-import { CIF_OFFSET, CIF_SIZE, INHERITANCE_SIZE, ZONE_PADDING } from './project.ts';
+import {
+	boundedNoteWidth,
+	CIF_OFFSET,
+	CIF_SIZE,
+	INHERITANCE_SIZE,
+	NOTE_WIDTHS,
+	ZONE_PADDING
+} from './project.ts';
 import { pillText, roughWidth } from './label-placement.ts';
 import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
@@ -57,12 +64,18 @@ function widestPill(edges: DiagramEdge[]): number {
 	return widest;
 }
 
-/** A Note's paper: 180px wide, its text wrapped (14px, about 7px a character), at least 80px high. */
-export const NOTE_WIDTH = 180;
+/** A Note's paper: 180px wide unless resized, its text wrapped (14px, about 7px a character), at least 80px high. */
+export const NOTE_WIDTH = NOTE_WIDTHS.default;
 
-/** A Note's text cut into the lines it is drawn on, at word boundaries where it can. */
-export function noteLines(text: string): string[] {
-	const perLine = Math.floor((NOTE_WIDTH - 24) / 7);
+/** A Note's width: its own when it is a number, within NOTE_WIDTHS; else the default. */
+export function noteWidth(note: DiagramNode): number {
+	const width = note.width;
+	return typeof width === 'number' && Number.isFinite(width) ? boundedNoteWidth(width) : NOTE_WIDTH;
+}
+
+/** A Note's text cut into the lines it is drawn on at `width`, at word boundaries where it can. */
+export function noteLines(text: string, width = NOTE_WIDTH): string[] {
+	const perLine = Math.floor((width - 24) / 7);
 	return text.split('\n').flatMap((paragraph) => {
 		const lines: string[] = [];
 		let line = '';
@@ -89,8 +102,8 @@ export function noteLines(text: string): string[] {
 	});
 }
 
-export function noteSize(text: string): Size {
-	return { width: NOTE_WIDTH, height: Math.max(80, noteLines(text).length * 20 + 24) };
+export function noteSize(text: string, width = NOTE_WIDTH): Size {
+	return { width, height: Math.max(80, noteLines(text, width).length * 20 + 24) };
 }
 
 const byId = <T extends { id: string }>(a: T, b: T) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -397,7 +410,7 @@ export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
-	if (node.type === 'note') return noteSize(String(node.text ?? ''));
+	if (node.type === 'note') return noteSize(String(node.text ?? ''), noteWidth(node));
 	if (node.type === 'cif') return CIF_SIZE;
 	if (node.type === 'inheritance') return INHERITANCE_SIZE;
 	if (node.type === 'component' && isPerson(node.componentType)) {

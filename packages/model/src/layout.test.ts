@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { estimatedSize, noteLines, layoutDiagram } from './layout.ts';
-import { CIF_OFFSET, ProjectDocument } from './project.ts';
+import {
+	estimatedSize,
+	layoutDiagram,
+	NOTE_WIDTH,
+	noteLines,
+	noteSize,
+	noteWidth
+} from './layout.ts';
+import { CIF_OFFSET, NOTE_WIDTHS, ProjectDocument } from './project.ts';
 
 const overlapping = (
 	positions: Map<string, { x: number; y: number }>,
@@ -480,5 +487,36 @@ describe('layoutDiagram with Zones', () => {
 		expect(x(inheritance)).toBeLessThan(x(student));
 		expect(x(inheritance)).toBeLessThan(x(teacher));
 		expect(routes.size).toBe(0);
+	});
+});
+
+describe('Note width', () => {
+	it('is stored rounded and within bounds, kept by a JSON file, and read as the default when bad', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const note = project.addNote(d, 100, 100, 'Nightly backups');
+		const read = () => project.nodes(d).find((n) => n.id === note)!;
+		expect(noteWidth(read())).toBe(NOTE_WIDTH);
+		project.setNoteWidth(d, note, 60, 320.4);
+		expect(read()).toMatchObject({ x: 60, width: 320 });
+		project.setNoteWidth(d, note, 60, 2000);
+		expect(read().width).toBe(NOTE_WIDTHS.max);
+		project.setNoteWidth(d, note, 60, 10);
+		expect(read().width).toBe(NOTE_WIDTHS.min);
+		const copy = ProjectDocument.fromFile(JSON.parse(JSON.stringify(project.toFile())));
+		expect(copy.nodes(d).find((n) => n.id === note)!.width).toBe(NOTE_WIDTHS.min);
+		expect(noteWidth({ ...read(), width: 'wide' })).toBe(NOTE_WIDTH);
+	});
+
+	it('wraps the text to the width, the height following it', () => {
+		const text = 'Syncs every night at 2 a.m. from KDP, then mails the report to the team';
+		expect(noteLines(text, 600)).toHaveLength(1);
+		expect(noteLines(text).length).toBeGreaterThan(2);
+		expect(noteSize(text, 600)).toEqual({ width: 600, height: 80 });
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const note = project.addNote(d, 0, 0, text);
+		project.setNoteWidth(d, note, 0, 600);
+		expect(estimatedSize(project.nodes(d)[0])).toEqual({ width: 600, height: 80 });
 	});
 });

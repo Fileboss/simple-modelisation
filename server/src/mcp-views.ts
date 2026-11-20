@@ -13,7 +13,7 @@ import type {
 	ProjectDocument,
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
-import { estimatedSize } from '@simple-modelisation/model/layout.ts';
+import { estimatedSize, noteWidth } from '@simple-modelisation/model/layout.ts';
 import { effectiveProviders, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { ENGLISH_NAMES } from '@simple-modelisation/model/names.ts';
 import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
@@ -76,6 +76,7 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 			id: n.id,
 			text: n.text,
 			color: n.color ?? 'yellow',
+			width: noteWidth(n),
 			...(zoneOf && { zone: zoneOf(n.id) })
 		}));
 

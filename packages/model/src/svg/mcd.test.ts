@@ -184,3 +184,15 @@ describe('mcdSvg in UML', () => {
 		expect(svg).not.toMatch(/>XT<\/text>/);
 	});
 });
+
+describe('Notes in images', () => {
+	it('draws a Note at its width, its text wrapped to it', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('mcd');
+		const note = project.addNote(d, 0, 0, 'Ids are 128 random bits in hex, timestamps Unix ms');
+		project.setNoteWidth(d, note, 0, 480);
+		const svg = mcdSvg(project.nodes(d), [], { notation: 'merise', names: ENGLISH_NAMES });
+		expect(svg).toContain('width="479"');
+		expect(svg).toContain('>Ids are 128 random bits in hex, timestamps Unix ms</text>');
+	});
+});
