@@ -1,6 +1,7 @@
 import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
+import type { Notation } from './mcd-drawing.ts';
 import type { Attribute, DiagramEdge, DiagramKind, DiagramNode, Point } from './project.ts';
 import { CIF_OFFSET, CIF_SIZE, INHERITANCE_SIZE, ZONE_PADDING } from './project.ts';
 import { pillText, roughWidth } from './label-placement.ts';
@@ -389,9 +390,10 @@ const TYPE_CHARS: Record<DataTypeKind, number> = {
 /**
  * A node's drawn size guessed from its content, where the canvas cannot
  * measure it (the server) or measures another Notation than the shared
- * positions need: the larger of its Merise and UML drawings.
+ * positions need: the larger of its Merise and UML drawings, or the one of
+ * `notation` when an image draws that one.
  */
-export function estimatedSize(node: DiagramNode): Size {
+export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
@@ -414,7 +416,8 @@ export function estimatedSize(node: DiagramNode): Size {
 			return (a.name.length + 3 + TYPE_CHARS[a.type?.kind ?? 'text'] + flags) * CHAR.line;
 		})
 	);
-	const lines = attributes.length > 0 ? Math.max(merise, uml) : 0;
+	const widest = notation === 'merise' ? merise : notation === 'uml' ? uml : Math.max(merise, uml);
+	const lines = attributes.length > 0 ? widest : 0;
 	if (node.type === 'association') {
 		return {
 			width: Math.round(Math.max(90, name.length * CHAR.title + 40, merise + 40)),

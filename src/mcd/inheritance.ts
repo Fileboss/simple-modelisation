@@ -1,13 +1,7 @@
 import type { Edge } from '@xyflow/react';
-import type { InheritanceConstraint, InheritanceNode } from '@simple-modelisation/model/project.ts';
-import type { Layout } from '../canvas/layout';
-
-/** UML's words for an Inheritance's constraint, beside the generalisation's triangle. */
-export const UML_CONSTRAINTS: Record<Exclude<InheritanceConstraint, 'none'>, string> = {
-	X: '{disjoint}',
-	T: '{complete}',
-	XT: '{disjoint, complete}'
-};
+import type { InheritanceNode } from '@simple-modelisation/model/project.ts';
+import { generalizations } from '@simple-modelisation/model/mcd-drawing.ts';
+import { diagramEdges, diagramNodes, type Layout } from '../canvas/layout';
 
 /** Set on a generalisation: the constraint it shows, on one line per parent. */
 export type Generalization = { constraint?: string };
@@ -37,37 +31,26 @@ export const withInheritanceLines: Layout = (nodes, edges) => {
  * a hollow triangle at the parent, the constraint written on the first one.
  */
 export const withGeneralizations: Layout = (nodes, edges) => {
-	const inheritances = new Map(
-		nodes.filter((n) => n.type === 'inheritance').map((n) => [n.id, n.data as InheritanceNode])
-	);
-	const labelled = new Set<string>();
-	const generalizations: Edge[] = [];
-	const kept = edges.filter((edge) => {
-		const inheritance = edge.type === 'isa' ? inheritances.get(edge.source) : undefined;
-		if (!inheritance) return true;
-		const first = !labelled.has(inheritance.id);
-		labelled.add(inheritance.id);
-		generalizations.push({
-			id: `generalization:${edge.id}`,
-			type: 'generalization',
-			source: edge.target,
-			target: inheritance.parent,
-			selectable: false,
-			deletable: false,
-			focusable: false,
-			data: {
-				constraint:
-					first && inheritance.constraint ? UML_CONSTRAINTS[inheritance.constraint] : undefined
-			} satisfies Generalization
-		});
-		return false;
-	});
+	const drawn = generalizations(diagramNodes(nodes), diagramEdges(edges));
+	const replaced = new Set(drawn.map((g) => g.isa));
 	return {
 		nodes: nodes.map((node) =>
 			node.type === 'inheritance'
 				? { ...node, hidden: true, selectable: false, deletable: false, selected: false }
 				: node
 		),
-		edges: [...kept, ...generalizations]
+		edges: [
+			...edges.filter((e) => !replaced.has(e.id)),
+			...drawn.map((g): Edge => ({
+				id: `generalization:${g.isa}`,
+				type: 'generalization',
+				source: g.child,
+				target: g.parent,
+				selectable: false,
+				deletable: false,
+				focusable: false,
+				data: { constraint: g.constraint } satisfies Generalization
+			}))
+		]
 	};
 };

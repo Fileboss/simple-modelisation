@@ -12,22 +12,8 @@ import { strings } from '../ui/strings';
 import { measureInPage, placeConnectionLabels } from './label-placement';
 import { SystemPalette } from './SystemPalette';
 import { SystemPanel } from './SystemPanel';
+import { SVG_NAMES } from '../canvas/svg-names';
 import { ZoneNode } from './ZoneNode';
-
-// The names the image prints, from the UI strings.
-export const SVG_NAMES = {
-	types: strings.types,
-	diskKinds: strings.disk.names,
-	hostings: strings.hosting.names,
-	providers: strings.provider.names,
-	flows: strings.flow.names,
-	titles: {
-		flow: strings.flow.title,
-		hosting: strings.hosting.title,
-		provider: strings.provider.title,
-		runtime: strings.runtime.title
-	}
-};
 
 export const systemKind: CanvasKind = {
 	nodeTypes: { component: ComponentNode, zone: ZoneNode, note: NoteNode },
@@ -37,8 +23,13 @@ export const systemKind: CanvasKind = {
 	// Connection labels are placed together, so that none overlaps another or a box.
 	useLayout: () => placeConnectionLabels,
 	derive: withInheritedProviders,
-	drawSvg: (nodes, edges, sizeOf, legend) =>
-		systemSvg(nodes, edges, { names: SVG_NAMES, sizeOf, measure: measureInPage, legend }),
+	drawSvg: (_diagramId, nodes, edges, measured, legend) =>
+		systemSvg(nodes, edges, {
+			names: SVG_NAMES,
+			sizeOf: (node) => measured(node) ?? estimatedSize(node),
+			measure: measureInPage,
+			legend
+		}),
 	dropPreview: (item) => {
 		if (item === ZONE_ITEM) return { ...ZONE_DEFAULT, label: strings.system.zone };
 		if (item === NOTE_ITEM) return { ...noteSize(''), label: strings.note.title };

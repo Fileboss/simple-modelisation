@@ -133,26 +133,32 @@ export function createMcpHandler(options: Options) {
 		);
 		tool(
 			'export_diagram',
-			'A System design diagram drawn as an SVG image (plain shapes, opens in browsers, design tools and slides); without a diagram, every System design diagram of the Project. MCDs are not drawn yet.',
+			'A Diagram drawn as an SVG image (plain shapes on white: opens in browsers, on GitHub, in design tools and slides); without a diagram, every Diagram of the Project. Diagrams with nothing in them are not drawn.',
 			{
 				project: projectArgument,
 				diagram: z.string().optional().describe('Diagram id or exact name; omit for all.'),
+				notation: z
+					.enum(['merise', 'uml'])
+					.optional()
+					.describe(
+						"How MCDs are drawn: Merise (Looping's style, the default) or UML class diagram; ignored for System design diagrams."
+					),
 				legend: z
 					.boolean()
 					.optional()
 					.describe(
-						'Draw a Legend under the diagram naming its Flows, Providers, Hostings and Runtimes (default true).'
+						'Draw a Legend under a System design diagram naming its Flows, Providers, Hostings and Runtimes (default true); MCDs have none.'
 					)
 			},
-			async ({ project, diagram, legend }) => {
-				const { images, skipped } = await access.read(project, (p) =>
-					exportDiagrams(p, diagram, legend)
+			async ({ project, diagram, legend, notation }) => {
+				const { images, empty } = await access.read(project, (p) =>
+					exportDiagrams(p, diagram, { legend, notation })
 				);
 				const note = [
 					images.length
 						? `${images.map((i) => i.name).join(', ')} drawn as SVG.`
-						: 'No System design diagram to draw.',
-					skipped.length ? `Not drawn yet (MCDs): ${skipped.join(', ')}.` : ''
+						: 'No Diagram to draw.',
+					empty.length ? `Empty, not drawn: ${empty.join(', ')}.` : ''
 				]
 					.filter(Boolean)
 					.join(' ');

@@ -649,10 +649,69 @@ describe('MCP endpoint', () => {
 
 		const all = await client.callTool({ name: 'export_diagram', arguments: { project: id } });
 		expect((all.content as { text?: string }[])[0].text).toBe(
-			'Architecture drawn as SVG. Not drawn yet (MCDs): Data.'
+			'Architecture drawn as SVG. Empty, not drawn: Data.'
 		);
-		const mcd = await call(client, 'export_diagram', { project: id, diagram: 'Data' });
-		expect(mcd.error).toMatch(/is not a System design diagram/);
+	});
+
+	it('draws MCDs, alone or with every Diagram of the Project', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Customer' });
+		await call(client, 'add_entity', { ...at, name: 'Order' });
+		await call(client, 'add_association', {
+			...at,
+			name: 'places',
+			from: { entity: 'Customer', cardinality: '0,n' },
+			to: { entity: 'Order', cardinality: '1,1' }
+		});
+
+		const one = await client.callTool({ name: 'export_diagram', arguments: at });
+		const [note, image] = one.content as [
+			{ text: string },
+			{ resource: { mimeType: string; text: string } }
+		];
+		expect(note.text).toBe('Data drawn as SVG.');
+		expect(image.resource.mimeType).toBe('image/svg+xml');
+		expect(image.resource.text).toMatch(/^<svg xmlns/);
+		expect(image.resource.text).toContain('>Customer</text>');
+		expect(image.resource.text).toContain('>places</text>');
+		expect(image.resource.text).toContain('>0,n</text>');
+		expect(image.resource.text).toContain('fill="#fdd77d"');
+
+		const all = await client.callTool({ name: 'export_diagram', arguments: { project: id } });
+		expect((all.content as { text?: string }[])[0].text).toBe(
+			'Data drawn as SVG. Empty, not drawn: Architecture.'
+		);
+	});
+
+	it('draws MCDs in the Notation asked for, ignoring it on System design diagrams', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_entity', {
+			project: id,
+			diagram: 'Data',
+			name: 'Customer',
+			attributes: [{ name: 'email', type: 'text(120)' }]
+		});
+		await call(client, 'add_component', {
+			project: id,
+			diagram: 'Architecture',
+			type: 'service',
+			name: 'API'
+		});
+		const images = async (args: Record<string, unknown>) => {
+			const result = await client.callTool({ name: 'export_diagram', arguments: args });
+			return (result.content as { resource?: { text: string } }[])
+				.slice(1)
+				.map((c) => c.resource!.text);
+		};
+		const [merise] = await images({ project: id, diagram: 'Data' });
+		expect(merise).toContain('fill="#fdd77d"');
+		const [uml] = await images({ project: id, diagram: 'Data', notation: 'uml' });
+		expect(uml).not.toContain('fill="#fdd77d"');
+		expect(uml).toContain('>email : Text(120)</text>');
+		const both = await images({ project: id, notation: 'uml' });
+		expect(both).toHaveLength(2);
+		expect(both.some((svg) => svg.includes('>API</text>'))).toBe(true);
 	});
 
 	it('draws a Legend in exported images unless told not to', async () => {

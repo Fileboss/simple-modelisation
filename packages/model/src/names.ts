@@ -1,4 +1,5 @@
 import type { ComponentType } from './component-types.ts';
+import type { DataTypeKind } from './data-types.ts';
 import type { DiskKind, Flow, Hosting, Provider } from './project.ts';
 
 /**
@@ -11,6 +12,8 @@ export const ENGLISH_NAMES: {
 	hostings: Record<Hosting, string>;
 	providers: Record<Provider, string>;
 	flows: Record<Flow, string>;
+	/** As UML lines print them; `(n)` stands for a length. */
+	dataTypes: Record<DataTypeKind, string>;
 	/** What badges are named by, before their value ("Hosting: Docker"), and the Legend's headings. */
 	titles: { flow: string; hosting: string; provider: string; runtime: string };
 } = {
@@ -57,5 +60,17 @@ export const ENGLISH_NAMES: {
 		railway: 'Railway'
 	},
 	flows: { read: 'Read', write: 'Write', 'read-write': 'Read/Write' },
+	dataTypes: {
+		integer: 'Integer',
+		bigint: 'Big integer',
+		decimal: 'Decimal',
+		text: 'Text',
+		varchar: 'Text(n)',
+		boolean: 'Boolean',
+		date: 'Date',
+		datetime: 'Date time',
+		uuid: 'UUID',
+		serial: 'Auto-increment'
+	},
 	titles: { flow: 'Flow', hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }
 };

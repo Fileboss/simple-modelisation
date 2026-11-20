@@ -10,7 +10,7 @@ import type { ImageFormat } from '../canvas/export-image';
 import { exportOpenDiagram } from '../canvas/exporter';
 import { copyText } from '../ui/clipboard';
 import { downloadBlob, downloadText } from '../ui/download';
-import { allDiagramsZip, fileName } from '../system/export-all';
+import { allDiagramsZip, fileName } from '../canvas/export-all';
 import { readIncludeLegend, saveIncludeLegend } from './legend-preference';
 import { strings } from '../ui/strings';
 import { useTransientNote } from '../ui/transient-note';
@@ -382,10 +382,13 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 	useMenuDismiss(menu);
 	const exportAll = async () => {
 		try {
-			const result = await allDiagramsZip(project, { legend });
-			if (!result) return setNote(strings.project.noSystemDiagram);
-			downloadBlob(`${fileName(project.name())}.zip`, result.zip);
-			if (result.skipped.length) setNote(strings.project.mcdsLeftOut(result.skipped.join(', ')));
+			// Every image at the model's estimates, as over MCP, the open Diagram included: its
+			// own SVG export, at the sizes the canvas measured, may differ slightly.
+			const zip = await allDiagramsZip(project, (d, nodes) =>
+				KINDS[d.kind].drawSvg(d.id, nodes, project.edges(d.id), () => undefined, legend)
+			);
+			if (!zip) return setNote(strings.project.nothingToZip);
+			downloadBlob(`${fileName(project.name())}.zip`, zip);
 		} catch (error) {
 			console.error('Export failed', error);
 			setNote(strings.project.exportFailed);

@@ -1,11 +1,11 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
 import { pillText, placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
-import { estimatedSize, noteLines, type Size } from '../layout.ts';
+import { estimatedSize, type Size } from '../layout.ts';
+import { bounds, escape, fit, FONT, noteShape, own, TEXT } from './shapes.ts';
 import { FALLBACK_COMPONENT_TYPE, isPerson } from '../component-types.ts';
 import {
 	FLOW_COLORS,
 	HOSTING_MARKS,
-	NOTE_LOOKS,
 	PROVIDER_MARKS,
 	RUNTIME_LOOKS,
 	SKIN_LOOKS,
@@ -49,8 +49,6 @@ type Shown = {
 };
 
 // The canvas styles (index.css), so the image looks like the screen.
-const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
-const TEXT = '#1d1b22';
 const EDGE = '#475569';
 const BORDER = '#e3e1e8';
 const ZONE = '#94a3b8';
@@ -239,10 +237,7 @@ function componentShape(
 	const middle = box.y + box.height / 2;
 	const icon = box.x + 14;
 	const text = icon + 28 + 10;
-	// Sizes may be estimates (the server, the zip): a name wider than its room is narrowed to fit.
-	const room = box.x + box.width - 14 - text;
-	const fit =
-		name.length * NAME_CHAR > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : '';
+	const narrowed = fit(name, NAME_CHAR, box.x + box.width - 14 - text);
 	const hosting = component.hosting as Hosting | undefined;
 	const badged = hosting === 'external' ? undefined : provider;
 
@@ -252,12 +247,12 @@ function componentShape(
 	];
 	if (subtitle && subtitle !== name) {
 		parts.push(
-			`<text x="${text}" y="${middle - 8}" font-size="15" font-weight="600" fill="${TEXT}" dy="0.35em"${fit}>${escape(name)}</text>`,
+			`<text x="${text}" y="${middle - 8}" font-size="15" font-weight="600" fill="${TEXT}" dy="0.35em"${narrowed}>${escape(name)}</text>`,
 			`<text x="${text}" y="${middle + 11}" font-size="11.25" fill="${color}" dy="0.35em">${escape(subtitle)}</text>`
 		);
 	} else {
 		parts.push(
-			`<text x="${text}" y="${middle}" font-size="15" font-weight="600" fill="${TEXT}" dy="0.35em"${fit}>${escape(name)}</text>`
+			`<text x="${text}" y="${middle}" font-size="15" font-weight="600" fill="${TEXT}" dy="0.35em"${narrowed}>${escape(name)}</text>`
 		);
 	}
 	// Badges in the top-right corner, read left to right: on what, at whom, then how it runs.
@@ -278,19 +273,6 @@ function componentShape(
 	return parts.join('');
 }
 
-/** A Note as the canvas draws it: paper in its color, its text wrapped. */
-function noteShape(note: DiagramNode, box: Box): string {
-	const look = own(NOTE_LOOKS, note.color) ?? NOTE_LOOKS.yellow;
-	const lines = noteLines(String(note.text ?? ''));
-	return [
-		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${box.height - 1}" rx="4" fill="${look.paper}" stroke="${look.edge}"/>`,
-		...lines.map(
-			(line, i) =>
-				`<text x="${box.x + 12}" y="${box.y + 12 + 10 + i * 20}" font-size="14" fill="#3f3a2e" dy="0.35em">${escape(line)}</text>`
-		)
-	].join('');
-}
-
 /** A Person as the canvas draws it: a disc in its role's color, its name and role under it, no badges. */
 function personShape(
 	person: DiagramNode,
@@ -304,14 +286,11 @@ function personShape(
 	const kind = role?.name ?? names.types.person;
 	const centre = box.x + box.width / 2;
 	const disc = box.y + 6 + 22;
-	// Sizes may be estimates (the server, the zip): a name wider than its box is narrowed to fit.
-	const room = box.width - 12;
-	const fit =
-		name.length * NAME_CHAR > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : '';
+	const narrowed = fit(name, NAME_CHAR, box.width - 12);
 	const parts = [
 		`<circle cx="${centre}" cy="${disc}" r="22" fill="${color}"/>`,
 		`<svg x="${centre - 13}" y="${disc - 13}" width="26" height="26" viewBox="0 0 24 24"><path d="${role?.glyph ?? typeLook.glyph}" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-		`<text x="${centre}" y="${disc + 22 + 16}" font-size="15" font-weight="600" fill="${TEXT}" text-anchor="middle" dy="0.35em"${fit}>${escape(name)}</text>`
+		`<text x="${centre}" y="${disc + 22 + 16}" font-size="15" font-weight="600" fill="${TEXT}" text-anchor="middle" dy="0.35em"${narrowed}>${escape(name)}</text>`
 	];
 	if (kind !== name) {
 		parts.push(
@@ -516,36 +495,4 @@ function legendShape(
 		svg: `<g transform="translate(${box.x} ${box.y})"><rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="8" fill="#fff" stroke="${BORDER}"/>${parts.join('')}</g>`,
 		box
 	};
-}
-
-/**
- * A catalog entry by a key from the document: its own entries only. Peers can
- * write any value, and `constructor` or `__proto__` must not read what every
- * object inherits.
- */
-function own<T>(catalog: Record<string, T>, key: unknown): T | undefined {
-	return typeof key === 'string' && Object.hasOwn(catalog, key) ? catalog[key] : undefined;
-}
-
-function bounds(boxes: Box[]): Box {
-	if (boxes.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
-	const left = Math.min(...boxes.map((b) => b.x));
-	const top = Math.min(...boxes.map((b) => b.y));
-	const right = Math.max(...boxes.map((b) => b.x + b.width));
-	const bottom = Math.max(...boxes.map((b) => b.y + b.height));
-	return { x: left, y: top, width: right - left, height: bottom - top };
-}
-
-/** Text as SVG content: names and labels are user text. */
-function escape(text: string): string {
-	return (
-		text
-			// XML 1.0 forbids control characters other than tab, line feed and carriage return.
-			// eslint-disable-next-line no-control-regex
-			.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-	);
 }

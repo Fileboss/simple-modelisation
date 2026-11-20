@@ -22,7 +22,6 @@ tags: [backlog]
 - A Job Component type (cron, batch, worker)
 - Asynchronous Connections, drawn dashed (events, queues)
 - SaaS Skins for external services (Stripe, Auth0, SendGrid, Slack…)
-- MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
@@ -35,6 +34,7 @@ tags: [backlog]
 
 ## Done
 
+- [mcd-svg](docs/specs/mcd-svg/): MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
 - thin-borders-zoomed-out: MCD box borders stay one screen pixel wide when zoomed out, instead of losing pieces on a non-Retina screen
 - stop-sharing-copy: Stop sharing keeps the original until the Local copy is read back from storage with the same content
 - [malformed-documents](docs/specs/malformed-documents/): a malformed entry in a Shared Project is left out, with a banner, instead of breaking the app for every Participant

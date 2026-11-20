@@ -40,8 +40,7 @@ export const strings = {
 		exportImage: { png: 'Diagram as PNG', svg: 'Diagram as SVG' },
 		exportAll: 'All diagrams (SVG, .zip)',
 		includeLegend: 'Include legend',
-		mcdsLeftOut: (names: string) => `Not in the zip yet (MCDs): ${names}`,
-		noSystemDiagram: 'No System design diagram to export',
+		nothingToZip: 'Nothing to export: every Diagram is empty',
 		nothingToExport: 'Nothing to export: open a Diagram with something in it',
 		exportFailed: 'Image export failed',
 		undo: 'Undo',
@@ -148,18 +147,7 @@ export const strings = {
 		length: 'Length',
 		precision: 'Precision',
 		scale: 'Scale',
-		kinds: {
-			integer: 'Integer',
-			bigint: 'Big integer',
-			decimal: 'Decimal',
-			text: 'Text',
-			varchar: 'Text(n)',
-			boolean: 'Boolean',
-			date: 'Date',
-			datetime: 'Date time',
-			uuid: 'UUID',
-			serial: 'Auto-increment'
-		}
+		kinds: ENGLISH_NAMES.dataTypes
 	},
 	presence: {
 		you: 'you',
