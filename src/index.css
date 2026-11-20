@@ -550,6 +550,14 @@ select {
 
 /* MCD, in Looping's colors */
 
+/*
+ * At least one screen pixel at the canvas's zoom (`--zoom`, set by the canvas): a
+ * thinner border loses pieces. Rounded up, as the browser rounds border widths down.
+ */
+.react-flow {
+	--screen-px: round(up, calc(1px / var(--zoom, 1)), 1px);
+}
+
 .palette-entity {
 	width: 22px;
 	height: 16px;
@@ -567,7 +575,7 @@ select {
 
 .entity {
 	min-width: 120px;
-	border: 1px solid #1d1b22;
+	border: max(1px, var(--screen-px)) solid #1d1b22;
 	background: #ffff99;
 }
 
@@ -582,19 +590,19 @@ select {
 
 .entity-name {
 	background: #fdd77d;
-	border-bottom: 1px solid #1d1b22;
+	border-bottom: max(1px, var(--screen-px)) solid #1d1b22;
 }
 
 .association {
 	min-width: 90px;
-	border: 1px solid #1d1b22;
+	border: max(1px, var(--screen-px)) solid #1d1b22;
 	border-radius: 26px;
 	background: #22e5f0;
 	overflow: hidden;
 }
 
 .association .attributes {
-	border-top: 1px solid #1d1b22;
+	border-top: max(1px, var(--screen-px)) solid #1d1b22;
 	min-height: 20px;
 	padding: 2px 18px 8px;
 }
@@ -850,7 +858,7 @@ select {
 
 .uml-class {
 	min-width: 140px;
-	border: 1.5px solid #1d1b22;
+	border: max(1.5px, var(--screen-px)) solid #1d1b22;
 	background: #fff;
 	color: #000;
 	font-size: 13px;
@@ -861,7 +869,7 @@ select {
 	display: block;
 	background: none;
 	padding: 4px 10px;
-	border-bottom: 1.5px solid #1d1b22;
+	border-bottom: max(1.5px, var(--screen-px)) solid #1d1b22;
 	font-weight: 700;
 	font-size: 14px;
 	text-align: center;
@@ -994,7 +1002,7 @@ select {
 	justify-content: center;
 	width: 44px;
 	height: 44px;
-	border: 1.5px solid #1d1b22;
+	border: max(1.5px, var(--screen-px)) solid #1d1b22;
 	border-radius: 50%;
 	background: #fff;
 	color: #000;
@@ -1035,7 +1043,7 @@ select {
 .uml-association-class {
 	position: absolute;
 	min-width: 120px;
-	border: 1.5px solid #1d1b22;
+	border: max(1.5px, var(--screen-px)) solid #1d1b22;
 	background: #fff;
 	font-size: 13px;
 	font-style: normal;
