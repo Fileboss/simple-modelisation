@@ -9,11 +9,16 @@ tags: [backlog]
 
 ## To do
 
-Road to v0.1, the first public version (a relay, for a few people): security first.
+- Make the ghcr package public once the v0.1.0 image is published
 
-- v0.1 release with /sdlc:release (CHANGELOG, v0.1.0 tag), then the ghcr package made public
-
-After v0.1:
+- Findings from the global review after pre-release-fixes (not yet verified):
+  - Malformed shared document entries (diagram not a Y.Map, unknown kind, primitive node or edge, non-string name) crash the app for every participant, survive in IndexedDB and Stop sharing, and break JSON export; no React error boundary (`packages/model/src/project.ts`, `src/app/ProjectPage.tsx`)
+  - Line breaks in Entity, Association and diagram names escape the `--` comments of the PostgreSQL script (`packages/model/src/sql/postgres.ts`, `mld.ts`)
+  - Stop sharing deletes the original before the Local copy's IndexedDB write is confirmed; a quota error leaves an empty copy (`src/storage/persistence.ts` `storeCopy`)
+  - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
+  - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
+  - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
+  - MCP writes report success without changing anything when a node's map key differs from its `id` field (`server/src/mcp-views.ts` `pick`)
 
 - Model cleanups: edges() without reading every node again, pasteable once per paste, one bounding-box helper
 - MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
@@ -34,6 +39,7 @@ After v0.1:
 
 ## Done
 
+- v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only
 - [pre-release-fixes](docs/specs/pre-release-fixes/): v0.1, fixes from the global review: Safari cut, Note editing, static cache, documents per address, paste
 - [relay-limits](docs/specs/relay-limits/): v0.1, bound what one client can do to a public relay: documents per address, message and Presence size, true document size, malformed peer fields, proxy-only deployments
