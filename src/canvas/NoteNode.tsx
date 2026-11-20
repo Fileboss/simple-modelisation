@@ -1,15 +1,19 @@
-import type { NodeProps } from '@xyflow/react';
+import { NodeResizeControl, ResizeControlVariant, type NodeProps } from '@xyflow/react';
 import { useRef, useState } from 'react';
 import { NOTE_LOOKS } from '@simple-modelisation/model/looks.ts';
-import { NOTE_WIDTH } from '@simple-modelisation/model/layout.ts';
-import { NOTE_COLORS, type NoteNode as NoteData } from '@simple-modelisation/model/project.ts';
+import {
+	NOTE_COLORS,
+	NOTE_WIDTHS,
+	type NoteNode as NoteData
+} from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { useCanvas } from './canvas-context';
 
 /**
  * A Note: a sticky note in its color, its text wrapped; a double click writes
- * in it, leaving the field or Cmd/Ctrl+Enter saves, Escape cancels. No handles:
- * nothing connects to a Note.
+ * in it, leaving the field or Cmd/Ctrl+Enter saves, Escape cancels. No
+ * connection handles: nothing connects to a Note. Once selected, its left and
+ * right sides resize it; its height follows its text.
  */
 export function NoteNode({ id, data, selected }: NodeProps) {
 	const { project, diagramId } = useCanvas();
@@ -23,9 +27,26 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 	return (
 		<div
 			className={`note ${selected ? 'selected' : ''}`}
-			style={{ width: NOTE_WIDTH, background: look.paper, borderColor: look.edge }}
+			// As wide as its node, which the canvas sizes and a resize changes live.
+			style={{ width: '100%', background: look.paper, borderColor: look.edge }}
 			onDoubleClick={() => setEditing(true)}
 		>
+			{/* Not while its text is edited: a click at the field's edge is for the text. */}
+			{selected &&
+				!editing &&
+				(['left', 'right'] as const).map((side) => (
+					<NodeResizeControl
+						key={side}
+						position={side}
+						variant={ResizeControlVariant.Line}
+						resizeDirection="horizontal"
+						minWidth={NOTE_WIDTHS.min}
+						maxWidth={NOTE_WIDTHS.max}
+						className="note-resize"
+						onResizeStart={() => project.stopCapturing()}
+						// The canvas saves the width at the end of the resize, snapped (see useSnapGestures).
+					/>
+				))}
 			{editing ? (
 				<textarea
 					className="nodrag nowheel note-input"

@@ -10,6 +10,7 @@ import {
 	INHERITANCE_CONSTRAINTS,
 	INHERITANCE_TRANSLATIONS,
 	NOTE_COLORS,
+	NOTE_WIDTHS,
 	PROVIDERS,
 	RUNTIMES,
 	type Attribute,
@@ -671,17 +672,27 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_note',
-		'Rewrites a Note and recolors it.',
+		'Rewrites a Note, recolors it or sets its width (its height follows its text).',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			note: z.string().describe('Note id, from get_diagram.'),
 			text: z.string().max(2000).optional(),
-			color: z.enum(NOTE_COLORS).optional()
+			color: z.enum(NOTE_COLORS).optional(),
+			width: z
+				.number()
+				.min(NOTE_WIDTHS.min)
+				.max(NOTE_WIDTHS.max)
+				.optional()
+				.describe(
+					`In pixels, ${NOTE_WIDTHS.min} to ${NOTE_WIDTHS.max}; ${NOTE_WIDTHS.default} by default.`
+				)
 		},
-		({ project, diagram, note, text, color }) =>
+		({ project, diagram, note, text, color, width }) =>
 			access.write(project, (p) => {
-				if (text === undefined && !color) throw new ToolError('Give a text or a color.');
+				if (text === undefined && !color && width === undefined) {
+					throw new ToolError('Give a text, a color or a width.');
+				}
 				const d = pickDiagram(p, diagram);
 				const notes = nodesOf(p, d.id, 'note');
 				const target = notes.find((n) => n.id === note);
@@ -692,6 +703,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				}
 				if (text !== undefined) p.setNoteText(d.id, target.id, text);
 				if (color) p.setNoteColor(d.id, target.id, color);
+				if (width !== undefined) p.setNoteWidth(d.id, target.id, target.x, width);
 				return { id: target.id };
 			})
 	);

@@ -1,6 +1,6 @@
 import { useReactFlow, type Edge, type Node, type NodeChange } from '@xyflow/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ZONE_MIN } from '@simple-modelisation/model/project.ts';
+import { NOTE_WIDTHS, ZONE_MIN } from '@simple-modelisation/model/project.ts';
 import type { Box, Point } from './geometry';
 import { boundsOf, snap, snapSides, type Guide, type SnapTarget } from './snapping';
 
@@ -65,7 +65,10 @@ type Resize = { id: string; start: Box; targets: SnapTarget[]; box: Box };
  * pointer, not from the positions React Flow reports: it reads back the
  * positions it is given, so a snapped one would drift into the next step.
  */
-export function useSnapGestures(edges: Edge[], onResized: (id: string, box: Box) => void) {
+export function useSnapGestures(
+	edges: Edge[],
+	onResized: (id: string, box: Box, type: string) => void
+) {
 	const { getNodes, getZoom, screenToFlowPosition } = useReactFlow();
 	const [guides, setShownGuides] = useState<Guide[]>([]);
 	// Drawn again only when they change: a palette drag reports the pointer every few ms, still or not.
@@ -135,21 +138,23 @@ export function useSnapGestures(edges: Edge[], onResized: (id: string, box: Box)
 	/** Snaps the changes React Flow reports before they reach the canvas state. */
 	const snapChanges = useCallback(
 		(changes: NodeChange[]): NodeChange[] => {
-			/** A Zone's resize step: its moving sides snapped; the end saves the snapped box. */
+			/** A Zone's or a Note's resize step: its moving sides snapped; the end saves the snapped box. */
 			const snapResize = (change: NodeChange, all: NodeChange[]): NodeChange[] => {
 				if (change.type === 'position' && resize.current?.id === change.id) return [];
 				if (change.type !== 'dimensions' || change.resizing === undefined || !change.dimensions) {
 					return [change];
 				}
 				const node = getNodes().find((n) => n.id === change.id);
-				if (!node || node.type !== 'zone') return [change];
+				if (!node || (node.type !== 'zone' && node.type !== 'note')) return [change];
 				if (change.resizing === false) {
 					const done = resize.current;
 					resize.current = null;
 					setGuides([]);
 					if (!done) return [change];
-					onResized(done.id, done.box);
-					return [{ ...change, dimensions: { width: done.box.width, height: done.box.height } }];
+					onResized(done.id, done.box, node.type);
+					// A Note's height follows its rewrapped text: React Flow measures it again.
+					const height = node.type === 'note' ? change.dimensions.height : done.box.height;
+					return [{ ...change, dimensions: { width: done.box.width, height } }];
 				}
 				resize.current ??= {
 					id: node.id,
@@ -169,8 +174,11 @@ export function useSnapGestures(edges: Edge[], onResized: (id: string, box: Box)
 					height: change.dimensions.height
 				};
 				const sided = snapSides(raw, start, resize.current.targets, threshold());
-				// Snapping never makes a Zone smaller than it may be.
-				const fits = sided.box.width >= ZONE_MIN.width && sided.box.height >= ZONE_MIN.height;
+				// Snapping never makes a Zone smaller, or a Note narrower or wider, than it may be.
+				const fits =
+					node.type === 'note'
+						? sided.box.width >= NOTE_WIDTHS.min && sided.box.width <= NOTE_WIDTHS.max
+						: sided.box.width >= ZONE_MIN.width && sided.box.height >= ZONE_MIN.height;
 				const snapped = pointer.current.alt || !fits ? { box: raw, guides: [] } : sided;
 				resize.current.box = snapped.box;
 				setGuides(snapped.guides);

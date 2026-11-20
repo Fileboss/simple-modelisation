@@ -52,7 +52,8 @@ import { RemoteCursors } from '../presence/RemoteCursors';
 import {
 	estimatedSize,
 	layoutDiagram,
-	layoutFingerprint
+	layoutFingerprint,
+	noteWidth
 } from '@simple-modelisation/model/layout.ts';
 import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
@@ -291,7 +292,10 @@ function Canvas({ project, diagram, kind }: Props) {
 						dragHandle: '.zone-title',
 						data: n
 					}
-				: { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n }
+				: n.type === 'note'
+					? // Its width set here, so that a resize shows live and ends on the stored one.
+						{ id: n.id, type: n.type, position: { x: n.x, y: n.y }, width: noteWidth(n), data: n }
+					: { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n }
 		);
 	}, [project, diagram.id, kind]);
 	const toEdges = useCallback((): Edge[] => {
@@ -372,7 +376,11 @@ function Canvas({ project, diagram, kind }: Props) {
 	);
 
 	const onResized = useCallback(
-		(id: string, box: Box) => project.setZoneBox(diagram.id, id, box),
+		(id: string, box: Box, type: string) => {
+			// A Note's height follows its text: only its side and width are kept.
+			if (type === 'note') project.setNoteWidth(diagram.id, id, box.x, box.width);
+			else project.setZoneBox(diagram.id, id, box);
+		},
 		[project, diagram.id]
 	);
 	const snapping = useSnapGestures(edges, onResized);

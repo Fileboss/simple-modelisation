@@ -148,7 +148,20 @@ export type NoteColor = (typeof NOTE_COLORS)[number];
  * Free text on a sticky note, on either kind of Diagram: it explains the
  * Diagram and is not part of it (no Connections, left alone by Tidy up and the MLD).
  */
-export type NoteNode = DiagramNode & { type: 'note'; text: string; color?: NoteColor };
+/** `width` absent: the default; the height always follows the text. */
+export type NoteNode = DiagramNode & {
+	type: 'note';
+	text: string;
+	color?: NoteColor;
+	width?: number;
+};
+
+/** How wide a Note can be made, and how wide it is unless resized. */
+export const NOTE_WIDTHS = { min: 120, default: 180, max: 600 };
+
+/** A width as a Note may have it: rounded, within NOTE_WIDTHS. */
+export const boundedNoteWidth = (width: number) =>
+	Math.min(NOTE_WIDTHS.max, Math.max(NOTE_WIDTHS.min, Math.round(width)));
 
 /** The smallest Zone, so that it still holds a title and a Component. */
 export const ZONE_MIN = { width: 160, height: 100 };
@@ -749,6 +762,21 @@ export class ProjectDocument {
 		const note = this.nodeMap(diagramId).get(noteId);
 		if (note?.get('type') !== 'note' || note.get('text') === noteText(text)) return;
 		note.set('text', noteText(text));
+	}
+
+	/**
+	 * Sets a Note's width, within NOTE_WIDTHS, and its left side (`x`), which
+	 * moves when it is resized from the left.
+	 */
+	setNoteWidth(diagramId: string, noteId: string, x: number, width: number): void {
+		const note = this.nodeMap(diagramId).get(noteId);
+		if (note?.get('type') !== 'note' || !Number.isFinite(width)) return;
+		const bounded = boundedNoteWidth(width);
+		this.doc.transact(() => {
+			// A Note whose x is unreadable keeps it: its width is set all the same.
+			if (Number.isFinite(x) && note.get('x') !== Math.round(x)) note.set('x', Math.round(x));
+			if (note.get('width') !== bounded) note.set('width', bounded);
+		});
 	}
 
 	/** Colors a Note, yellow with null; an unknown color is ignored. */
@@ -1493,7 +1521,7 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 		'runtime'
 	],
 	zone: ['x', 'y', 'name', 'width', 'height', 'provider'],
-	note: ['x', 'y', 'text', 'color'],
+	note: ['x', 'y', 'text', 'color', 'width'],
 	entity: ['x', 'y', 'name', 'attributes'],
 	association: ['x', 'y', 'name', 'attributes'],
 	cif: ['x', 'y', 'association', 'determinants', 'determined'],

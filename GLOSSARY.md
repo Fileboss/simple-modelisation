@@ -85,7 +85,7 @@ A named area of a System design diagram grouping the Components drawn inside it,
 _Avoid_: Group, container, boundary, cluster (a Kubernetes cluster is one thing a Zone can stand for)
 
 **Note**:
-Free text on a sticky note, placed anywhere on a Diagram to explain it (a schedule, a constraint), in one of five colors; not part of the system it describes: no Connections, ignored by the MLD; Tidy up keeps it beside the element nearest it.
+Free text on a sticky note, placed anywhere on a Diagram to explain it (a schedule, a constraint), in one of five colors, as wide as one chooses, as tall as its text; not part of the system it describes: no Connections, ignored by the MLD; Tidy up keeps it beside the element nearest it.
 _Avoid_: Comment (a remark on a document), annotation, label (a Connection's text)
 
 **Connection**:

@@ -10,7 +10,7 @@ export const TEXT = '#1d1b22';
 /** A Note as the canvas draws it: paper in its color, its text wrapped. */
 export function noteShape(note: DiagramNode, box: Box): string {
 	const look = own(NOTE_LOOKS, note.color) ?? NOTE_LOOKS.yellow;
-	const lines = noteLines(String(note.text ?? ''));
+	const lines = noteLines(String(note.text ?? ''), box.width);
 	return [
 		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${box.height - 1}" rx="4" fill="${look.paper}" stroke="${look.edge}"/>`,
 		...lines.map(

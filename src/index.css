@@ -1269,6 +1269,20 @@ select {
 	pointer-events: all;
 }
 
+/* A Note's resize sides: an accent line, its grab area wider than it. */
+.note-resize.react-flow__resize-control.line {
+	border-color: var(--accent);
+	border-width: 0;
+	width: 3px;
+	background: var(--accent);
+}
+
+.note-resize.react-flow__resize-control.line::before {
+	content: '';
+	position: absolute;
+	inset: 0 -5px;
+}
+
 .zone-handle {
 	width: 9px;
 	height: 9px;
