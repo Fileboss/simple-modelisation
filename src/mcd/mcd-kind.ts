@@ -8,7 +8,9 @@ import { strings } from '../ui/strings';
 import { LegEdge } from './LegEdge';
 import { McdPalette } from './McdPalette';
 import { McdPanel } from './McdPanel';
-import { umlLayout, useNotation } from './notation';
+import { getNotation, umlLayout, useNotation } from './notation';
+import { mcdSvg } from '@simple-modelisation/model/svg/mcd.ts';
+import { SVG_NAMES } from '../canvas/svg-names';
 import { withCifConstraints, withCifLinks } from './cif';
 import { CifLinkEdge, CifNode } from './CifNode';
 import { withGeneralizations, withInheritanceLines } from './inheritance';
@@ -49,6 +51,9 @@ export const mcdKind: CanvasKind = {
 		const { diagramId } = useCanvas();
 		return useNotation(diagramId) === 'uml' ? umlMcdLayout : meriseLayout;
 	},
+	// In the Notation shown in this browser: the image is what one sees.
+	drawSvg: (diagramId, nodes, edges, measured) =>
+		mcdSvg(nodes, edges, { notation: getNotation(diagramId), names: SVG_NAMES, measured }),
 	drop: (project, diagramId, item, x, y) => {
 		if (item === NOTE_ITEM) return project.addNote(diagramId, x, y);
 		return item === 'entity' ? project.addEntity(diagramId, x, y, strings.mcd.entity) : undefined;

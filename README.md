@@ -49,7 +49,7 @@ Limits that bound a public server: 5 MB per document (a change that would pass i
 
 ## MCP
 
-With storage on, agents read and edit Shared Projects given their Share link, and draw System design diagrams as SVG:
+With storage on, agents read and edit Shared Projects given their Share link, and draw their Diagrams as SVG (System design, and MCDs in Merise or UML), ready to commit and show in a README:
 
 ```sh
 claude mcp add --transport http simple-modelisation http://localhost:3000/mcp

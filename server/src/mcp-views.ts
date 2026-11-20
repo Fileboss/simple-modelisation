@@ -18,6 +18,8 @@ import { effectiveProviders, zoneParents } from '@simple-modelisation/model/zone
 import { ENGLISH_NAMES } from '@simple-modelisation/model/names.ts';
 import { deriveMld } from '@simple-modelisation/model/sql/mld.ts';
 import { systemSvg } from '@simple-modelisation/model/svg/system.ts';
+import { mcdSvg } from '@simple-modelisation/model/svg/mcd.ts';
+import type { Notation } from '@simple-modelisation/model/mcd-drawing.ts';
 import { mldText, postgresScript } from '@simple-modelisation/model/sql/postgres.ts';
 import { ToolError } from './mcp-error.ts';
 
@@ -188,20 +190,31 @@ function only<T extends DiagramNode | DiagramEdge>(
 }
 
 /**
- * Diagrams drawn as SVG: the one named, or every one. MCDs are not drawn yet:
- * they come back in `skipped`, and naming one is an error.
+ * Each Diagram drawn as SVG: the one named, else every Diagram of the Project;
+ * those with nothing in them come back in `empty`. Legends on System design
+ * diagrams, MCDs in the given Notation.
  */
-export function exportDiagrams(project: ProjectDocument, reference?: string, legend = true) {
-	// Naming an MCD is refused: only System design diagrams are drawn for now.
-	const diagrams = reference ? [pickDiagram(project, reference, 'system')] : project.diagrams();
+export function exportDiagrams(
+	project: ProjectDocument,
+	reference?: string,
+	{ legend = true, notation = 'merise' }: { legend?: boolean; notation?: Notation } = {}
+) {
+	const diagrams = reference ? [pickDiagram(project, reference)] : project.diagrams();
+	const drawn = diagrams
+		.map((d) => ({ d, nodes: project.nodes(d.id) }))
+		.filter(({ nodes }) => nodes.length > 0);
 	return {
-		images: diagrams
-			.filter((d) => d.kind === 'system')
-			.map((d) => ({
+		images: drawn.map(({ d, nodes }) => {
+			const edges = project.edges(d.id);
+			return {
 				id: d.id,
 				name: d.name,
-				svg: systemSvg(project.nodes(d.id), project.edges(d.id), { names: ENGLISH_NAMES, legend })
-			})),
-		skipped: diagrams.filter((d) => d.kind === 'mcd').map((d) => d.name)
+				svg:
+					d.kind === 'mcd'
+						? mcdSvg(nodes, edges, { notation, names: ENGLISH_NAMES })
+						: systemSvg(nodes, edges, { names: ENGLISH_NAMES, legend })
+			};
+		}),
+		empty: diagrams.filter((d) => !drawn.some((x) => x.d === d)).map((d) => d.name)
 	};
 }

@@ -1,4 +1,5 @@
 import { pasteable } from '@simple-modelisation/model/project.ts';
+import { twinPositions, type TwinPosition } from '@simple-modelisation/model/mcd-drawing.ts';
 import { NotePanel } from './NoteNode';
 import {
 	applyEdgeChanges,
@@ -60,7 +61,7 @@ import { useCoarsePointer, useSmallScreen } from '../ui/media';
 import { Drawer } from '../ui/Drawer';
 import { downloadBlob } from '../ui/download';
 import { CanvasContext } from './canvas-context';
-import { captureViewport, drawnBounds, exportFrame, rasterizeSvg } from './export-image';
+import { rasterizeSvg } from './export-image';
 import { registerExporter } from './exporter';
 import type { Layout } from './layout';
 import type { Box } from './geometry';
@@ -98,7 +99,7 @@ const MAX_SHARED_SELECTION = 500;
 export type Selection = { node?: DiagramNode; edge?: DiagramEdge };
 
 /** Where an edge sits among the edges joining the same two nodes, for drawing them apart. */
-export type TwinPosition = { twinIndex: number; twinCount: number };
+export type { TwinPosition };
 
 /** Set on an edge another Participant selected: its color. */
 export type RemoteHighlight = { remoteColor?: string };
@@ -120,13 +121,15 @@ export type CanvasKind = {
 	 */
 	derive?: (nodes: DiagramNode[]) => DiagramNode[];
 	/**
-	 * Draws the Diagram as plain SVG, at the sizes the canvas measured; kinds
-	 * without it export a capture of the canvas.
+	 * Draws the Diagram as plain SVG (its SVG and PNG exports, the zip), at the
+	 * sizes the canvas measured; a node `measured` has no size for gets the
+	 * kind's own estimate.
 	 */
-	drawSvg?: (
+	drawSvg: (
+		diagramId: string,
 		nodes: DiagramNode[],
 		edges: DiagramEdge[],
-		sizeOf: (node: DiagramNode) => { width: number; height: number },
+		measured: (node: DiagramNode) => { width: number; height: number } | undefined,
 		legend: boolean
 	) => string;
 	/**
@@ -288,20 +291,14 @@ function Canvas({ project, diagram, kind }: Props) {
 	const toEdges = useCallback((): Edge[] => {
 		const all = project.edges(diagram.id);
 		// Edges joining the same two nodes (a reflexive Association's Legs) are drawn apart.
-		const twins = new Map<string, number>();
-		for (const e of all) twins.set(pairKey(e), (twins.get(pairKey(e)) ?? 0) + 1);
-		const seen = new Map<string, number>();
-		return all.map((e) => {
-			const twinIndex = seen.get(pairKey(e)) ?? 0;
-			seen.set(pairKey(e), twinIndex + 1);
-			return {
-				id: e.id,
-				type: e.type,
-				source: e.source,
-				target: e.target,
-				data: { ...e, twinIndex, twinCount: twins.get(pairKey(e)) ?? 1 }
-			};
-		});
+		const twins = twinPositions(all);
+		return all.map((e) => ({
+			id: e.id,
+			type: e.type,
+			source: e.source,
+			target: e.target,
+			data: { ...e, ...twins.get(e.id)! }
+		}));
 	}, [project, diagram.id]);
 
 	const [nodes, setNodes] = useState(toNodes);
@@ -330,61 +327,42 @@ function Canvas({ project, diagram, kind }: Props) {
 		return () => cancelAnimationFrame(frame);
 	}, [fitPending, nodes, fitView]);
 
-	// Export: the whole Diagram, framed on what it draws, drawn for the time of the
-	// capture without anyone's selection; one export at a time.
-	const [exporting, setExporting] = useState(false);
+	// Export: the whole Diagram as its kind draws it, one PNG at a time.
 	const exportBusy = useRef(false);
 	useEffect(
 		() =>
 			registerExporter(async (format, { legend }) => {
-				const viewport = flowRef.current?.querySelector<HTMLElement>('.react-flow__viewport');
-				if (!viewport || exportBusy.current) return false;
-				if (kind.drawSvg) {
-					// The kind's plain SVG, at the sizes React Flow measured (the model's guess otherwise);
-					// its PNG is that SVG rasterized, so both formats show the same image.
-					const nodes = project.nodes(diagram.id);
-					if (nodes.length === 0) return false;
-					const measured = new Map(getNodes().map((n) => [n.id, n.measured]));
-					const svg = kind.drawSvg(
-						nodes,
-						project.edges(diagram.id),
-						(node) => {
-							const size = measured.get(node.id);
-							return size?.width && size.height
-								? { width: size.width, height: size.height }
-								: estimatedSize(node);
-						},
-						legend
-					);
-					if (format === 'svg') {
-						downloadBlob(`${diagram.name}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
-						return true;
-					}
-					exportBusy.current = true;
-					try {
-						downloadBlob(`${diagram.name}.png`, await rasterizeSvg(svg));
-						return true;
-					} finally {
-						exportBusy.current = false;
-					}
+				if (exportBusy.current) return false;
+				// The kind's plain SVG, at the sizes React Flow measured (the model's guess otherwise);
+				// its PNG is that SVG rasterized, so both formats show the same image.
+				const nodes = project.nodes(diagram.id);
+				if (nodes.length === 0) return false;
+				const sizes = new Map(getNodes().map((n) => [n.id, n.measured]));
+				const svg = kind.drawSvg(
+					diagram.id,
+					nodes,
+					project.edges(diagram.id),
+					(node) => {
+						const size = sizes.get(node.id);
+						return size?.width && size.height
+							? { width: size.width, height: size.height }
+							: undefined;
+					},
+					legend
+				);
+				if (format === 'svg') {
+					downloadBlob(`${diagram.name}.svg`, new Blob([svg], { type: 'image/svg+xml' }));
+					return true;
 				}
 				exportBusy.current = true;
-				setExporting(true);
 				try {
-					await new Promise((resolve) =>
-						requestAnimationFrame(() => requestAnimationFrame(resolve))
-					);
-					const bounds = drawnBounds(viewport, screenToFlowPosition);
-					if (!bounds) return false;
-					const image = await captureViewport(viewport, exportFrame(bounds), format);
-					downloadBlob(`${diagram.name}.${format}`, image);
+					downloadBlob(`${diagram.name}.png`, await rasterizeSvg(svg));
 					return true;
 				} finally {
 					exportBusy.current = false;
-					setExporting(false);
 				}
 			}),
-		[diagram.name, screenToFlowPosition, kind, project, diagram.id, getNodes]
+		[diagram.name, kind, project, diagram.id, getNodes]
 	);
 
 	const onResized = useCallback(
@@ -487,23 +465,21 @@ function Canvas({ project, diagram, kind }: Props) {
 	const shownNodes = useMemo(
 		() =>
 			nodes.map((n) => {
-				if (exporting) return n.selected ? { ...n, selected: false } : n;
 				const color = remoteSelections.get(n.id);
 				if (!color) return n;
 				// The node's own box draws the outline, so it follows its shape (see .remote-selected).
 				const style = { ...n.style, '--remote-color': color } as CSSProperties;
 				return { ...n, className: `${n.className ?? ''} remote-selected`, style };
 			}),
-		[nodes, remoteSelections, exporting]
+		[nodes, remoteSelections]
 	);
 	const shownEdges = useMemo(
 		() =>
 			edges.map((e) => {
-				if (exporting) return e.selected ? { ...e, selected: false } : e;
 				const color = remoteSelections.get(e.id);
 				return color ? { ...e, data: { ...e.data, remoteColor: color } } : e;
 			}),
-		[edges, remoteSelections, exporting]
+		[edges, remoteSelections]
 	);
 
 	const layout = kind.useLayout();
@@ -954,7 +930,7 @@ function Canvas({ project, diagram, kind }: Props) {
 						proOptions={{ hideAttribution: true }}
 					>
 						<Background gap={16} />
-						<ZoomVariable exporting={exporting} />
+						<ZoomVariable />
 						<ViewportPortal>
 							{preview && (
 								<div
@@ -1119,14 +1095,14 @@ function SideToggle({ side, open, onToggle, selected }: SideToggleProps) {
 /**
  * Gives the canvas its zoom as `--zoom`, so that thin borders stay one screen
  * pixel wide when zoomed out (a thinner one loses pieces on a non-Retina
- * screen). An export draws at scale 1, so it sets 1 for the time of the capture.
+ * screen).
  */
-function ZoomVariable({ exporting }: { exporting: boolean }) {
+function ZoomVariable() {
 	const zoom = useStore((s) => s.transform[2]);
 	const domNode = useStore((s) => s.domNode);
 	useEffect(() => {
-		domNode?.style.setProperty('--zoom', String(exporting ? 1 : zoom));
-	}, [domNode, zoom, exporting]);
+		domNode?.style.setProperty('--zoom', String(zoom));
+	}, [domNode, zoom]);
 	return null;
 }
 
@@ -1149,7 +1125,6 @@ function menuActionsOn(on: 'node' | 'edge' | 'pane', smallScreen: boolean): Menu
 	return [...properties, ...clipboard, 'delete'];
 }
 
-const pairKey = (e: DiagramEdge) => `${e.source}|${e.target}`;
 const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 
 /**
