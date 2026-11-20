@@ -7,7 +7,8 @@ import {
 	type Attribute,
 	type Cardinality,
 	type CifNode,
-	type InheritanceNode
+	type InheritanceNode,
+	type LegEdge
 } from './project.ts';
 import { effectiveProviders, zoneParents } from './zones.ts';
 import { systemSvg } from './svg/system.ts';
@@ -400,6 +401,36 @@ describe('MCD', () => {
 			)!;
 			expect(project.parentOf(diagram, pastedStudent)).toBe(pastedPerson);
 		});
+	});
+
+	it('marks a 1,1 Leg of a binary Association relative, and clears it with its Cardinality', () => {
+		const { project, diagram, customer, order } = setup();
+		const product = project.addEntity(diagram, 200, 300, 'Product');
+		const places = project.addAssociation(diagram, order, customer, 'places');
+		const [orderLeg, customerLeg] = legsOf(project, diagram);
+		const relativeOf = (id: string) =>
+			(legsOf(project, diagram).find((l) => l.id === id) as LegEdge).relative;
+		expect(() => project.setRelative(diagram, orderLeg.id, true)).toThrow();
+		project.setCardinality(diagram, orderLeg.id, '1,1');
+		project.setRelative(diagram, orderLeg.id, true);
+		expect(relativeOf(orderLeg.id)).toBe(true);
+		const copy = ProjectDocument.fromFile(project.toFile());
+		expect(
+			(copy.edges(copy.diagrams()[0].id).find((e) => e.id === orderLeg.id) as LegEdge).relative
+		).toBe(true);
+		// Clicking the Cardinality moves it on from 1,1: the R goes too.
+		project.cycleCardinality(diagram, orderLeg.id);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		project.setCardinality(diagram, orderLeg.id, '1,1');
+		project.setRelative(diagram, orderLeg.id, true);
+		project.setRelative(diagram, orderLeg.id, false);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		// A third Leg makes it N-ary: the R goes, and is no longer offered.
+		project.setRelative(diagram, orderLeg.id, true);
+		project.addLeg(diagram, places, product);
+		expect(relativeOf(orderLeg.id)).toBeUndefined();
+		expect(() => project.setRelative(diagram, orderLeg.id, true)).toThrow();
+		void customerLeg;
 	});
 
 	it('deletes the Legs and Associations of a deleted Entity', () => {

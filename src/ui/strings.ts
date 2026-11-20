@@ -193,6 +193,8 @@ export const strings = {
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
 		legs: 'Legs',
+		relative: (entity: string) =>
+			`Relative identifier (R): ${entity} is identified within the other`,
 		inheritance: 'Inheritance',
 		inheritsFrom: 'Inherits from',
 		noParent: 'None',

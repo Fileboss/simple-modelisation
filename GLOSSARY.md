@@ -122,6 +122,10 @@ _Avoid_: Column type, SQL type
 The Attribute(s) that uniquely identify an Entity, shown underlined.
 _Avoid_: Primary key, ID
 
+**Relative identifier**:
+An Entity identified within another: its 1,1 Leg is marked R, and its table's key starts with the other Entity's key.
+_Avoid_: Weak entity, identifying relationship (other notations' words)
+
 **Association**:
 A named relationship between two Entities or more (the same Entity may appear twice: reflexive), possibly carrying Attributes.
 _Avoid_: Relation, relationship, link

@@ -39,6 +39,7 @@ tags: [backlog]
 
 ## Done
 
+- [relative-identifier](docs/specs/relative-identifier/): Entities identified relative to others, a 1,1 Leg marked R, in the MLD, both Notations and MCP
 - [entity-inheritance](docs/specs/entity-inheritance/): parent and child Entities with X / T / XT, three MLD translations, both Notations, MCP
 - [cif-constraints](docs/specs/cif-constraints/): CIFs on N-ary Associations, drawn as in Looping, in the MLD and over MCP
 - sql-name-line-breaks: a line break in an Entity, Association or Diagram name no longer escapes the `--` comments of the PostgreSQL script

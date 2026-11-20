@@ -3,6 +3,7 @@ import type { Selection } from '../canvas/DiagramCanvas';
 import { PanelField } from '../canvas/PanelField';
 import {
 	CARDINALITIES,
+	canBeRelative,
 	type AssociationNode,
 	type Cardinality,
 	type CifNode,
@@ -411,6 +412,35 @@ function LegRow({ leg, nextTo }: { leg: LegEdge; nextTo?: string }) {
 	const { project, diagramId } = useCanvas();
 	const nameOf = (id: string) =>
 		String(project.nodes(diagramId).find((n) => n.id === id)?.name ?? '');
+	// In Merise only, where the row is the Leg itself (in UML, the other end's multiplicity);
+	// still shown while set, so that an R that no longer applies can be cleared.
+	const offered =
+		nextTo === undefined &&
+		(leg.relative === true || canBeRelative(project.edges(diagramId), leg.id));
+	return (
+		<>
+			<LegCardinality leg={leg} nextTo={nextTo} nameOf={nameOf} />
+			{offered && (
+				<label className="panel-check">
+					<input
+						type="checkbox"
+						checked={leg.relative === true}
+						onChange={(e) => {
+							project.stopCapturing();
+							project.setRelative(diagramId, leg.id, e.currentTarget.checked);
+						}}
+					/>
+					{strings.mcd.relative(nameOf(leg.target))}
+				</label>
+			)}
+		</>
+	);
+}
+
+type CardinalityProps = { leg: LegEdge; nextTo?: string; nameOf: (id: string) => string };
+
+function LegCardinality({ leg, nextTo, nameOf }: CardinalityProps) {
+	const { project, diagramId } = useCanvas();
 	return (
 		<label className="panel-field leg-row">
 			<span>

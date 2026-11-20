@@ -291,6 +291,143 @@ describe('MLD', () => {
 		});
 	});
 
+	describe('Relative identifier', () => {
+		/** An Entity whose only Attribute is a plain Identifier, not an auto-increment. */
+		const keyed = (m: ReturnType<typeof mcd>, name: string, key: string) => {
+			const id = m.entity(name, [[key, { kind: 'integer' }]]);
+			const node = m.project.nodes(m.diagram).find((n) => n.id === id)!;
+			const [auto, own] = node.attributes as { id: string }[];
+			m.project.removeAttribute(m.diagram, id, auto.id);
+			m.project.toggleIdentifier(m.diagram, id, own.id);
+			return id;
+		};
+		/** `weak` identified relative to `strong` through a 1,1 R / 0,n Association. */
+		const relate = (m: ReturnType<typeof mcd>, name: string, weak: string, strong: string) => {
+			const id = m.associate(name, [weak, '1,1'], [strong, '0,n']);
+			const leg = m.project.edges(m.diagram).find((e) => e.source === id && e.target === weak)!;
+			m.project.setRelative(m.diagram, leg.id, true);
+			return id;
+		};
+
+		it('keys the dependent table by the foreign key, then its own Identifier', () => {
+			const m = mcd();
+			const order = m.entity('Order');
+			const line = keyed(m, 'Line', 'number');
+			relate(m, 'of', line, order);
+			expect(mldText(m.mld())).toBe(
+				['order = (id SERIAL);', 'line = (#order_id, number INTEGER);'].join('\n')
+			);
+			expect(m.mld().tables[1].primaryKey).toEqual(['order_id', 'number']);
+			expect(m.mld().warnings).toEqual([]);
+		});
+
+		it('composes chains and gives a foreign key to a dependent Entity its whole key', () => {
+			const m = mcd();
+			const building = m.entity('Building');
+			const floor = keyed(m, 'Floor', 'level');
+			const room = keyed(m, 'Room', 'number');
+			const booking = m.entity('Booking');
+			// Room first, so that the pass has to wait for Floor.
+			relate(m, 'on', room, floor);
+			relate(m, 'in', floor, building);
+			m.associate('books', [booking, '1,1'], [room, '0,n']);
+			const tables = m.mld().tables;
+			expect(tables.find((t) => t.name === 'room')?.primaryKey).toEqual([
+				'floor_building_id',
+				'floor_level',
+				'number'
+			]);
+			expect(tables.find((t) => t.name === 'booking')?.foreignKeys).toEqual([
+				{
+					columns: ['room_floor_building_id', 'room_floor_level', 'room_number'],
+					table: 'room',
+					references: ['floor_building_id', 'floor_level', 'number']
+				}
+			]);
+		});
+
+		it('keys an Entity by every Entity it is relative to', () => {
+			const m = mcd();
+			const student = m.entity('Student');
+			const session = m.entity('Session');
+			const enrolment = keyed(m, 'Enrolment', 'rank');
+			relate(m, 'by', enrolment, student);
+			relate(m, 'for', enrolment, session);
+			expect(m.mld().tables.find((t) => t.name === 'enrolment')?.primaryKey).toEqual([
+				'student_id',
+				'session_id',
+				'rank'
+			]);
+		});
+
+		it('gives a dependent parent’s children its whole key', () => {
+			const m = mcd();
+			const order = m.entity('Order');
+			const line = keyed(m, 'Line', 'number');
+			relate(m, 'of', line, order);
+			const special = m.entity('Special');
+			const node = m.project.nodes(m.diagram).find((n) => n.id === special)!;
+			m.project.removeAttribute(m.diagram, special, (node.attributes as { id: string }[])[0].id);
+			m.project.setParent(m.diagram, special, line);
+			expect(m.mld().tables.find((t) => t.name === 'special')?.foreignKeys).toEqual([
+				{
+					columns: ['line_order_id', 'line_number'],
+					table: 'line',
+					references: ['order_id', 'number']
+				}
+			]);
+		});
+
+		it('ignores the relative identifier of an Inheritance child', () => {
+			const m = mcd();
+			const person = m.entity('Person');
+			const school = m.entity('School');
+			const student = keyed(m, 'Student', 'rank');
+			m.project.setParent(m.diagram, student, person);
+			relate(m, 'at', student, school);
+			expect(m.mld().warnings).toContain(
+				'The relative identifier of Student is ignored: an Inheritance child takes its key from its parent.'
+			);
+		});
+
+		it('says once that a strong Entity without key cannot be referenced', () => {
+			const m = mcd();
+			const order = m.entity('Order');
+			const node = m.project.nodes(m.diagram).find((n) => n.id === order)!;
+			m.project.toggleIdentifier(m.diagram, order, (node.attributes as { id: string }[])[0].id);
+			const line = keyed(m, 'Line', 'number');
+			relate(m, 'of', line, order);
+			expect(
+				m.mld().warnings.filter((w) => w.startsWith('Association "of" cannot reference'))
+			).toHaveLength(1);
+		});
+
+		it('ignores a cycle of relative identifiers, naming apart what depends on it', () => {
+			const m = mcd();
+			const a = keyed(m, 'A', 'x');
+			const b = keyed(m, 'B', 'y');
+			const c = keyed(m, 'C', 'z');
+			relate(m, 'ab', a, b);
+			relate(m, 'ba', b, a);
+			relate(m, 'ca', c, a);
+			expect(m.mld().warnings).toContain(
+				'The relative identifiers of A, B form a cycle: they are ignored, with those depending on them (C).'
+			);
+		});
+
+		it('ignores a cycle of relative identifiers, with a warning', () => {
+			const m = mcd();
+			const a = keyed(m, 'A', 'x');
+			const b = keyed(m, 'B', 'y');
+			relate(m, 'ab', a, b);
+			relate(m, 'ba', b, a);
+			expect(m.mld().warnings).toContain(
+				'The relative identifiers of A, B form a cycle: they are ignored.'
+			);
+			expect(m.mld().tables.find((t) => t.name === 'a')?.primaryKey).toEqual(['x']);
+		});
+	});
+
 	describe('Inheritance', () => {
 		/** Person (id, name) with children Student (school) and Teacher (subject), no Identifier of their own. */
 		const people = () => {
