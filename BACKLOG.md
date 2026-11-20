@@ -30,6 +30,7 @@ tags: [backlog]
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
 - Custom Skins
+- Selecting several elements by touch (a selection mode or a lasso)
 - Zone colors, and Zones in Tidy up options (direction, spacing)
 - Ternary Associations, inheritance and CIF in MCDs
 - French UI
@@ -39,6 +40,7 @@ tags: [backlog]
 
 ## Done
 
+- [mobile-layout](docs/specs/mobile-layout/): the canvas first on phones, Palette, Panel and SQL as drawers; tap to place, big handles, long-press menu on touch screens
 - v0.1 release: CHANGELOG and the v0.1.0 tag
 - github-settings: v0.1, GitHub rulesets on main and v* tags, merge commits only, Actions pinned by commit and read-only
 - [pre-release-fixes](docs/specs/pre-release-fixes/): v0.1, fixes from the global review: Safari cut, Note editing, static cache, documents per address, paste

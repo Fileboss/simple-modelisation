@@ -25,7 +25,7 @@ export function EditableText({ value, onChange, className, display, ...control }
 
 	if (!isEditing) {
 		return (
-			<span className={className} onDoubleClick={() => setEditing(true)}>
+			<span className={className} data-editable onDoubleClick={() => setEditing(true)}>
 				{display ?? value}
 			</span>
 		);
