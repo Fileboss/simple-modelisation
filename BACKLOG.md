@@ -15,6 +15,15 @@ Road to v0.1, the first public version (a relay, for a few people): security fir
 
 After v0.1:
 
+- Findings from the global review after pre-release-fixes (not yet verified):
+  - Malformed shared document entries (diagram not a Y.Map, unknown kind, primitive node or edge, non-string name) crash the app for every participant, survive in IndexedDB and Stop sharing, and break JSON export; no React error boundary (`packages/model/src/project.ts`, `src/app/ProjectPage.tsx`)
+  - Line breaks in Entity, Association and diagram names escape the `--` comments of the PostgreSQL script (`packages/model/src/sql/postgres.ts`, `mld.ts`)
+  - Stop sharing deletes the original before the Local copy's IndexedDB write is confirmed; a quota error leaves an empty copy (`src/storage/persistence.ts` `storeCopy`)
+  - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
+  - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
+  - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
+  - MCP writes report success without changing anything when a node's map key differs from its `id` field (`server/src/mcp-views.ts` `pick`)
+
 - Model cleanups: edges() without reading every node again, pasteable once per paste, one bounding-box helper
 - MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
 - Numbered steps on Connections (1, 2, 3), to read a journey through the system
