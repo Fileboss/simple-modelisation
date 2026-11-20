@@ -481,6 +481,135 @@ describe('Import validation', () => {
 	});
 });
 
+describe('Malformed shared entries', () => {
+	/** A document with a good System design diagram and every kind of entry a peer could break. */
+	const broken = () => {
+		const project = new ProjectDocument();
+		const good = project.addDiagram('system', 'Good');
+		const web = project.addComponent(good, 'client', 'Web', 0, 0);
+		const api = project.addComponent(good, 'service', 'API', 300, 0);
+		project.addConnection(good, web, api);
+		const diagrams = project.doc.getMap('diagrams');
+		const nodes = (diagrams.get(good) as Y.Map<unknown>).get('nodes') as Y.Map<unknown>;
+		const edges = (diagrams.get(good) as Y.Map<unknown>).get('edges') as Y.Map<unknown>;
+		project.doc.transact(() => {
+			diagrams.set('number', 42);
+			const unknownKind = new Y.Map<unknown>();
+			unknownKind.set('id', 'weird');
+			unknownKind.set('kind', 'sequence');
+			unknownKind.set('nodes', new Y.Map());
+			unknownKind.set('edges', new Y.Map());
+			diagrams.set('weird', unknownKind);
+			const flat = new Y.Map<unknown>();
+			flat.set('id', 'flat');
+			flat.set('kind', 'mcd');
+			flat.set('nodes', 'not a map');
+			flat.set('edges', new Y.Map());
+			diagrams.set('flat', flat);
+			nodes.set('string', 'a node?');
+			const elsewhere = new Y.Map<unknown>();
+			for (const [key, value] of Object.entries({
+				id: 'real-id',
+				type: 'component',
+				x: 0,
+				y: 0,
+				name: 'Ghost',
+				componentType: 'service',
+				skin: null
+			})) {
+				elsewhere.set(key, value);
+			}
+			nodes.set('other-key', elsewhere);
+			edges.set('number', 7);
+			(diagrams.get(good) as Y.Map<unknown>).set('name', 12);
+			project.doc.getMap('meta').set('name', { not: 'text' });
+		});
+		return { project, good, diagrams };
+	};
+
+	it('reads around them without throwing, and leaves them out', () => {
+		const { project, good } = broken();
+		// Its name is a number: read as the kind's default.
+		expect(project.diagrams().map((d) => [d.id, d.name])).toEqual([[good, 'System design']]);
+		expect(project.nodes(good).map((n) => n.name)).toEqual(['Web', 'API']);
+		expect(project.edges(good)).toHaveLength(1);
+		expect(project.name()).toBe('');
+		expect(() => project.toFile()).not.toThrow();
+		expect(() => project.nodes('flat')).toThrow();
+	});
+
+	it('never writes through an entry stored under another key', () => {
+		const project = new ProjectDocument();
+		const mcd = project.addDiagram('mcd');
+		const a = project.addEntity(mcd, 0, 0, 'A');
+		const b = project.addEntity(mcd, 300, 0, 'B');
+		const ab = project.addAssociation(mcd, a, b);
+		const [legA] = project.edges(mcd);
+		const edges = (project.doc.getMap('diagrams').get(mcd) as Y.Map<unknown>).get(
+			'edges'
+		) as Y.Map<unknown>;
+		// A ghost under another key, claiming the id of a real Leg.
+		const ghost = new Y.Map<unknown>();
+		for (const [key, value] of Object.entries({
+			id: legA.id,
+			type: 'leg',
+			source: ab,
+			target: a,
+			cardinality: '0,n'
+		})) {
+			ghost.set(key, value);
+		}
+		edges.set('ghost', ghost);
+		project.setCardinality(mcd, legA.id, '1,1');
+		expect(project.edges(mcd).find((e) => e.id === legA.id)?.cardinality).toBe('1,1');
+		expect(ghost.get('cardinality')).toBe('0,n');
+	});
+
+	it('does not count an edge left dangling by concurrent edits', () => {
+		const project = new ProjectDocument();
+		const system = project.addDiagram('system');
+		const web = project.addComponent(system, 'client', 'Web', 0, 0);
+		const api = project.addComponent(system, 'service', 'API', 300, 0);
+		project.addConnection(system, web, api);
+		const nodes = (project.doc.getMap('diagrams').get(system) as Y.Map<unknown>).get(
+			'nodes'
+		) as Y.Map<unknown>;
+		// As a merge would leave it: the node gone, its Connection still there.
+		nodes.delete(api);
+		expect(project.edges(system)).toEqual([]);
+		expect(project.unreadable(system)).toBe(0);
+	});
+
+	it('keeps editing around them', () => {
+		const { project, good } = broken();
+		const [web] = project.nodes(good);
+		expect(() => project.deleteElements(good, [web.id], [])).not.toThrow();
+		expect(project.nodes(good).map((n) => n.name)).toEqual(['API']);
+		const mcd = project.addDiagram('mcd');
+		const person = project.addEntity(mcd, 0, 0, 'Person');
+		const student = project.addEntity(mcd, 0, 200, 'Student');
+		const mcdNodes = (project.doc.getMap('diagrams').get(mcd) as Y.Map<unknown>).get(
+			'nodes'
+		) as Y.Map<unknown>;
+		const mcdEdges = (project.doc.getMap('diagrams').get(mcd) as Y.Map<unknown>).get(
+			'edges'
+		) as Y.Map<unknown>;
+		mcdNodes.set('junk', 1);
+		mcdEdges.set('junk', 'x');
+		expect(() => project.setParent(mcd, student, person)).not.toThrow();
+		expect(project.parentOf(mcd, student)).toBe(person);
+	});
+
+	it('counts what it leaves out, and keeps it in the document', () => {
+		const { project, good, diagrams } = broken();
+		// 3 diagram entries, then the open Diagram's 2 nodes and 1 edge.
+		expect(project.unreadable()).toBe(3);
+		expect(project.unreadable(good)).toBe(6);
+		expect(diagrams.get('number')).toBe(42);
+		expect(diagrams.size).toBe(4);
+	});
+});
+
 describe('Local edits', () => {
 	it("reports this user's operations and undo, not changes received from a collaborator", () => {
 		const mine = new ProjectDocument();

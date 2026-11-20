@@ -66,6 +66,14 @@ import type { Box } from './geometry';
 import type { Size } from '@simple-modelisation/model/layout.ts';
 import { useSnapGestures } from './use-snap-gestures';
 import { LongPress } from './long-press';
+import {
+	isSidesShortcut,
+	readSidesOpen,
+	saveSidesOpen,
+	toggledSides,
+	type Side,
+	type SidesOpen
+} from './side-panels';
 import { isCanvasClipboard, selectionShortcut, withSelection } from './selection';
 import {
 	clipBounds,
@@ -169,6 +177,22 @@ function Canvas({ project, diagram, kind }: Props) {
 	const [drawer, setDrawer] = useState<'palette' | 'panel' | 'footer' | null>(null);
 	const toggleDrawer = (name: NonNullable<typeof drawer>) =>
 		setDrawer((open) => (open === name ? null : name));
+	// On a wide screen the palette and the panel fold into rails, to see more of the Diagram.
+	const [sides, setSides] = useState<SidesOpen>(readSidesOpen);
+	useEffect(() => saveSidesOpen(sides), [sides]);
+	const toggleSide = (side: Side) => setSides((open) => ({ ...open, [side]: !open[side] }));
+	useEffect(() => {
+		// The drawers of a small screen have their own buttons.
+		if (smallScreen) return;
+		const onKey = (e: KeyboardEvent) => {
+			// Not behind an open menu, which has the keyboard.
+			if (!isSidesShortcut(e) || document.querySelector('details[open], .context-menu')) return;
+			e.preventDefault();
+			setSides(toggledSides);
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	}, [smallScreen]);
 	// A tapped palette item waits for a tap on the canvas, the palette's drawer out of the way.
 	const armedItem = useArmedItem();
 	const armed = armedItem?.diagramId === diagram.id ? armedItem.item : null;
@@ -837,7 +861,14 @@ function Canvas({ project, diagram, kind }: Props) {
 
 	return (
 		<div className="workspace">
-			{!smallScreen && <kind.Palette />}
+			{!smallScreen && (
+				<div className={`side side-left ${sides.palette ? '' : 'side-closed'}`}>
+					<div className="side-bar">
+						<SideToggle side="palette" open={sides.palette} onToggle={toggleSide} />
+					</div>
+					{sides.palette && <kind.Palette />}
+				</div>
+			)}
 			<div className="flow-column">
 				<div
 					ref={flowRef}
@@ -1040,9 +1071,46 @@ function Canvas({ project, diagram, kind }: Props) {
 					)}
 				</div>
 			) : (
-				<aside className="panel">{panel}</aside>
+				<div className={`side side-right ${sides.panel ? '' : 'side-closed'}`}>
+					<div className="side-bar">
+						<SideToggle side="panel" open={sides.panel} onToggle={toggleSide} selected={selected} />
+					</div>
+					{sides.panel && <aside className="panel">{panel}</aside>}
+				</div>
 			)}
 		</div>
+	);
+}
+
+type SideToggleProps = {
+	side: Side;
+	open: boolean;
+	onToggle: (side: Side) => void;
+	/** Something is selected while the properties are folded: said, and dotted. */
+	selected?: boolean;
+};
+
+/**
+ * Folds a side panel into its rail, or unfolds it; the arrow points the way it
+ * goes. One button in both states, so that it keeps the keyboard focus.
+ */
+function SideToggle({ side, open, onToggle, selected }: SideToggleProps) {
+	const hidden = !open && selected;
+	const label =
+		strings.canvas.sides[side][open ? 'hide' : 'show'] +
+		(hidden ? ` (${strings.canvas.somethingSelected})` : '');
+	const towardsLeft = (side === 'palette') === open;
+	return (
+		<button
+			className="side-toggle"
+			title={`${label} — ${strings.canvas.sidesShortcut}`}
+			aria-label={label}
+			aria-expanded={open}
+			onClick={() => onToggle(side)}
+		>
+			{towardsLeft ? '‹' : '›'}
+			{hidden && <span className="dock-dot side-dot" aria-hidden="true" />}
+		</button>
 	);
 }
 

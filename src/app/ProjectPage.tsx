@@ -16,6 +16,7 @@ import { strings } from '../ui/strings';
 import { useTransientNote } from '../ui/transient-note';
 import { useSmallScreen } from '../ui/media';
 import { useMenuDismiss } from '../ui/menu';
+import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { shareLink, type SyncStatus } from '../storage/sync';
 import { Avatars } from '../presence/Avatars';
 import { reportPresence, usePresence } from '../presence/presence-context';
@@ -63,42 +64,45 @@ export function ProjectPage() {
 
 	return (
 		<PresenceProvider awareness={awareness}>
-			<div className="project">
-				{smallScreen && project ? (
-					<CompactHeader
-						project={project}
-						projectId={projectId}
-						status={status}
-						onCopied={openCopy}
-					/>
-				) : (
-					<header className="project-header">
-						<Link to="/">← {strings.project.backHome}</Link>
-						<h1>
-							{project ? (
-								<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
-							) : (
-								summary.name
+			{/* The whole page, header included; another Project starts afresh. */}
+			<ErrorBoundary key={projectId}>
+				<div className="project">
+					{smallScreen && project ? (
+						<CompactHeader
+							project={project}
+							projectId={projectId}
+							status={status}
+							onCopied={openCopy}
+						/>
+					) : (
+						<header className="project-header">
+							<Link to="/">← {strings.project.backHome}</Link>
+							<h1>
+								{project ? (
+									<EditableText value={project.name()} onChange={(name) => project.rename(name)} />
+								) : (
+									summary.name
+								)}
+							</h1>
+							<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
+							{project && <Avatars project={project} />}
+							{project && (
+								<ProjectActions
+									project={project}
+									projectId={projectId}
+									status={status}
+									onCopied={openCopy}
+								/>
 							)}
-						</h1>
-						<span className={`sync-status sync-${status}`}>{strings.project.status[status]}</span>
-						{project && <Avatars project={project} />}
-						{project && (
-							<ProjectActions
-								project={project}
-								projectId={projectId}
-								status={status}
-								onCopied={openCopy}
-							/>
-						)}
-					</header>
-				)}
-				{project ? (
-					<ProjectWorkspace project={project} tabs={!smallScreen} />
-				) : (
-					<main className="status">{strings.loading}</main>
-				)}
-			</div>
+						</header>
+					)}
+					{project ? (
+						<ProjectWorkspace project={project} tabs={!smallScreen} />
+					) : (
+						<main className="status">{strings.loading}</main>
+					)}
+				</div>
+			</ErrorBoundary>
 		</PresenceProvider>
 	);
 }
@@ -439,6 +443,8 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: boolean }) {
 	useProjectVersion(project);
 	const { diagrams, open, select, add } = useOpenDiagram(project);
+	// Entries this version cannot read (malformed, or from another version): left out, and said.
+	const unreadable = project.unreadable(open?.id);
 
 	// Others see which Diagram this Participant is on; the canvas reports its own cursor and selection.
 	const { awareness } = usePresence();
@@ -449,6 +455,11 @@ function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: b
 
 	return (
 		<>
+			{unreadable > 0 && (
+				<p className="unreadable-note" role="status">
+					{strings.project.unreadable(unreadable)}
+				</p>
+			)}
 			{tabs && (
 				<nav className="tabs">
 					{diagrams.map((d) => (

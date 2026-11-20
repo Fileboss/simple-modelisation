@@ -277,7 +277,8 @@ export class ProjectDocument {
 
 	/** The Project's name; empty only in a document created before names lived in it. */
 	name(): string {
-		return (this.meta.get('name') as string | undefined) ?? '';
+		const name = this.meta.get('name');
+		return typeof name === 'string' ? name : '';
 	}
 
 	rename(name: string): void {
@@ -296,14 +297,53 @@ export class ProjectDocument {
 
 	/** Oldest first, the order of the tabs. */
 	diagrams(): Diagram[] {
-		return [...this.diagramMap.values()]
-			.map((d) => ({
-				id: d.get('id') as string,
-				kind: d.get('kind') as DiagramKind,
-				name: d.get('name') as string,
-				createdAt: d.get('createdAt') as number
-			}))
+		return [...this.diagramMap.entries()]
+			.filter(([key, d]) => isReadableDiagram(key, d))
+			.map(([, d]) => {
+				const kind = d.get('kind') as DiagramKind;
+				const name = d.get('name');
+				const createdAt = d.get('createdAt');
+				return {
+					id: d.get('id') as string,
+					kind,
+					// A peer may write anything: a name that is not text, or a time that is not a
+					// number, reads as the default.
+					name: typeof name === 'string' ? name : DEFAULT_DIAGRAM_NAMES[kind],
+					createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0
+				};
+			})
 			.sort((a, b) => a.createdAt - b.createdAt);
+	}
+
+	/**
+	 * How many entries reads leave out, that this version cannot read (malformed,
+	 * or written by another version): diagram entries, and the nodes and edges of
+	 * `diagramId` if given. An edge left dangling by concurrent edits is not
+	 * counted: nothing in it is unreadable. They all stay in the document.
+	 */
+	unreadable(diagramId?: string): number {
+		let count = [...this.diagramMap.entries()].filter(
+			([key, diagram]) => !isReadableDiagram(key, diagram)
+		).length;
+		if (diagramId === undefined || !isReadableDiagram(diagramId, this.diagramMap.get(diagramId))) {
+			return count;
+		}
+		const nodes = this.nodeMap(diagramId);
+		const edges = this.edgeMap(diagramId);
+		const read = new Set(this.nodes(diagramId).map((n) => n.id));
+		count += nodes.raw.size - read.size;
+		const kept = new Set(this.edges(diagramId).map((e) => e.id));
+		for (const [key, entry] of edges.raw.entries()) {
+			if (kept.has(key)) continue;
+			const edge = isReadableEntry(key, entry) ? entry : undefined;
+			// Its ends gone (not merely unreadable): dangling, not unreadable.
+			const dangling =
+				edge !== undefined &&
+				(!nodes.raw.has(edge.get('source') as string) ||
+					!nodes.raw.has(edge.get('target') as string));
+			if (!dangling) count++;
+		}
+		return count;
 	}
 
 	diagram(id: string): Diagram | undefined {
@@ -1236,12 +1276,12 @@ export class ProjectDocument {
 		else if (node.get(key) !== value) node.set(key, value);
 	}
 
-	private nodeMap(diagramId: string): Y.Map<Fields> {
-		return this.requireDiagram(diagramId).get('nodes') as Y.Map<Fields>;
+	private nodeMap(diagramId: string): Entries {
+		return new Entries(this.requireDiagram(diagramId).get('nodes') as Y.Map<Fields>);
 	}
 
-	private edgeMap(diagramId: string): Y.Map<Fields> {
-		return this.requireDiagram(diagramId).get('edges') as Y.Map<Fields>;
+	private edgeMap(diagramId: string): Entries {
+		return new Entries(this.requireDiagram(diagramId).get('edges') as Y.Map<Fields>);
 	}
 
 	private updateAttributes(
@@ -1255,9 +1295,10 @@ export class ProjectDocument {
 		node.set('attributes', change(completeAttributes(stored)));
 	}
 
+	/** A diagram reads may use: no write lands on an entry the app cannot read. */
 	private requireDiagram(id: string): Fields {
 		const diagram = this.diagramMap.get(id);
-		if (!diagram) throw new Error(`Unknown diagram ${id}`);
+		if (!isReadableDiagram(id, diagram)) throw new Error(`Unknown diagram ${id}`);
 		return diagram;
 	}
 }
@@ -1496,6 +1537,71 @@ function parseFile(data: unknown): ProjectFile {
 }
 
 const isString = (value: unknown): value is string => typeof value === 'string';
+
+/**
+ * A diagram entry reads can use, whatever a peer wrote: a map stored under its
+ * own id, of a known kind, with maps of nodes and edges.
+ */
+function isReadableDiagram(key: string, diagram: unknown): diagram is Fields {
+	return (
+		diagram instanceof Y.Map &&
+		diagram.get('id') === key &&
+		DIAGRAM_KINDS.includes(diagram.get('kind') as DiagramKind) &&
+		diagram.get('nodes') instanceof Y.Map &&
+		diagram.get('edges') instanceof Y.Map
+	);
+}
+
+const isReadableEntry = (key: string, entry: unknown): entry is Fields =>
+	entry instanceof Y.Map && entry.get('id') === key;
+
+/**
+ * A Diagram's nodes or edges as reads and writes see them: only the entries
+ * that are maps stored under their own id. A plain value a peer wrote, or a map
+ * under another key, is neither found, listed nor counted; writes pass through.
+ */
+class Entries {
+	readonly raw: Y.Map<Fields>;
+
+	constructor(raw: Y.Map<Fields>) {
+		this.raw = raw;
+	}
+
+	get(key: string): Fields | undefined {
+		const entry = this.raw.get(key);
+		return isReadableEntry(key, entry) ? entry : undefined;
+	}
+
+	has(key: string): boolean {
+		return this.get(key) !== undefined;
+	}
+
+	set(key: string, entry: Fields): void {
+		this.raw.set(key, entry);
+	}
+
+	delete(key: string): void {
+		this.raw.delete(key);
+	}
+
+	*entries(): IterableIterator<[string, Fields]> {
+		for (const [key, entry] of this.raw.entries()) {
+			if (isReadableEntry(key, entry)) yield [key, entry];
+		}
+	}
+
+	*values(): IterableIterator<Fields> {
+		for (const [, entry] of this.entries()) yield entry;
+	}
+
+	[Symbol.iterator]() {
+		return this.entries();
+	}
+
+	get size(): number {
+		return [...this.entries()].length;
+	}
+}
 
 /** A stored list of ids, or none when a peer or a file wrote something else. */
 const stringList = (value: unknown): string[] =>
