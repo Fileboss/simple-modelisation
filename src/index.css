@@ -1433,6 +1433,68 @@ select {
 	background: #fef3c7;
 }
 
+/* Wide screens: the side panels fold into thin rails, to see more of the Diagram */
+
+.side {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--surface);
+}
+
+.side-left {
+	border-right: 1px solid var(--border);
+}
+
+.side-right {
+	border-left: 1px solid var(--border);
+}
+
+/* The button on its own strip: it covers nothing the panel scrolls. */
+.side-bar {
+	display: flex;
+	flex: none;
+	padding: 4px 6px 0;
+}
+
+.side-left .side-bar {
+	justify-content: flex-end;
+}
+
+.side .palette,
+.side .panel {
+	flex: 1;
+	min-height: 0;
+	border: none;
+	padding-top: 0;
+}
+
+.side-closed {
+	width: 34px;
+}
+
+.side-closed .side-bar {
+	justify-content: center;
+}
+
+.side-toggle {
+	position: relative;
+	width: 22px;
+	height: 26px;
+	padding: 0;
+	border-radius: 6px;
+	color: var(--muted);
+	font-size: 1rem;
+	line-height: 1;
+}
+
+/* Beside the arrow, not on it: more specific than the dock's own placement. */
+.side-toggle .side-dot {
+	top: -5px;
+	right: -5px;
+}
+
 /* Small screens: the canvas fills the screen, the side panels are drawers (SMALL_SCREEN in ui/media.ts) */
 
 .compact-header {
