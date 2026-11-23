@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { anyOverlap, estimatedSize } from '@simple-modelisation/model/layout.ts';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -62,6 +62,12 @@ async function call(client: Client, name: string, args: Record<string, unknown>)
 }
 
 describe('MCP endpoint', () => {
+	it('tells clients the release it runs', async () => {
+		const { client } = await setup();
+		const root = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+		expect(client.getServerVersion()?.version).toBe(root.version);
+	});
+
 	it('lists the tools, none of which lists or creates Projects', async () => {
 		const { client } = await setup();
 		const { tools } = await client.listTools();
