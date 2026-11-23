@@ -458,6 +458,23 @@ describe('MCD', () => {
 			{ name: 'mail', identifier: true }
 		]);
 	});
+
+	it('moves an Attribute to an index, clamped to the list', () => {
+		const { project, diagram, customer } = setup();
+		const email = project.addAttribute(diagram, customer, 'email');
+		project.addAttribute(diagram, customer, 'name');
+		const names = () =>
+			(project.nodes(diagram).find((n) => n.id === customer)!.attributes as { name: string }[]).map(
+				(a) => a.name
+			);
+
+		project.moveAttributeTo(diagram, customer, email, 0);
+		expect(names()).toEqual(['email', 'id', 'name']);
+		project.moveAttributeTo(diagram, customer, email, 99);
+		expect(names()).toEqual(['id', 'name', 'email']);
+		project.moveAttributeTo(diagram, customer, email, -3);
+		expect(names()).toEqual(['email', 'id', 'name']);
+	});
 });
 
 describe('Import validation', () => {

@@ -75,15 +75,20 @@ describe('MCP endpoint', () => {
 			'add_leg',
 			'add_note',
 			'add_zone',
+			'batch',
 			'connect_components',
+			'delete_diagram',
 			'delete_elements',
 			'export_diagram',
+			'export_project',
 			'get_diagram',
 			'get_mcd_sql',
 			'get_project',
 			'layout_diagram',
 			'move_elements',
+			'remove_attribute',
 			'rename_element',
+			'set_attribute',
 			'set_cardinality',
 			'set_component',
 			'set_connection',
@@ -1261,5 +1266,304 @@ describe('MCP layout_diagram direction', () => {
 			direction: 'vertical'
 		});
 		expect(refused.error).toBe('Only an MCD can be laid out vertically.');
+	});
+});
+
+/** The Attributes of an element of a Participant's Diagram, by name. */
+function attributesOf(browser: ProjectDocument, diagram: string, element: string) {
+	const diagramId = browser.diagrams().find((d) => d.name === diagram)!.id;
+	const node = browser.nodes(diagramId).find((n) => n.name === element);
+	return (node?.attributes ?? []) as {
+		id: string;
+		name: string;
+		identifier: boolean;
+		optional: boolean;
+		type: { kind: string };
+	}[];
+}
+
+describe('MCP set_attribute and remove_attribute', () => {
+	it('changes each field of an Attribute, by id or by name', async () => {
+		const { client, id, browser } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', {
+			...at,
+			name: 'Customer',
+			attributes: [
+				{ name: 'id', type: 'integer', identifier: true },
+				{ name: 'email' },
+				{ name: 'phone' }
+			]
+		});
+		await vi.waitFor(() => expect(attributesOf(browser, 'Data', 'Customer')).toHaveLength(3));
+		const email = attributesOf(browser, 'Data', 'Customer')[1];
+
+		const set = await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: email.id,
+			name: 'mail',
+			type: 'text(120)',
+			optional: true,
+			position: 99
+		});
+		expect(set).toEqual({ id: email.id });
+		await vi.waitFor(() =>
+			expect(attributesOf(browser, 'Data', 'Customer').at(-1)).toMatchObject({
+				name: 'mail',
+				type: { kind: 'varchar' },
+				optional: true,
+				identifier: false
+			})
+		);
+
+		// By name: the Identifier clears NULL, and position 1 comes first.
+		await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'mail',
+			identifier: true,
+			position: 1
+		});
+		await vi.waitFor(() =>
+			expect(attributesOf(browser, 'Data', 'Customer')[0]).toMatchObject({
+				name: 'mail',
+				identifier: true,
+				optional: false
+			})
+		);
+		await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'mail',
+			identifier: false,
+			position: -5
+		});
+		await vi.waitFor(() =>
+			expect(attributesOf(browser, 'Data', 'Customer')[0]).toMatchObject({
+				name: 'mail',
+				identifier: false
+			})
+		);
+		expect(attributesOf(browser, 'Data', 'Customer').map((a) => a.name)).toEqual([
+			'mail',
+			'id',
+			'phone'
+		]);
+
+		const removed = await call(client, 'remove_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'phone'
+		});
+		expect(removed.deleted).toBeTypeOf('string');
+		await vi.waitFor(() =>
+			expect(attributesOf(browser, 'Data', 'Customer').map((a) => a.name)).toEqual(['mail', 'id'])
+		);
+	});
+
+	it('refuses an Identifier on an Association, an unknown element, Attribute or Data type', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Customer' });
+		await call(client, 'add_entity', { ...at, name: 'Order' });
+		await call(client, 'add_association', {
+			...at,
+			name: 'places',
+			from: { entity: 'Order', cardinality: '1,1' },
+			to: { entity: 'Customer', cardinality: '0,n' }
+		});
+		await call(client, 'add_attribute', { ...at, element: 'places', attribute: { name: 'at' } });
+
+		const identifier = await call(client, 'set_attribute', {
+			...at,
+			element: 'places',
+			attribute: 'at',
+			identifier: true
+		});
+		expect(identifier.error).toBe('Only an Entity has an Identifier.');
+		const element = await call(client, 'set_attribute', {
+			...at,
+			element: 'Invoice',
+			attribute: 'id',
+			name: 'x'
+		});
+		expect(element.error).toMatch(/^No element "Invoice"\. Known: /);
+		const attribute = await call(client, 'remove_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'email'
+		});
+		expect(attribute.error).toMatch(/^No attribute "email"\. Known: id \(/);
+		const type = await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'id',
+			type: 'money'
+		});
+		expect(type.error).toBe('Unknown Data type "money".');
+		const nullIdentifier = await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'id',
+			optional: true
+		});
+		expect(nullIdentifier.error).toBe('An Identifier never accepts NULL.');
+		await call(client, 'add_attribute', { ...at, element: 'Customer', attribute: { name: 'n' } });
+		const nullSerial = await call(client, 'set_attribute', {
+			...at,
+			element: 'Customer',
+			attribute: 'n',
+			type: 'serial',
+			optional: true
+		});
+		expect(nullSerial.error).toBe('An auto-increment (serial) Attribute never accepts NULL.');
+		const architecture = await call(client, 'set_attribute', {
+			project: id,
+			diagram: 'Architecture',
+			element: 'Customer',
+			attribute: 'id',
+			name: 'x'
+		});
+		expect(architecture.error).toBe('"Architecture" is not an MCD.');
+	});
+});
+
+describe('MCP delete_diagram and export_project', () => {
+	it('deletes a Diagram, and refuses an unknown one', async () => {
+		const { client, id, browser } = await setup();
+		const deleted = await call(client, 'delete_diagram', { project: id, diagram: 'Architecture' });
+		expect(deleted.deleted).toBeTypeOf('string');
+		await vi.waitFor(() => expect(browser.diagrams().map((d) => d.name)).toEqual(['Data']));
+		const unknown = await call(client, 'delete_diagram', { project: id, diagram: 'Architecture' });
+		expect(unknown.error).toMatch(/^No diagram "Architecture"\./);
+	});
+
+	it("gives the Project as the app's JSON file, which imports back", async () => {
+		const { client, id, browser } = await setup();
+		await call(client, 'add_entity', { project: id, diagram: 'Data', name: 'Customer' });
+		await vi.waitFor(() => expect(browser.nodes(browser.diagrams()[1].id)).toHaveLength(1));
+		const file = await call(client, 'export_project', { project: id });
+		expect(file).toEqual(browser.toFile());
+		const imported = ProjectDocument.fromFile(file);
+		expect(imported.name()).toBe('Shop');
+		expect(imported.diagrams().map((d) => d.name)).toEqual(['Architecture', 'Data']);
+	});
+});
+
+describe('MCP batch', () => {
+	it('builds an MCD in one call, later operations using ids from earlier ones', async () => {
+		const { client, id, browser } = await setup();
+		let updates = 0;
+		browser.subscribe(() => updates++);
+		const result = await call(client, 'batch', {
+			project: id,
+			operations: [
+				{ tool: 'add_diagram', args: { kind: 'mcd', name: 'Shop data' } },
+				{ tool: 'add_entity', args: { diagram: { $ref: 1 }, name: 'Customer' } },
+				{ tool: 'add_entity', args: { diagram: { $ref: 1 }, name: 'Order' } },
+				{
+					tool: 'add_association',
+					args: {
+						diagram: { $ref: 1 },
+						name: 'places',
+						from: { entity: { $ref: 3 }, cardinality: '1,1' },
+						to: { entity: { $ref: 2 }, cardinality: '0,n' }
+					}
+				},
+				{
+					tool: 'set_attribute',
+					args: { diagram: { $ref: 1 }, element: { $ref: 2 }, attribute: 'id', name: 'number' }
+				}
+			]
+		});
+		expect(result.results).toHaveLength(5);
+		expect(result.results[0].id).toBeTypeOf('string');
+		await vi.waitFor(() =>
+			expect(attributesOf(browser, 'Shop data', 'Customer')[0]?.name).toBe('number')
+		);
+		const diagram = browser.diagrams().find((d) => d.name === 'Shop data')!;
+		expect(browser.nodes(diagram.id)).toHaveLength(3);
+		expect(browser.edges(diagram.id)).toHaveLength(2);
+		// One change for the whole batch.
+		expect(updates).toBe(1);
+	});
+
+	it('applies nothing when an operation fails, naming it', async () => {
+		const { client, id, browser } = await setup();
+		const before = JSON.stringify(browser.toFile());
+		const failed = await call(client, 'batch', {
+			project: id,
+			operations: [
+				{ tool: 'add_entity', args: { diagram: 'Data', name: 'Customer' } },
+				{ tool: 'add_entity', args: { diagram: 'Nowhere', name: 'Order' } }
+			]
+		});
+		expect(failed.error).toMatch(/^Operation 2 \(add_entity\): No diagram "Nowhere"\./);
+		const invalid = await call(client, 'batch', {
+			project: id,
+			operations: [{ tool: 'add_entity', args: { diagram: 'Data' } }]
+		});
+		expect(invalid.error).toMatch(/^Operation 1 \(add_entity\): .*name/s);
+		// A later write still lands, so the server was not waiting on the failed ones.
+		await call(client, 'rename_element', { project: id, diagram: 'Data', name: 'Data 2' });
+		await vi.waitFor(() => expect(browser.diagrams()[1].name).toBe('Data 2'));
+		const after = JSON.parse(before);
+		after.diagrams[1].name = 'Data 2';
+		expect(browser.toFile()).toEqual(after);
+	});
+
+	it('refuses a $N that names no earlier operation or no id, a batch inside a batch and read tools', async () => {
+		const { client, id } = await setup();
+		const forward = await call(client, 'batch', {
+			project: id,
+			operations: [
+				{ tool: 'add_entity', args: { diagram: 'Data', name: { $ref: 2 } } },
+				{ tool: 'add_entity', args: { diagram: 'Data', name: 'Order' } }
+			]
+		});
+		expect(forward.error).toBe(
+			'Operation 1 (add_entity): { "$ref": 2 } names no earlier operation: use 1 to 0.'
+		);
+		const noId = await call(client, 'batch', {
+			project: id,
+			operations: [
+				{ tool: 'add_entity', args: { diagram: 'Data', name: 'Customer' } },
+				{ tool: 'delete_elements', args: { diagram: 'Data', elements: [{ $ref: 1 }] } },
+				{ tool: 'add_entity', args: { diagram: 'Data', name: { $ref: 2 } } }
+			]
+		});
+		expect(noId.error).toBe('Operation 3 (add_entity): Operation 2 returned no id to refer to.');
+		for (const tool of ['batch', 'get_diagram', 'export_project']) {
+			const refused = await call(client, 'batch', {
+				project: id,
+				operations: [{ tool, args: {} }]
+			});
+			expect(refused.error).toMatch(/Invalid|invalid/);
+		}
+	});
+
+	it('keeps text that looks like a reference, and refuses a batch that would make the Project too big', async () => {
+		const { client, id, browser } = await setup({ maxDocumentBytes: 20_000 });
+		await call(client, 'batch', {
+			project: id,
+			operations: [{ tool: 'add_note', args: { diagram: 'Data', text: '$1' } }]
+		});
+		const data = browser.diagrams()[1].id;
+		await vi.waitFor(() => expect(browser.nodes(data)[0]?.text).toBe('$1'));
+
+		const big = await call(client, 'batch', {
+			project: id,
+			operations: Array.from({ length: 50 }, (_, i) => ({
+				tool: 'add_note',
+				args: { diagram: 'Data', text: `${i} ${'x'.repeat(1000)}` }
+			}))
+		});
+		expect(big.error).toBe(
+			'These changes would make the Shared Project too big: none was applied.'
+		);
+		await call(client, 'rename_element', { project: id, diagram: 'Data', name: 'Data 2' });
+		await vi.waitFor(() => expect(browser.diagrams()[1].name).toBe('Data 2'));
+		expect(browser.nodes(data)).toHaveLength(1);
 	});
 });

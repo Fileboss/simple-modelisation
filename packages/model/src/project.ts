@@ -1179,6 +1179,17 @@ export class ProjectDocument {
 		});
 	}
 
+	/** Moves an Attribute to `index` in its list (from 0), clamped to the list. */
+	moveAttributeTo(diagramId: string, nodeId: string, attributeId: string, index: number): void {
+		this.updateAttributes(diagramId, nodeId, (list) => {
+			const moved = list.find((a) => a.id === attributeId);
+			if (!moved) return list;
+			const rest = list.filter((a) => a !== moved);
+			const at = Math.min(rest.length, Math.max(0, Math.round(index)));
+			return [...rest.slice(0, at), moved, ...rest.slice(at)];
+		});
+	}
+
 	removeAttribute(diagramId: string, nodeId: string, attributeId: string): void {
 		this.updateAttributes(diagramId, nodeId, (list) => list.filter((a) => a.id !== attributeId));
 	}

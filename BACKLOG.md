@@ -17,6 +17,7 @@ tags: [backlog]
   - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
 
 - Model cleanups: edges() without reading every node again, pasteable once per paste, one bounding-box helper
+- MCP: fold set_skin, set_hosting, set_provider, set_runtime and set_disk_kind into set_component (fewer, clearer tools for agents; breaks agents calling the old ones, so before MCP use grows)
 - MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
 - Numbered steps on Connections (1, 2, 3), to read a journey through the system
 - A Job Component type (cron, batch, worker)
@@ -24,6 +25,10 @@ tags: [backlog]
 - SaaS Skins for external services (Stripe, Auth0, SendGrid, Slack…)
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE, naming) and other databases
+- UNIQUE and CHECK constraints on Attributes, in the app, the SQL and over MCP
+- Named foreign keys, in the app, the SQL and over MCP
+- Duplicate a Diagram, in the app and over MCP
+- Comments on elements, in the app and over MCP
 - Custom Skins
 - Selecting several elements by touch (a selection mode or a lasso)
 - Zone colors, and Zones in Tidy up options (direction, spacing)
@@ -34,6 +39,7 @@ tags: [backlog]
 
 ## Done
 
+- [mcp-batch-attributes](docs/specs/mcp-batch-attributes/): set_attribute, remove_attribute, delete_diagram, export_project and an all-or-nothing batch over MCP
 - [note-resize](docs/specs/note-resize/): Notes can be made wider or narrower; other elements later
 - [tidy-up-rework](docs/specs/tidy-up-rework/): a tighter Tidy up that places Notes too, vertical for MCDs, and an MCP tool to move elements
 - [mcd-svg](docs/specs/mcd-svg/): MCDs as plain SVG (Merise and UML), over MCP, in the app and in the all-diagrams zip
