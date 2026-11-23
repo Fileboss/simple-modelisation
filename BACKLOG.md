@@ -9,6 +9,7 @@ tags: [backlog]
 
 ## To do
 
+- Migrate to @xyflow/react 13 (Dependabot PR #52, its CI fails on 12 → 13)
 - Make the ghcr package public once the v0.1.0 image is published
 
 - Findings from the global review after pre-release-fixes (not yet verified):

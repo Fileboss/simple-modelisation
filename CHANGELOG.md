@@ -6,6 +6,27 @@ date: 2026-11-20
 
 # Changelog
 
+## v0.3.0 — 2026-11-24
+
+MCDs as SVG, a better Tidy up, wider Notes, and more for agents over MCP.
+
+### Added
+
+- MCDs export as plain SVG, in Merise or UML, from the app, in the all-diagrams zip and over MCP (`export_diagram`)
+- Notes can be made wider or narrower by their sides (120 to 600px), the width kept in every export, in Tidy up and over MCP (`set_note`)
+- MCP: `set_attribute` and `remove_attribute` change or remove an Attribute without recreating its Entity
+- MCP: `delete_diagram`, and `export_project` for the Project as the app's JSON file
+- MCP: `batch`, up to 200 write operations played all or nothing and applied as one change, a later one using what an earlier one created with `{ "$ref": N }`
+- MCP: `move_elements` to fix places after a layout
+
+### Changed
+
+- Tidy up lays Diagrams out tighter, places Notes too, and can lay an MCD out from top to bottom
+
+### Fixed
+
+- MCD box borders stay one screen pixel wide when zoomed out, instead of losing pieces on a non-Retina screen
+
 ## v0.2.0 — 2026-11-20
 
 Phones and tablets, and MCDs that cover the rest of Merise.

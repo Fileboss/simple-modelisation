@@ -2,6 +2,7 @@ import type { Document, Hocuspocus } from '@hocuspocus/server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
+import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import * as Y from 'yjs';
 import { z } from 'zod';
@@ -13,6 +14,13 @@ import { registerWriteTools } from './mcp-write.ts';
 
 /** The path of the MCP endpoint, beside the app and the sync. */
 export const MCP_PATH = '/mcp';
+
+/** The release, from the root package.json (in the image too), told to MCP clients. */
+const VERSION = (
+	JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
+		version: string;
+	}
+).version;
 
 const UUID_IN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 
@@ -144,7 +152,7 @@ export function createMcpHandler(options: Options) {
 	};
 
 	const createServer = () => {
-		const server = new McpServer({ name: 'simple-modelisation', version: '0.1.0' });
+		const server = new McpServer({ name: 'simple-modelisation', version: VERSION });
 		const tool: RegisterTool = (name, description, inputSchema, run) =>
 			server.registerTool(name, { description, inputSchema }, (async (args: never) => {
 				try {
