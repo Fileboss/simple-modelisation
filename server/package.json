@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"@hocuspocus/extension-database": "^4.8.0",
-		"@hocuspocus/server": "^4.8.0",
+		"@hocuspocus/server": "^4.9.0",
 		"@modelcontextprotocol/sdk": "^1.32.2",
 		"@simple-modelisation/model": "workspace:*",
 		"yjs": "^13.6.33",
