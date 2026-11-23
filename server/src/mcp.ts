@@ -1,4 +1,4 @@
-import type { Hocuspocus } from '@hocuspocus/server';
+import type { Document, Hocuspocus } from '@hocuspocus/server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { DocumentStore } from './document-store.ts';
 import { ToolError } from './mcp-error.ts';
 import { describeDiagram, describeProject, exportDiagrams, mcdSql } from './mcp-views.ts';
+import { registerBatchTool } from './mcp-batch.ts';
 import { registerWriteTools } from './mcp-write.ts';
 
 /** The path of the MCP endpoint, beside the app and the sync. */
@@ -31,6 +32,11 @@ export type ProjectAccess = {
 	read<T>(reference: string, use: (project: ProjectDocument) => T): Promise<T>;
 	/** Changes a Shared Project in one transaction that open browsers receive live. */
 	write<T>(reference: string, change: (project: ProjectDocument) => T): Promise<T>;
+	/**
+	 * Runs `change` on a copy of a Shared Project, then applies all it did in
+	 * one transaction; when it throws, the Shared Project is left as it was.
+	 */
+	writeCopy<T>(reference: string, change: (project: ProjectDocument) => Promise<T>): Promise<T>;
 };
 
 export const projectArgument = z
@@ -69,6 +75,14 @@ export function createMcpHandler(options: Options) {
 		}
 	};
 
+	// The sync's size limit applies to agents too.
+	const checkSize = (doc: Document, size = Y.encodeStateAsUpdate(doc).byteLength) => {
+		if (size > maxDocumentBytes) {
+			log(`refused mcp document size: ${doc.name} ${size} bytes`);
+			throw new ToolError('This Shared Project is full: it takes no more changes.');
+		}
+	};
+
 	const access: ProjectAccess = {
 		async read(reference, use) {
 			const connection = await open(reference);
@@ -82,17 +96,47 @@ export function createMcpHandler(options: Options) {
 		async write(reference, change) {
 			const connection = await open(reference);
 			try {
-				// The sync's size limit applies to agents too.
-				const size = Y.encodeStateAsUpdate(connection.document!).byteLength;
-				if (size > maxDocumentBytes) {
-					log(`refused mcp document size: ${connection.document!.name} ${size} bytes`);
-					throw new ToolError('This Shared Project is full: it takes no more changes.');
-				}
+				checkSize(connection.document!);
 				let result: ReturnType<typeof change> | undefined;
 				await connection.transact((doc) => {
 					result = wrap(doc, change);
 				});
 				return result!;
+			} finally {
+				await connection.disconnect();
+			}
+		},
+		async writeCopy(reference, change) {
+			const connection = await open(reference);
+			try {
+				const doc = connection.document!;
+				const state = Y.encodeStateAsUpdate(doc);
+				checkSize(doc, state.byteLength);
+				const copy = new Y.Doc();
+				let result: Awaited<ReturnType<typeof change>>;
+				let update: Uint8Array;
+				try {
+					Y.applyUpdate(copy, state);
+					const before = Y.encodeStateVector(copy);
+					const project = new ProjectDocument(copy);
+					try {
+						result = await change(project);
+					} finally {
+						project.destroy();
+					}
+					update = Y.encodeStateAsUpdate(copy, before);
+				} finally {
+					copy.destroy();
+				}
+				// Many operations land at once: the size they reach counts, not only the one before.
+				if (state.byteLength + update.byteLength > maxDocumentBytes) {
+					log(`refused mcp batch size: ${doc.name} ${state.byteLength + update.byteLength} bytes`);
+					throw new ToolError(
+						'These changes would make the Shared Project too big: none was applied.'
+					);
+				}
+				await connection.transact((target) => Y.applyUpdate(target, update));
+				return result;
 			} finally {
 				await connection.disconnect();
 			}
@@ -124,6 +168,12 @@ export function createMcpHandler(options: Options) {
 			'The elements of a Diagram with their ids: Components and Connections, or Entities, Attributes and Associations with their Cardinalities.',
 			{ project: projectArgument, diagram: z.string().describe('Diagram id or exact name.') },
 			({ project, diagram }) => access.read(project, (p) => describeDiagram(p, diagram))
+		);
+		tool(
+			'export_project',
+			"The whole Project as the app's JSON file (Export, Project (JSON)): a copy the user can import back.",
+			{ project: projectArgument },
+			({ project }) => access.read(project, (p) => p.toFile())
 		);
 		tool(
 			'get_mcd_sql',
@@ -177,6 +227,7 @@ export function createMcpHandler(options: Options) {
 			}
 		);
 		registerWriteTools(tool, access);
+		registerBatchTool(tool, access);
 		return server;
 	};
 

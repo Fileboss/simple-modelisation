@@ -286,6 +286,18 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	);
 
 	tool(
+		'delete_diagram',
+		'Deletes a Diagram of the Project and everything in it.',
+		{ project: projectArgument, diagram: diagramArgument },
+		({ project, diagram }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram);
+				p.deleteDiagram(d.id);
+				return { deleted: d.id };
+			})
+	);
+
+	tool(
 		'add_component',
 		'Adds a Component to a System design diagram, placed next to the others. After adding several, call layout_diagram.',
 		{
@@ -757,6 +769,91 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				addAttributes(p, d.id, target.id, [attribute]);
 				const attributes = p.nodes(d.id).find((n) => n.id === target.id)!.attributes as Attribute[];
 				return { id: attributes.at(-1)!.id };
+			})
+	);
+
+	const attributeTarget = (
+		p: ProjectDocument,
+		diagram: string,
+		element: string,
+		attribute: string
+	) => {
+		const d = pickDiagram(p, diagram, 'mcd');
+		const target = pick(
+			nodesOf(p, d.id).filter((n) => n.type === 'entity' || n.type === 'association'),
+			element,
+			'element'
+		);
+		const found = pick(target.attributes as Attribute[], attribute, 'attribute');
+		return { diagramId: d.id, target, attribute: found };
+	};
+	const attributeArguments = {
+		project: projectArgument,
+		diagram: diagramArgument,
+		element: z.string().describe('Entity or Association id or exact name.'),
+		attribute: z.string().describe('Attribute id or exact name within the element.')
+	};
+
+	tool(
+		'set_attribute',
+		'Changes an Attribute of an Entity or an Association: its name, Data type, part of the Identifier (Entities only; an Identifier is never optional), whether it accepts NULL, its position in the list. Fields left out stay as they are.',
+		{
+			...attributeArguments,
+			name: name().optional(),
+			type: typeArgument.optional(),
+			identifier: z.boolean().optional().describe('Part of the Identifier (Entities only).'),
+			optional: z.boolean().optional().describe('The column accepts NULL.'),
+			position: z
+				.number()
+				.int()
+				.optional()
+				.describe('Its place in the list, from 1; beyond the ends, first or last.')
+		},
+		({ project, diagram, element, attribute, name, type, identifier, optional, position }) =>
+			access.write(project, (p) => {
+				const {
+					diagramId,
+					target,
+					attribute: found
+				} = attributeTarget(p, diagram, element, attribute);
+				if (identifier && target.type !== 'entity') {
+					throw new ToolError('Only an Entity has an Identifier.');
+				}
+				const dataType = type === undefined ? undefined : parseDataType(type);
+				// What the app would quietly undo is refused, so the agent knows NULL was not set.
+				if (optional) {
+					if (identifier ?? found.identifier) {
+						throw new ToolError('An Identifier never accepts NULL.');
+					}
+					if ((dataType ?? found.type).kind === 'serial') {
+						throw new ToolError('An auto-increment (serial) Attribute never accepts NULL.');
+					}
+				}
+				const id = found.id;
+				if (name !== undefined) p.renameAttribute(diagramId, target.id, id, name);
+				if (dataType) p.setAttributeType(diagramId, target.id, id, dataType);
+				if (identifier !== undefined && identifier !== found.identifier) {
+					p.toggleIdentifier(diagramId, target.id, id);
+				}
+				if (optional !== undefined) p.setAttributeOptional(diagramId, target.id, id, optional);
+				if (position !== undefined) p.moveAttributeTo(diagramId, target.id, id, position - 1);
+				return { id };
+			})
+	);
+
+	tool(
+		'remove_attribute',
+		'Removes an Attribute from an Entity or an Association.',
+		attributeArguments,
+		({ project, diagram, element, attribute }) =>
+			access.write(project, (p) => {
+				const {
+					diagramId,
+					target,
+					attribute: found
+				} = attributeTarget(p, diagram, element, attribute);
+				p.removeAttribute(diagramId, target.id, found.id);
+				return { deleted: found.id };
 			})
 	);
 
