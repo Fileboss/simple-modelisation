@@ -9,8 +9,6 @@ tags: [backlog]
 
 ## To do
 
-- Make the ghcr package public once the v0.1.0 image is published
-
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
