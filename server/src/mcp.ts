@@ -188,7 +188,7 @@ export function createMcpHandler(options: Options) {
 		);
 		tool(
 			'get_diagram',
-			'The elements of a Diagram with their ids: Components and Connections, or Entities, Attributes and Associations with their Cardinalities.',
+			'The elements of a Diagram with their ids: Components and Connections, or Entities, Attributes and Associations with their Cardinalities; its Notes, Zones or Areas.',
 			{ project: projectArgument, diagram: z.string().describe('Diagram id or exact name.') },
 			({ project, diagram }) => access.read(project, (p) => describeDiagram(p, diagram))
 		);

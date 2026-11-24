@@ -65,7 +65,7 @@ import {
 	type SimpleIcon
 } from 'simple-icons';
 import type { ComponentType } from './component-types.ts';
-import type { Flow, Hosting, NoteColor, Provider, Runtime } from './project.ts';
+import type { AreaColor, Flow, Hosting, NoteColor, Provider, Runtime } from './project.ts';
 import type { SkinId } from './skins.ts';
 
 /*
@@ -268,4 +268,16 @@ export const PROVIDER_MARKS: Record<Provider, ProviderMark> = {
 	fly: logo(siFlydotio),
 	render: logo(siRender),
 	railway: logo(siRailway)
+};
+
+/** An Area's light fill, its border and its label's color. */
+export const AREA_LOOKS: Record<AreaColor, { fill: string; edge: string; text: string }> = {
+	blue: { fill: '#e6f0fe', edge: '#a9c9f5', text: '#1e4f9c' },
+	teal: { fill: '#dff6f4', edge: '#93d5cf', text: '#12615a' },
+	green: { fill: '#e5f7e9', edge: '#a3d9b1', text: '#1f6436' },
+	yellow: { fill: '#fdf8d8', edge: '#e3d27a', text: '#6f5a0c' },
+	orange: { fill: '#fdeedd', edge: '#efc190', text: '#86480c' },
+	red: { fill: '#fde7e6', edge: '#f0b0ac', text: '#982a23' },
+	pink: { fill: '#fde8f3', edge: '#efb0d2', text: '#942763' },
+	purple: { fill: '#f0eafd', edge: '#c6b3f0', text: '#5a35a6' }
 };

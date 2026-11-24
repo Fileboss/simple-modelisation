@@ -8,6 +8,7 @@ import {
 } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import { useCanvas } from './canvas-context';
+import { ColorSwatches } from './ColorSwatches';
 
 /**
  * A Note: a sticky note in its color, its text wrapped; a double click writes
@@ -86,7 +87,6 @@ export function NoteNode({ id, data, selected }: NodeProps) {
 /** A Note's panel: its text and its paper color. */
 export function NotePanel({ note }: { note: NoteData }) {
 	const { project, diagramId } = useCanvas();
-	const current = note.color ?? 'yellow';
 	// While the field has the focus, a change from a peer or an agent waits: its key stays
 	// what it was at focus time, so what is being typed stays, and is saved on blur.
 	const [editedFrom, setEditedFrom] = useState<string | null>(null);
@@ -111,24 +111,20 @@ export function NotePanel({ note }: { note: NoteData }) {
 					}}
 				/>
 			</label>
-			<h3>{strings.note.color}</h3>
-			<div className="note-colors" role="radiogroup" aria-label={strings.note.color}>
-				{NOTE_COLORS.map((color) => (
-					<button
-						key={color}
-						role="radio"
-						aria-checked={color === current}
-						aria-label={strings.note.colors[color]}
-						title={strings.note.colors[color]}
-						className={`note-swatch ${color === current ? 'note-swatch-current' : ''}`}
-						style={{ background: NOTE_LOOKS[color].paper, borderColor: NOTE_LOOKS[color].edge }}
-						onClick={() => {
-							project.stopCapturing();
-							project.setNoteColor(diagramId, note.id, color);
-						}}
-					/>
-				))}
-			</div>
+			<ColorSwatches
+				title={strings.note.color}
+				colors={NOTE_COLORS}
+				current={note.color ?? 'yellow'}
+				names={strings.note.colors}
+				look={(color) => ({
+					background: NOTE_LOOKS[color].paper,
+					borderColor: NOTE_LOOKS[color].edge
+				})}
+				onPick={(color) => {
+					project.stopCapturing();
+					project.setNoteColor(diagramId, note.id, color);
+				}}
+			/>
 		</>
 	);
 }

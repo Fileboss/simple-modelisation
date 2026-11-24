@@ -115,6 +115,7 @@ export const DISK_KINDS = ['hdd', 'ssd', 'nvme', 'usb'] as const;
 export type DiskKind = (typeof DISK_KINDS)[number];
 
 export type Point = { x: number; y: number };
+type Box = Point & { width: number; height: number };
 
 /**
  * The bends a Tidy up routed a Connection or a Leg through, around the boxes;
@@ -162,6 +163,37 @@ export type NoteNode = DiagramNode & {
 	color?: NoteColor;
 	width?: number;
 };
+
+export const AREA_COLORS = [
+	'blue',
+	'teal',
+	'green',
+	'yellow',
+	'orange',
+	'red',
+	'pink',
+	'purple'
+] as const;
+export type AreaColor = (typeof AREA_COLORS)[number];
+
+/**
+ * A colored rectangle behind an MCD, to point at a part of it: no membership,
+ * left alone by Tidy up and the MLD. `color` absent: blue.
+ */
+export type AreaNode = DiagramNode & {
+	type: 'area';
+	label: string;
+	width: number;
+	height: number;
+	color?: AreaColor;
+};
+
+/** The smallest Area, so that its handles stay apart. */
+export const AREA_MIN = { width: 40, height: 24 };
+/** A new Area's size. */
+export const AREA_DEFAULT = { width: 360, height: 240 };
+/** The longest label of an Area. */
+export const MAX_AREA_LABEL = 200;
 
 /** How wide a Note can be made, and how wide it is unless resized. */
 export const NOTE_WIDTHS = { min: 120, default: 180, max: 600 };
@@ -596,7 +628,7 @@ export class ProjectDocument {
 		this.undoManager.stopCapturing();
 	}
 
-	/** Renames a Component, Entity or Association; a blank name is ignored. */
+	/** Renames a Component, Zone, Entity or Association; a blank name is ignored. */
 	renameNode(diagramId: string, nodeId: string, name: string): void {
 		if (name.trim()) this.nodeMap(diagramId).get(nodeId)?.set('name', name.trim());
 	}
@@ -762,7 +794,7 @@ export class ProjectDocument {
 			id,
 			type: 'zone',
 			name: name.trim() || 'Zone',
-			...roundedBox({ x, y, width, height })
+			...roundedBox({ x, y, width, height }, ZONE_MIN)
 		};
 		this.insertNode(diagramId, zone);
 		return id;
@@ -861,18 +893,8 @@ export class ProjectDocument {
 	}
 
 	/** Places and sizes a Zone, never smaller than ZONE_MIN; its content stays where it is. */
-	setZoneBox(
-		diagramId: string,
-		zoneId: string,
-		box: { x: number; y: number; width: number; height: number }
-	): void {
-		const zone = this.nodeMap(diagramId).get(zoneId);
-		if (zone?.get('type') !== 'zone') return;
-		this.doc.transact(() => {
-			for (const [key, value] of Object.entries(roundedBox(box))) {
-				if (zone.get(key) !== value) zone.set(key, value);
-			}
-		});
+	setZoneBox(diagramId: string, zoneId: string, box: Box): void {
+		this.setBox(diagramId, zoneId, 'zone', box, ZONE_MIN);
 	}
 
 	setEdgeLabel(diagramId: string, edgeId: string, label: string): void {
@@ -893,6 +915,37 @@ export class ProjectDocument {
 	}
 
 	// MCDs
+
+	addArea(diagramId: string, box: Box, label: string = ''): string {
+		if (this.requireDiagram(diagramId).get('kind') !== 'mcd') {
+			throw new Error('An Area goes on an MCD');
+		}
+		const area: AreaNode = {
+			id: crypto.randomUUID(),
+			type: 'area',
+			label: areaLabel(label),
+			...roundedBox(box, AREA_MIN)
+		};
+		this.insertNode(diagramId, area);
+		return area.id;
+	}
+
+	/** Sets an Area's label; an empty one is fine. */
+	setAreaLabel(diagramId: string, areaId: string, label: string): void {
+		const area = this.nodeMap(diagramId).get(areaId);
+		const text = areaLabel(label);
+		if (area?.get('type') === 'area' && area.get('label') !== text) area.set('label', text);
+	}
+
+	setAreaColor(diagramId: string, areaId: string, color: AreaColor): void {
+		this.setNodeChoice(diagramId, areaId, 'color', color === 'blue' ? null : color, AREA_COLORS, [
+			'area'
+		]);
+	}
+
+	setAreaBox(diagramId: string, areaId: string, box: Box): void {
+		this.setBox(diagramId, areaId, 'area', box, AREA_MIN);
+	}
 
 	addEntity(diagramId: string, x: number, y: number, name: string = 'Entity'): string {
 		const id = crypto.randomUUID();
@@ -1463,6 +1516,23 @@ export class ProjectDocument {
 		this.edgeMap(diagramId).set(edge.id, toFields(edge));
 	}
 
+	private setBox(
+		diagramId: string,
+		nodeId: string,
+		type: 'zone' | 'area',
+		box: Box,
+		min: { width: number; height: number }
+	): void {
+		const node = this.nodeMap(diagramId).get(nodeId);
+		const { x, y, width, height } = box;
+		if (node?.get('type') !== type || ![x, y, width, height].every(isNumber)) return;
+		this.doc.transact(() => {
+			for (const [key, value] of Object.entries(roundedBox(box, min))) {
+				if (node.get(key) !== value) node.set(key, value);
+			}
+		});
+	}
+
 	/**
 	 * Sets a node field to one of `allowed`, or clears it with null, on the
 	 * node types given (Components by default); anything else is ignored.
@@ -1519,14 +1589,27 @@ function copyName(name: string, taken: Set<string>): string {
 	return named();
 }
 
-function roundedBox(box: { x: number; y: number; width: number; height: number }) {
+/** A box as stored: whole pixels, not smaller than `min`. */
+function roundedBox(box: Box, min: { width: number; height: number }): Box {
 	return {
 		x: Math.round(box.x),
 		y: Math.round(box.y),
-		width: Math.round(Math.max(ZONE_MIN.width, box.width)),
-		height: Math.round(Math.max(ZONE_MIN.height, box.height))
+		width: Math.round(Math.max(min.width, box.width)),
+		height: Math.round(Math.max(min.height, box.height))
 	};
 }
+
+/** An Area's label as stored: one line, bounded (by character, so that none is cut in two). */
+const areaLabel = (label: string) =>
+	[
+		...label
+			.replace(/\s/g, ' ')
+			.trim()
+			.slice(0, MAX_AREA_LABEL * 2)
+	]
+		.slice(0, MAX_AREA_LABEL)
+		.join('')
+		.trimEnd();
 
 function samePoints(a: Point[] | undefined, b: Point[] | undefined): boolean {
 	if (!a || !b) return a === b;
@@ -1612,7 +1695,11 @@ const NODE_CHOICES: [string, readonly string[]][] = [
  * or peer), or that its type does not take, read as unspecified.
  */
 function withCompleteAttributes<T extends Record<string, unknown>>(node: T): DiagramNode {
-	const attributes = node.attributes as Partial<Attribute>[] | undefined;
+	// Only these have Attributes, checked to be a list, whatever a peer wrote on another.
+	const attributes =
+		node.type === 'entity' || node.type === 'association'
+			? (node.attributes as Partial<Attribute>[] | undefined)
+			: undefined;
 	const read: Record<string, unknown> = attributes
 		? { ...node, attributes: completeAttributes(attributes) }
 		: { ...node };
@@ -1628,6 +1715,12 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 				: [];
 		if (groups.length > 0) read.uniques = groups;
 		else delete read.uniques;
+	}
+	if (read.type === 'area') {
+		read.label = areaLabel(String(read.label));
+		Object.assign(read, roundedBox(read as AreaNode, AREA_MIN));
+		if (!AREA_COLORS.includes(read.color as AreaColor)) delete read.color;
+		return read as DiagramNode;
 	}
 	for (const [key, allowed] of NODE_CHOICES) {
 		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
@@ -1740,6 +1833,7 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	],
 	zone: ['x', 'y', 'name', 'width', 'height', 'provider'],
 	note: ['x', 'y', 'text', 'color', 'width'],
+	area: ['x', 'y', 'label', 'width', 'height', 'color'],
 	entity: ['x', 'y', 'name', 'attributes', 'comment', 'uniques'],
 	association: ['x', 'y', 'name', 'attributes', 'comment'],
 	cif: ['x', 'y', 'association', 'determinants', 'determined'],
@@ -1882,6 +1976,17 @@ function isValidNode(node: DiagramNode | null, kind: DiagramKind): boolean {
 	if (!node || !isString(node.id) || !isNumber(node.x) || !isNumber(node.y)) return false;
 	// A Note, in either kind, has text (maybe empty) rather than a name.
 	if (node.type === 'note') return isString(node.text);
+	// An Area has a label, maybe empty.
+	if (node.type === 'area') {
+		return (
+			kind === 'mcd' &&
+			isString(node.label) &&
+			isNumber(node.width) &&
+			node.width > 0 &&
+			isNumber(node.height) &&
+			node.height > 0
+		);
+	}
 	// An Inheritance has its parent Entity instead.
 	if (node.type === 'inheritance') {
 		return (

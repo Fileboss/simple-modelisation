@@ -21,7 +21,8 @@ import type {
 } from '../project.ts';
 import type { SvgNames } from './system.ts';
 import { nodeBox } from '../zones.ts';
-import { bounds, escape, fit, FONT, noteShape, TEXT } from './shapes.ts';
+import { areaShape, bounds, escape, fit, FONT, noteShape, TEXT } from './shapes.ts';
+import { areasInOrder, withoutAreas } from '../areas.ts';
 
 export type McdSvgOptions = {
 	notation: Notation;
@@ -50,10 +51,13 @@ const LINE_CHAR = 7;
  * a margin, on white, in either Notation, as the canvas draws it. No Legend.
  */
 export function mcdSvg(
-	nodes: DiagramNode[],
+	allNodes: DiagramNode[],
 	edges: DiagramEdge[],
 	{ notation, names, measured = () => undefined, margin = 32 }: McdSvgOptions
 ): string {
+	// Areas behind everything, at their own size in either Notation.
+	const areas = areasInOrder(allNodes);
+	const nodes = withoutAreas(allNodes);
 	const estimate =
 		notation === 'uml' ? umlEstimate(edges) : (node: DiagramNode) => estimatedSize(node, 'merise');
 	const sizeOf = (node: DiagramNode) => measured(node) ?? estimate(node);
@@ -61,7 +65,7 @@ export function mcdSvg(
 		notation === 'uml'
 			? umlDrawing(nodes, edges, names, sizeOf)
 			: meriseDrawing(nodes, edges, sizeOf);
-	const frame = bounds(extent);
+	const frame = bounds([...extent, ...areas]);
 	const x = frame.x - margin;
 	const y = frame.y - margin;
 	const width = Math.ceil(frame.width + margin * 2);
@@ -70,6 +74,7 @@ export function mcdSvg(
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${width} ${height}" font-family="${FONT}">`,
 		defs.length ? `<defs>${defs.join('')}</defs>` : '',
 		`<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#fff"/>`,
+		...areas.map(areaShape),
 		...parts,
 		'</svg>'
 	]

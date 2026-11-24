@@ -3,7 +3,9 @@ import type { CanvasKind } from '../canvas/DiagramCanvas';
 import { dataType } from '@simple-modelisation/model/data-types.ts';
 import { estimatedSize, noteSize } from '@simple-modelisation/model/layout.ts';
 import { NoteNode } from '../canvas/NoteNode';
-import { NOTE_ITEM } from '../canvas/palette-drag';
+import { AREA_ITEM, NOTE_ITEM } from '../canvas/palette-drag';
+import { AREA_DEFAULT } from '@simple-modelisation/model/project.ts';
+import { AreaNode } from './AreaNode';
 import { strings } from '../ui/strings';
 import { LegEdge } from './LegEdge';
 import { McdPalette } from './McdPalette';
@@ -34,6 +36,7 @@ export const mcdKind: CanvasKind = {
 		entity: EntityNode,
 		association: AssociationNode,
 		note: NoteNode,
+		area: AreaNode,
 		cif: CifNode,
 		inheritance: InheritanceNode
 	},
@@ -56,10 +59,14 @@ export const mcdKind: CanvasKind = {
 		mcdSvg(nodes, edges, { notation: getNotation(diagramId), names: SVG_NAMES, measured }),
 	drop: (project, diagramId, item, x, y) => {
 		if (item === NOTE_ITEM) return project.addNote(diagramId, x, y);
+		if (item === AREA_ITEM) {
+			return project.addArea(diagramId, { x, y, ...AREA_DEFAULT }, strings.area.title);
+		}
 		return item === 'entity' ? project.addEntity(diagramId, x, y, strings.mcd.entity) : undefined;
 	},
-	dropPreview: (item) =>
-		item === NOTE_ITEM
+	dropPreview: (item) => {
+		if (item === AREA_ITEM) return { ...AREA_DEFAULT, label: strings.area.title };
+		return item === NOTE_ITEM
 			? { ...noteSize(''), label: strings.note.title }
 			: {
 					// A new Entity: its name and its auto-increment id.
@@ -74,7 +81,8 @@ export const mcdKind: CanvasKind = {
 						]
 					}),
 					label: strings.mcd.entity
-				},
+				};
+	},
 	// Entity to Entity (or two dots of one Entity) makes an Association; an Association and an
 	// Entity, a Leg (N-ary from three); anything else joins nothing.
 	connect: (project, diagramId, source, target) => {

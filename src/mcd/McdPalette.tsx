@@ -1,5 +1,6 @@
+import { AREA_LOOKS } from '@simple-modelisation/model/looks.ts';
 import { useCanvas } from '../canvas/canvas-context';
-import { NOTE_ITEM } from '../canvas/palette-drag';
+import { AREA_ITEM, NOTE_ITEM } from '../canvas/palette-drag';
 import { PaletteItem } from '../canvas/PaletteItem';
 import { GesturesHint } from '../canvas/GesturesHint';
 import { strings } from '../ui/strings';
@@ -50,6 +51,14 @@ export function McdPalette() {
 			<PaletteItem item={NOTE_ITEM}>
 				<span className="palette-note" aria-hidden="true" />
 				{strings.note.title}
+			</PaletteItem>
+			<PaletteItem item={AREA_ITEM}>
+				<span
+					className="palette-area"
+					style={{ background: AREA_LOOKS.blue.fill, borderColor: AREA_LOOKS.blue.edge }}
+					aria-hidden="true"
+				/>
+				{strings.area.title}
 			</PaletteItem>
 			<p className="palette-hint">{strings.mcd.paletteHint}</p>
 			<GesturesHint />

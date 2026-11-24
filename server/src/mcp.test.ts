@@ -72,6 +72,7 @@ describe('MCP endpoint', () => {
 		const { client } = await setup();
 		const { tools } = await client.listTools();
 		expect(tools.map((t) => t.name).sort()).toEqual([
+			'add_area',
 			'add_association',
 			'add_attribute',
 			'add_cif',
@@ -95,6 +96,7 @@ describe('MCP endpoint', () => {
 			'move_elements',
 			'remove_attribute',
 			'rename_element',
+			'set_area',
 			'set_attribute',
 			'set_cardinality',
 			'set_component',
@@ -1960,5 +1962,83 @@ describe('MCP set_component', () => {
 			skin: 'bun'
 		});
 		expect(refused.error).toMatch(/^No "bun" Skin for a database\. Skins: generic, postgresql/);
+	});
+});
+
+describe('MCP Areas', () => {
+	const at = (id: string) => ({ project: id, diagram: 'Data' });
+	const area = async (client: Client, id: string) =>
+		(await call(client, 'get_diagram', at(id))).areas[0];
+
+	it('draws one around elements, changes it, moves and deletes it', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_entity', { ...at(id), name: 'Customer' });
+		await call(client, 'add_entity', { ...at(id), name: 'Order' });
+		const added = await call(client, 'add_area', {
+			...at(id),
+			label: 'Sales',
+			color: 'orange',
+			around: ['Customer', 'Order']
+		});
+		const { entities, areas } = await call(client, 'get_diagram', at(id));
+		expect(areas).toMatchObject([{ id: added.id, label: 'Sales', color: 'orange' }]);
+		for (const e of entities) {
+			expect(e.x).toBeGreaterThan(areas[0].x);
+			expect(e.x + e.width).toBeLessThan(areas[0].x + areas[0].width);
+			expect(e.y).toBeGreaterThan(areas[0].y);
+			expect(e.y + e.height).toBeLessThan(areas[0].y + areas[0].height);
+		}
+		await call(client, 'set_area', { ...at(id), area: 'Sales', label: '', color: 'teal', x: 7 });
+		expect(await area(client, id)).toEqual({ ...areas[0], label: '', color: 'teal', x: 7 });
+		await call(client, 'move_elements', {
+			...at(id),
+			moves: [{ element: added.id, x: 1, y: 2 }]
+		});
+		const before = await area(client, id);
+		expect(before).toMatchObject({ x: 1, y: 2 });
+		await call(client, 'layout_diagram', at(id));
+		expect(await area(client, id)).toEqual(before);
+		await call(client, 'delete_elements', { ...at(id), elements: [added.id] });
+		expect(await area(client, id)).toBeUndefined();
+	});
+
+	it('does not move where new elements go', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_entity', { ...at(id), name: 'Customer' });
+		await call(client, 'add_area', { ...at(id), x: -900, y: -900, width: 4000, height: 4000 });
+		await call(client, 'add_entity', { ...at(id), name: 'Order' });
+		const { entities } = await call(client, 'get_diagram', at(id));
+		expect(entities[1]).toMatchObject({ x: SLOT.width, y: 0 });
+		const note = await call(client, 'add_note', { ...at(id), text: 'x', near: 'Order' });
+		expect(note.error).toBeUndefined();
+	});
+
+	it('refuses what makes no sense', async () => {
+		const { client, id } = await setup();
+		const refused = async (tool: string, args: object) =>
+			(await call(client, tool, { ...at(id), ...args })).error;
+		const box = { x: 0, y: 0, width: 100, height: 100 };
+		expect(await refused('add_area', { x: 0, y: 0, width: 100 })).toBe(
+			'Give around, or x, y, width and height.'
+		);
+		expect(await refused('add_area', { around: ['Nope'] })).toMatch(/^No element "Nope"/);
+		expect(await refused('add_area', { around: ['Nope'], x: 1 })).toMatch(/not both/);
+		expect(await refused('add_area', { ...box, diagram: 'Architecture' })).toBe(
+			'"Architecture" is not an MCD.'
+		);
+		const { id: areaId } = await call(client, 'add_area', { ...at(id), ...box, label: 'A' });
+		expect(await refused('set_area', { area: 'A' })).toMatch(/^Give a label/);
+		expect(await refused('set_area', { area: 'B', x: 1 })).toMatch(/^No area "B"\. Known: A/);
+		await call(client, 'add_area', { ...at(id), ...box });
+		expect(await refused('set_area', { area: '', x: 1 })).toMatch(/Known: .*area \(/);
+		expect(await refused('rename_element', { element: areaId, name: 'B' })).toMatch(/^No element/);
+		expect(await refused('add_attribute', { element: areaId, attribute: { name: 'x' } })).toMatch(
+			/^No element/
+		);
+		const { areas } = await call(client, 'get_diagram', at(id));
+		expect(areas.find((a: { id: string }) => a.id === areaId)).toMatchObject({
+			...box,
+			label: 'A'
+		});
 	});
 });

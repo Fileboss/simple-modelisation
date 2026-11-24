@@ -1,6 +1,9 @@
+import { areasInOrder, withoutAreas } from '@simple-modelisation/model/areas.ts';
 import { isPerson, type ComponentType } from '@simple-modelisation/model/component-types.ts';
 import { dataType, isDataType, type DataType } from '@simple-modelisation/model/data-types.ts';
 import {
+	AREA_COLORS,
+	AREA_MIN,
 	CARDINALITIES,
 	canBeRelative,
 	COMPONENT_TYPE_IDS,
@@ -9,6 +12,7 @@ import {
 	HOSTINGS,
 	INHERITANCE_CONSTRAINTS,
 	INHERITANCE_TRANSLATIONS,
+	MAX_AREA_LABEL,
 	NOTE_COLORS,
 	NOTE_WIDTHS,
 	PROVIDERS,
@@ -80,6 +84,9 @@ const runtimeArgument = z
 	.describe(
 		`What runs a service's code on the server: ${RUNTIMES.join(', ')} (go and rust for native binaries). A service takes it whether or not it has a Skin.`
 	);
+/** Room an Area drawn around elements leaves, under its label. */
+const AREA_MARGIN = { top: 44, side: 24 };
+const MAX_AREA_SIDE = 100_000;
 // Bounds on what an agent sends, on top of the document size limit.
 // Trimmed: a blank name would make an element no read shows.
 const name = () => z.string().trim().min(1).max(200);
@@ -168,7 +175,9 @@ const ROW_LENGTH = 1300;
  * A free spot after the last element of the bottom row, starting a new row
  * below once the row is long: elements fill the Diagram row by row.
  */
-export function freeSpot(nodes: DiagramNode[]): { x: number; y: number } {
+export function freeSpot(drawn: DiagramNode[]): { x: number; y: number } {
+	// An Area is behind: elements may go over it.
+	const nodes = withoutAreas(drawn);
 	if (nodes.length === 0) return { x: 0, y: 0 };
 	const overlaps = (x: number, y: number) =>
 		nodes.some((n) => Math.abs(n.x - x) < SLOT.width && Math.abs(n.y - y) < SLOT.height);
@@ -691,7 +700,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				let spot: { x: number; y: number };
 				if (near) {
 					const target = pick(
-						nodes.filter((n) => n.type !== 'note'),
+						withoutAreas(nodes).filter((n) => n.type !== 'note'),
 						near,
 						'element'
 					);
@@ -699,7 +708,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					const zone = zoneParents(nodes, estimatedSize).get(target.id);
 					const box = nodeBox(target, estimatedSize);
 					const right = { x: box.x + box.width + 40, y: box.y, ...noteSize(text) };
-					const free = !nodes.some((n) => overlaps(nodeBox(n, estimatedSize), right));
+					const free = !withoutAreas(nodes).some((n) => overlaps(nodeBox(n, estimatedSize), right));
 					spot = zone
 						? placeNew(p, d.id, noteSize(text), zone)
 						: free
@@ -752,6 +761,102 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			})
 	);
 
+	const areaBox = {
+		x: z.number().optional(),
+		y: z.number().optional(),
+		width: z.number().min(AREA_MIN.width).max(MAX_AREA_SIDE).optional(),
+		height: z.number().min(AREA_MIN.height).max(MAX_AREA_SIDE).optional()
+	};
+	const areaColor = z
+		.enum(AREA_COLORS)
+		.describe(`A light color: ${AREA_COLORS.join(', ')} (blue by default).`);
+	const areaLabelText = z.string().max(MAX_AREA_LABEL);
+
+	tool(
+		'add_area',
+		'Draws an Area on an MCD: a light colored rectangle behind everything, with an optional label, to point at a part of the model. Give around (elements to draw it around) or x, y, width and height. It holds nothing: it stays where it is when elements move, and layout_diagram leaves it alone, so add Areas after the layout.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			label: areaLabelText.optional(),
+			color: areaColor.optional(),
+			around: z
+				.array(z.string())
+				.min(1)
+				.max(500)
+				.optional()
+				.describe('Element ids or exact names.'),
+			...areaBox
+		},
+		({ project, diagram, label = '', color, around, x, y, width, height }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const given = [x, y, width, height];
+				let box: Box;
+				if (around) {
+					if (given.some((v) => v !== undefined)) {
+						throw new ToolError('Give around, or x, y, width and height, not both.');
+					}
+					const nodes = withoutAreas(nodesOf(p, d.id));
+					const boxes = around.map((e) => nodeBox(pick(nodes, e, 'element'), estimatedSize));
+					const left = Math.min(...boxes.map((b) => b.x)) - AREA_MARGIN.side;
+					const top = Math.min(...boxes.map((b) => b.y)) - AREA_MARGIN.top;
+					box = {
+						x: left,
+						y: top,
+						width: Math.max(...boxes.map((b) => b.x + b.width)) + AREA_MARGIN.side - left,
+						height: Math.max(...boxes.map((b) => b.y + b.height)) + AREA_MARGIN.side - top
+					};
+				} else {
+					if (x === undefined || y === undefined || width === undefined || height === undefined) {
+						throw new ToolError('Give around, or x, y, width and height.');
+					}
+					box = { x, y, width, height };
+				}
+				const id = p.addArea(d.id, box, label);
+				if (color) p.setAreaColor(d.id, id, color);
+				return { id };
+			})
+	);
+
+	tool(
+		'set_area',
+		'Changes an Area of an MCD: its label ("" for none), its color, its place and size. Fields left out stay as they are.',
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			area: z.string().describe('Area id, from get_diagram, or exact label.'),
+			label: areaLabelText.optional(),
+			color: areaColor.optional(),
+			...areaBox
+		},
+		({ project, diagram, area, label, color, ...box }) =>
+			access.write(project, (p) => {
+				if ([label, color, ...Object.values(box)].every((v) => v === undefined)) {
+					throw new ToolError('Give a label, a color, x, y, width or height.');
+				}
+				const d = pickDiagram(p, diagram, 'mcd');
+				const areas = areasInOrder(nodesOf(p, d.id));
+				const { id } = pick(
+					areas.map((a) => ({ id: a.id, name: a.label || undefined, type: a.type })),
+					area,
+					'area'
+				);
+				const { x, y, width, height } = areas.find((a) => a.id === id)!;
+				if (label !== undefined) p.setAreaLabel(d.id, id, label);
+				if (color) p.setAreaColor(d.id, id, color);
+				if (Object.values(box).some((v) => v !== undefined)) {
+					p.setAreaBox(d.id, id, {
+						x: box.x ?? x,
+						y: box.y ?? y,
+						width: box.width ?? width,
+						height: box.height ?? height
+					});
+				}
+				return { id };
+			})
+	);
+
 	tool(
 		'add_entity',
 		'Adds an Entity to an MCD, placed next to the others. Without an identifier Attribute it gets an auto-increment id. After adding several, call layout_diagram.',
@@ -789,9 +894,8 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
 				requireAttributes([attribute]);
-				// A Note has text, neither a name nor Attributes.
 				const target = pick(
-					nodesOf(p, d.id).filter((n) => n.type !== 'note'),
+					nodesOf(p, d.id).filter((n) => n.type === 'entity' || n.type === 'association'),
 					element,
 					'element'
 				);
@@ -1169,9 +1273,11 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					p.renameDiagram(d.id, name);
 					return { id: d.id };
 				}
-				// A Note has text, neither a name nor Attributes.
+				// Only these have a name: a Note has text, an Area a label.
 				const target = pick(
-					nodesOf(p, d.id).filter((n) => n.type !== 'note'),
+					nodesOf(p, d.id).filter((n) =>
+						['component', 'zone', 'entity', 'association'].includes(n.type)
+					),
 					element,
 					'element'
 				);
@@ -1249,7 +1355,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		);
 	tool(
 		'move_elements',
-		"Moves elements of a Diagram (any kind: Components, Zones, Notes, Entities, Associations, CIFs, Inheritances) to a position (x, y: the top-left corner) or by an offset (dx, dy), all in one step. A Zone takes along what it holds. The routes of the moved elements' Connections or Legs are dropped, as when dragging. Use it to fix a layout after layout_diagram: get_diagram gives every element's place and size.",
+		"Moves elements of a Diagram (any kind: Components, Zones, Notes, Areas, Entities, Associations, CIFs, Inheritances) to a position (x, y: the top-left corner) or by an offset (dx, dy), all in one step. A Zone takes along what it holds. The routes of the moved elements' Connections or Legs are dropped, as when dragging. Use it to fix a layout after layout_diagram: get_diagram gives every element's place and size.",
 		{
 			project: projectArgument,
 			diagram: diagramArgument,

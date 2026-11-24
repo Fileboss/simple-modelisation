@@ -1,5 +1,6 @@
 import type {
 	CifNode,
+	AreaNode,
 	InheritanceNode,
 	IsaEdge,
 	AssociationNode,
@@ -139,6 +140,12 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 	return {
 		...base,
 		notes: notesOf(),
+		areas: only<AreaNode>(nodes, 'area').map((a) => ({
+			id: a.id,
+			label: a.label,
+			color: a.color ?? 'blue',
+			...box(a)
+		})),
 		entities: only<EntityNode>(nodes, 'entity').map((e) => ({
 			id: e.id,
 			name: e.name,

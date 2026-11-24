@@ -1288,6 +1288,103 @@ select {
 	pointer-events: all;
 }
 
+/* Areas: a light rectangle behind an MCD; only its label, border and handles catch the pointer. */
+.react-flow__node-area {
+	pointer-events: none !important;
+}
+
+.area {
+	position: relative;
+	box-sizing: border-box;
+	width: 100%;
+	height: 100%;
+	border: 1.5px solid;
+	border-radius: 10px;
+}
+
+.area.selected {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.area-grip {
+	cursor: grab;
+	pointer-events: all;
+}
+
+.area-border {
+	--grip: 10px;
+	position: absolute;
+}
+
+.area-border-top,
+.area-border-bottom {
+	right: 0;
+	left: 0;
+	height: var(--grip);
+}
+
+.area-border-left,
+.area-border-right {
+	top: 0;
+	bottom: 0;
+	width: var(--grip);
+}
+
+.area-border-top {
+	top: calc(var(--grip) / -2);
+}
+
+.area-border-bottom {
+	bottom: calc(var(--grip) / -2);
+}
+
+.area-border-left {
+	left: calc(var(--grip) / -2);
+}
+
+.area-border-right {
+	right: calc(var(--grip) / -2);
+}
+
+.area-label {
+	position: relative;
+	display: inline-flex;
+	max-width: calc(100% - 16px);
+	padding: 5px 9px;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.area-unnamed {
+	font-style: italic;
+	font-weight: 400;
+	opacity: 0.8;
+}
+
+.area-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.area-handle.react-flow__resize-control.handle {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	background: var(--surface);
+	border-color: var(--accent);
+	pointer-events: all;
+}
+
+.palette-area {
+	display: inline-block;
+	width: 20px;
+	height: 16px;
+	border: 1.5px solid;
+	border-radius: 4px;
+}
+
 /* A Note's resize sides: an accent line, its grab area wider than it. */
 .note-resize.react-flow__resize-control.line {
 	border-color: var(--accent);
@@ -1447,12 +1544,13 @@ select {
 	resize: vertical;
 }
 
-.note-colors {
+.color-swatches {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 8px;
 }
 
-.note-swatch {
+.color-swatch {
 	width: 28px;
 	height: 28px;
 	padding: 0;
@@ -1460,7 +1558,7 @@ select {
 	border-radius: 50%;
 }
 
-.note-swatch-current {
+.color-swatch-current {
 	outline: 2px solid var(--accent);
 	outline-offset: 2px;
 }
@@ -1852,6 +1950,13 @@ select {
 }
 
 @media (pointer: coarse) {
+	.area-border {
+		--grip: 26px;
+	}
+	.area-handle.react-flow__resize-control.handle {
+		width: 20px;
+		height: 20px;
+	}
 	.flow {
 		-webkit-touch-callout: none;
 		-webkit-user-select: none;

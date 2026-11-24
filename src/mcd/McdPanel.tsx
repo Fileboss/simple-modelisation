@@ -6,6 +6,7 @@ import {
 	CARDINALITIES,
 	canBeRelative,
 	type AssociationNode,
+	type AreaNode as AreaData,
 	type Attribute,
 	type Cardinality,
 	type CifNode,
@@ -28,6 +29,7 @@ import {
 } from '@simple-modelisation/model/data-types.ts';
 import { ConstraintError, MAX_COMMENT } from '@simple-modelisation/model/sql/constraints.ts';
 import { foreignKeyOf } from '@simple-modelisation/model/sql/mld.ts';
+import { AreaPanel } from './AreaNode';
 import { strings } from '../ui/strings';
 import { umlMultiplicity, useNotation } from './notation';
 
@@ -75,6 +77,7 @@ export function McdPanel({ selection }: { selection: Selection }) {
 		);
 	}
 
+	if (node?.type === 'area') return <AreaPanel key={node.id} area={node as AreaData} />;
 	if (node?.type === 'cif') return <CifEditor cif={node as CifNode} />;
 	if (node?.type === 'inheritance')
 		return <InheritanceEditor inheritance={node as InheritanceNode} />;
