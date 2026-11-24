@@ -6,6 +6,32 @@ date: 2026-11-20
 
 # Changelog
 
+## v0.4.0 — 2026-11-24
+
+SQL constraints and Areas on MCDs, duplicated Diagrams, and fewer, clearer MCP tools.
+
+### Added
+
+- MCDs: UNIQUE on an Attribute or on a group of them, CHECK as an SQL expression, named foreign keys, and COMMENT ON for Entities, Associations and Attributes, in the panel, the PostgreSQL script and over MCP (`set_entity`, and new fields on `add_entity`, `add_association`, `add_attribute`, `set_attribute`, `set_cardinality`, `set_inheritance`)
+- MCDs: Areas, light colored rectangles with an optional label behind the model, at any place and size, left alone by Tidy up; in the images and over MCP (`add_area`, `set_area`)
+- Duplicate a Diagram, from its tab, the Diagram menu on phones and over MCP (`duplicate_diagram`)
+
+### Changed
+
+- MCP, breaking: `set_skin`, `set_hosting`, `set_provider`, `set_runtime` and `set_disk_kind` are gone; `set_component` sets them all, and refuses a call that changes nothing
+- PostgreSQL scripts name every foreign key (`fk_<table>_<columns>` unless named)
+- Projects using Areas or the new Attribute fields need this version: an older one leaves Areas out, refuses a JSON file holding one, and drops UNIQUE, CHECK and comments of an element's Attributes when it edits one of them
+- The explanations of the palettes and the properties are hidden behind an i button
+- MCP: a batch too big stops on the way and names the operation
+- The canvas runs on React Flow 13
+
+### Fixed
+
+- A new Diagram always comes last
+- Leaving an in-place edit untouched no longer undoes what someone else wrote meanwhile
+- Malformed Attributes on a Note, Zone or CIF of a Shared Project no longer break the Diagram
+- MCP: a Zone grows when a Component it holds grows, even one asked to stay in it
+
 ## v0.3.0 — 2026-11-24
 
 MCDs as SVG, a better Tidy up, wider Notes, and more for agents over MCP.
