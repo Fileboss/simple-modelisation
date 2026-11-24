@@ -153,7 +153,7 @@ describe('MCP endpoint', () => {
 			`No connection "nope". Known: ${connections[0].id} (platform → material), ${kdp} (platform → KDP).`
 		);
 		const empty = await call(client, 'set_connection', { ...at, connection: kdp });
-		expect(empty.error).toBe('Give a label or a flow.');
+		expect(empty.error).toBe('Give a label, a flow or a label_position.');
 	});
 
 	it('reads a Shared Project from its Share link', async () => {
@@ -2040,5 +2040,41 @@ describe('MCP Areas', () => {
 			...box,
 			label: 'A'
 		});
+	});
+});
+
+describe('MCP label_position', () => {
+	it('puts a label along its Connection, reads it back and gives it back to the automatic placing', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		for (const name of ['A', 'B']) {
+			await call(client, 'add_component', { ...at, type: 'service', name });
+		}
+		const { id: connection } = await call(client, 'connect_components', {
+			...at,
+			from: 'A',
+			to: 'B',
+			label: 'GET',
+			label_position: 0.2
+		});
+		const position = async () =>
+			(await call(client, 'get_diagram', at)).connections[0].label_position;
+		expect(await position()).toBe(0.2);
+		await call(client, 'set_connection', { ...at, connection, label_position: 0.75 });
+		expect(await position()).toBe(0.75);
+		await call(client, 'set_connection', { ...at, connection, label: 'POST' });
+		expect(await position()).toBe(0.75);
+		await call(client, 'set_connection', { ...at, connection, label_position: null });
+		expect(await position()).toBeNull();
+		for (const bad of [-0.1, 1.5, 'middle']) {
+			const result = (await client
+				.callTool({
+					name: 'set_connection',
+					arguments: { ...at, connection, label_position: bad }
+				})
+				.catch(() => ({ isError: true }))) as { isError?: boolean };
+			expect(result.isError).toBe(true);
+		}
+		expect(await position()).toBeNull();
 	});
 });

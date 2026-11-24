@@ -79,6 +79,13 @@ const flowArgument = z
 	.describe(
 		'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write.'
 	);
+const labelPosition = z
+	.number()
+	.min(0)
+	.max(1)
+	.describe(
+		'How far along the drawn line its label is, from 0 (the start) to 1 (the arrow); null or left out of a new one: placed automatically, clear of boxes and other labels.'
+	);
 const runtimeArgument = z
 	.enum(RUNTIMES)
 	.describe(
@@ -628,9 +635,10 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			from: z.string().describe('Component id or exact name.'),
 			to: z.string().describe('Component id or exact name.'),
 			label: z.string().max(200).optional(),
-			flow: flowArgument.optional()
+			flow: flowArgument.optional(),
+			label_position: labelPosition.optional()
 		},
-		({ project, diagram, from, to, label, flow }) =>
+		({ project, diagram, from, to, label, flow, label_position: position }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const components = nodesOf(p, d.id, 'component');
@@ -640,13 +648,14 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				if (!id) throw new ToolError('A Component cannot connect to itself.');
 				if (label) p.setEdgeLabel(d.id, id, label);
 				if (flow) p.setConnectionFlow(d.id, id, flow);
+				if (position !== undefined) p.setLabelPosition(d.id, id, position);
 				return { id };
 			})
 	);
 
 	tool(
 		'set_connection',
-		'Changes a Connection in place: its label ("" clears it) and its Flow ("none" clears it).',
+		'Changes a Connection in place: its label ("" clears it), its Flow ("none" clears it) and where its label is.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -657,11 +666,14 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.optional()
 				.describe(
 					'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write; none clears it.'
-				)
+				),
+			label_position: labelPosition.nullable().optional()
 		},
-		({ project, diagram, connection, label, flow }) =>
+		({ project, diagram, connection, label, flow, label_position: position }) =>
 			access.write(project, (p) => {
-				if (label === undefined && !flow) throw new ToolError('Give a label or a flow.');
+				if (label === undefined && !flow && position === undefined) {
+					throw new ToolError('Give a label, a flow or a label_position.');
+				}
 				const d = pickDiagram(p, diagram, 'system');
 				const nodes = nodesOf(p, d.id);
 				const nameOf = (id: string) => String(nodes.find((n) => n.id === id)?.name ?? id);
@@ -676,6 +688,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				}
 				if (label !== undefined) p.setEdgeLabel(d.id, target.id, label);
 				if (flow) p.setConnectionFlow(d.id, target.id, orNull(flow));
+				if (position !== undefined) p.setLabelPosition(d.id, target.id, position);
 				return { id: target.id };
 			})
 	);

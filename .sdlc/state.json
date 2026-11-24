@@ -1,5 +1,5 @@
 {
-  "item": "reorder-tabs",
+  "item": "connection-labels",
   "phase": "commit",
-  "quick": true
+  "quick": false
 }

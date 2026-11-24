@@ -1440,3 +1440,60 @@ describe('Move a Diagram', () => {
 		expect([...order(project)].sort()).toEqual([...'ABCD']);
 	});
 });
+
+describe('A Connection label put along its line', () => {
+	function setup() {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const d = project.addDiagram('system');
+		const [a, b] = ['A', 'B'].map((n) => project.addComponent(d, 'service', n, 0, 0));
+		const id = project.addConnection(d, a, b)!;
+		const position = () => project.edges(d)[0].labelPosition;
+		return { project, d, id, position };
+	}
+
+	it('is set within the line, cleared, and undone in one step', () => {
+		const { project, d, id, position } = setup();
+		project.setLabelPosition(d, id, 0.33333);
+		expect(position()).toBe(0.333);
+		project.setLabelPosition(d, id, 7);
+		expect(position()).toBe(1);
+		project.setLabelPosition(d, id, -7);
+		expect(position()).toBe(0);
+		project.setLabelPosition(d, id, NaN);
+		expect(position()).toBe(0);
+		project.setLabelPosition(d, id, null);
+		expect(project.edges(d)[0]).not.toHaveProperty('labelPosition');
+		project.stopCapturing();
+		project.setLabelPosition(d, id, 0.5);
+		project.undo();
+		expect(project.edges(d)[0]).not.toHaveProperty('labelPosition');
+		expect(project.edges(d)).toHaveLength(1);
+	});
+
+	it('is kept by a move, a file and a paste', () => {
+		const { project, d, id } = setup();
+		project.setLabelPosition(d, id, 0.25);
+		project.moveNode(d, project.nodes(d)[1].id, 500, 300);
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).toFile()).toEqual(project.toFile());
+		const copy = project.duplicateDiagram(d);
+		expect(project.edges(copy)[0].labelPosition).toBe(0.25);
+	});
+
+	it('is left out when a file or a peer wrote something else', () => {
+		const { project, d, id, position } = setup();
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			Map<string, Map<string, { set(key: string, value: unknown): void }>>
+		>;
+		for (const bad of ['0.5', -0.1, 1.1, NaN, {}, null]) {
+			stored.get(d)!.get('edges')!.get(id)!.set('labelPosition', bad);
+			expect(position()).toBeUndefined();
+			const file = JSON.parse(JSON.stringify(project.toFile()));
+			file.diagrams[0].edges[0].labelPosition = bad;
+			const imported = ProjectDocument.fromFile(file);
+			expect(imported.edges(d)[0].labelPosition).toBeUndefined();
+		}
+	});
+});

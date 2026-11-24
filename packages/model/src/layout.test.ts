@@ -613,3 +613,40 @@ describe('Note width', () => {
 		expect(estimatedSize(project.nodes(d)[0])).toEqual({ width: 600, height: 80 });
 	});
 });
+
+describe('Tidy up and Connection labels', () => {
+	function diagram(label: string) {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 0, 0);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, label);
+		return { project, d, id, a, b };
+	}
+	const gap = async (label: string) => {
+		const { project, d, a, b } = diagram(label);
+		const { positions } = await layoutDiagram(
+			project.nodes(d),
+			project.edges(d),
+			estimatedSize,
+			'system'
+		);
+		return positions.get(b)!.x - positions.get(a)!.x - estimatedSize(project.nodes(d)[0]).width;
+	};
+
+	it('reserves a wrapped label its lines, not its whole text', async () => {
+		const wide = await gap('a label long enough to take several lines once it is wrapped, as here');
+		expect(wide).toBeGreaterThanOrEqual(100);
+		expect(wide).toBeLessThan(400);
+		expect(await gap('GET')).toBeLessThan(wide);
+	});
+
+	it('starts again when a peer moves a label meanwhile', () => {
+		const { project, d, id } = diagram('GET');
+		const print = () => layoutFingerprint(project.nodes(d), project.edges(d));
+		const before = print();
+		project.setLabelPosition(d, id, 0.2);
+		expect(print()).not.toBe(before);
+	});
+});

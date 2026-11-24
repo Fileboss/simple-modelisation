@@ -189,6 +189,17 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					allowBlank
 					onChange={(label) => project.setEdgeLabel(diagramId, connection.id, label)}
 				/>
+				{connection.labelPosition !== undefined && (
+					<button
+						className="panel-action"
+						onClick={() => {
+							project.stopCapturing();
+							project.setLabelPosition(diagramId, connection.id, null);
+						}}
+					>
+						{strings.connection.automaticLabel}
+					</button>
+				)}
 				<HelpHeading level={3} title={strings.flow.title}>
 					<p>{strings.flow.hint}</p>
 				</HelpHeading>

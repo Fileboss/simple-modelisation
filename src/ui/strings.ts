@@ -120,6 +120,10 @@ export const strings = {
 		copyFailed: 'Copy failed: the browser refused the clipboard. Nothing was removed.',
 		pasteFailed: 'Paste failed: the browser refused the clipboard. Try Edit > Paste.'
 	},
+	connection: {
+		moveLabel: 'Drag along the line',
+		automaticLabel: 'Place the label automatically'
+	},
 	/** On the button showing what a heading's section is about. */
 	help: (title: string) => `Help: ${title}`,
 	area: {

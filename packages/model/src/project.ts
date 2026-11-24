@@ -136,6 +136,8 @@ export type ConnectionEdge = DiagramEdge &
 		label: string;
 		/** Absent when unspecified. */
 		flow?: Flow;
+		/** How far along its line its label was put, from 0 to 1; absent: placed automatically. */
+		labelPosition?: number;
 	};
 
 /** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
@@ -917,6 +919,17 @@ export class ProjectDocument {
 		}
 		if (flow === null) connection.delete('flow');
 		else if (FLOWS.includes(flow)) connection.set('flow', flow);
+	}
+
+	/** Puts a Connection's label along its line (0 to 1), or back to the automatic placing with null. */
+	setLabelPosition(diagramId: string, connectionId: string, position: number | null): void {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		if (connection?.get('type') !== 'connection') return;
+		if (position === null) connection.delete('labelPosition');
+		else if (isNumber(position)) {
+			const value = Math.round(Math.min(1, Math.max(0, position)) * 1000) / 1000;
+			if (connection.get('labelPosition') !== value) connection.set('labelPosition', value);
+		}
 	}
 
 	// MCDs
@@ -1770,8 +1783,12 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 
 /** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
 function readEdge(edge: Record<string, unknown>): DiagramEdge {
-	if (!('flow' in edge) && !('relative' in edge) && !('fkName' in edge)) return edge as DiagramEdge;
+	if (!['flow', 'relative', 'fkName', 'labelPosition'].some((key) => key in edge)) {
+		return edge as DiagramEdge;
+	}
 	const read = { ...edge };
+	const at = read.labelPosition;
+	if (read.type !== 'connection' || !isNumber(at) || at < 0 || at > 1) delete read.labelPosition;
 	if ((read.type !== 'leg' && read.type !== 'isa') || !isForeignKeyName(read.fkName)) {
 		delete read.fkName;
 	}
@@ -1864,7 +1881,7 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	inheritance: ['x', 'y', 'parent', 'constraint', 'translation']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
-	connection: ['source', 'target', 'label', 'flow', 'points'],
+	connection: ['source', 'target', 'label', 'flow', 'labelPosition', 'points'],
 	leg: ['source', 'target', 'cardinality', 'relative', 'fkName', 'points'],
 	isa: ['source', 'target', 'fkName', 'points']
 };

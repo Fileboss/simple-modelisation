@@ -148,3 +148,32 @@ export function labelPoint(points: Point[]): Point {
 		y: (points[best].y + points[best + 1].y) / 2
 	};
 }
+
+/** The point a fraction `t` of the way along a route, from its start (0) to its end (1). */
+export function pointAlong(points: Point[], t: number): Point {
+	const lengths = points.slice(1).map((p, i) => distance(points[i], p));
+	const total = lengths.reduce((sum, length) => sum + length, 0);
+	let left = Math.min(1, Math.max(0, t)) * total;
+	for (let i = 0; i < lengths.length; i++) {
+		if (left <= lengths[i] && lengths[i] > 0) return toward(points[i], points[i + 1], left);
+		left -= lengths[i];
+	}
+	return points[points.length - 1];
+}
+
+/** How far along a route, from 0 to 1, its nearest point to `at` is. */
+export function nearestAlong(points: Point[], at: Point): number {
+	let walked = 0;
+	let best = { distance: Infinity, walked: 0 };
+	for (let i = 1; i < points.length; i++) {
+		const [a, b] = [points[i - 1], points[i]];
+		const length = distance(a, b);
+		const along =
+			length === 0 ? 0 : ((at.x - a.x) * (b.x - a.x) + (at.y - a.y) * (b.y - a.y)) / length;
+		const step = Math.min(length, Math.max(0, along));
+		const gap = distance(at, toward(a, b, step));
+		if (gap < best.distance) best = { distance: gap, walked: walked + step };
+		walked += length;
+	}
+	return walked === 0 ? 0 : best.walked / walked;
+}

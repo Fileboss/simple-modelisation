@@ -574,6 +574,25 @@ select {
 	border: 1px solid var(--border);
 	font-size: 0.75rem;
 	pointer-events: all;
+	cursor: grab;
+	white-space: pre;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.edge-label-wrapped {
+	/* As the model measures and the images draw it. */
+	line-height: 15px;
+	text-align: center;
+}
+
+.edge-label-selected {
+	touch-action: none;
+}
+
+.edge-label-moving {
+	border-color: var(--accent);
+	cursor: grabbing;
 }
 
 .panel-action {

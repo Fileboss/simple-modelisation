@@ -10,6 +10,7 @@ import {
 import type { Diagram, DiagramKind, ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { EditableText } from '../canvas/EditableText';
 import { strings } from '../ui/strings';
+import { followDrag } from '../ui/follow-drag';
 import { dropIndex, shiftOf, withinRow, type TabBox } from './tab-order';
 
 /** How far, in pixels, a press on a tab goes before it drags it rather than opens it. */
@@ -125,16 +126,6 @@ const tabsIn = (nav: HTMLElement | null) => [
 	...(nav?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])
 ];
 
-/** The click a drag ends with does not open a tab. */
-function swallowClick() {
-	const swallow = (click: MouseEvent) => {
-		click.stopPropagation();
-		click.preventDefault();
-	};
-	window.addEventListener('click', swallow, { capture: true, once: true });
-	setTimeout(() => window.removeEventListener('click', swallow, { capture: true }));
-}
-
 /**
  * Dragging a tab along its row, with a mouse, a pen, or a finger after a long
  * press: followed on the window, so that it goes on outside the row. Escape,
@@ -160,21 +151,10 @@ function useTabDrag(
 		const row = nav.current;
 		const startX = event.clientX;
 		const startScroll = row?.scrollLeft ?? 0;
-		const { pointerId } = event;
-		const isTouch = event.pointerType === 'touch';
 		let x = startX;
 		let current: Drag | null = null;
 		let frame = 0;
 
-		const begin = () => {
-			const boxes = tabsIn(row).map((tab) => {
-				const { left, width } = tab.getBoundingClientRect();
-				return { id: tab.dataset.tab!, left, width };
-			});
-			current = { id, dx: 0, index: boxes.findIndex((b) => b.id === id), boxes };
-			follow();
-			frame = requestAnimationFrame(scroll);
-		};
 		const follow = () => {
 			if (!current) return;
 			const { boxes } = current;
@@ -198,70 +178,32 @@ function useTabDrag(
 			}
 			frame = requestAnimationFrame(scroll);
 		};
-		const press = isTouch ? setTimeout(begin, LONG_PRESS) : undefined;
-
-		const onMove = (e: PointerEvent) => {
-			if (e.pointerId !== pointerId) return;
-			// Released where the page could not see it (a menu, another window).
-			if (e.buttons === 0) return stop();
-			x = e.clientX;
-			if (current) return follow();
-			if (Math.abs(x - startX) < DRAG_START) return;
-			if (isTouch) stop();
-			else begin();
-		};
-		const onUp = (e: PointerEvent) => {
-			if (e.pointerId !== pointerId) return;
-			const done = current;
-			stop();
-			if (!done) return;
-			swallowClick();
-			if (done.index !== done.boxes.findIndex((b) => b.id === id)) onDrop(id, done.index);
-		};
-		const onCancel = (e: PointerEvent) => {
-			if (e.pointerId === pointerId) stop();
-		};
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key !== 'Escape' || !current) return;
-			e.stopPropagation();
-			abandon();
-		};
-		// Once a finger drags a tab, it no longer scrolls, nor opens the browser's menu.
-		const onTouchMove = (e: TouchEvent) => {
-			if (current) e.preventDefault();
-		};
-		const onMenu = (e: Event) => {
-			if (isTouch) e.preventDefault();
-		};
-
-		const stop = () => {
-			cancel.current = null;
-			clearTimeout(press);
-			cancelAnimationFrame(frame);
-			window.removeEventListener('pointermove', onMove);
-			window.removeEventListener('pointerup', onUp);
-			window.removeEventListener('pointercancel', onCancel);
-			window.removeEventListener('blur', abandon);
-			window.removeEventListener('keydown', onKey, true);
-			window.removeEventListener('touchmove', onTouchMove);
-			window.removeEventListener('contextmenu', onMenu, true);
-			current = null;
-			setDrag(null);
-		};
-		/** Stops with the button still down: its release opens nothing either. */
-		const abandon = () => {
-			const wasDragging = current !== null;
-			stop();
-			if (wasDragging) window.addEventListener('pointerup', swallowClick, { once: true });
-		};
-		window.addEventListener('pointermove', onMove);
-		window.addEventListener('pointerup', onUp);
-		window.addEventListener('pointercancel', onCancel);
-		window.addEventListener('blur', abandon);
-		window.addEventListener('keydown', onKey, true);
-		window.addEventListener('touchmove', onTouchMove, { passive: false });
-		window.addEventListener('contextmenu', onMenu, true);
-		cancel.current = abandon;
+		cancel.current = followDrag(event, {
+			distance: DRAG_START,
+			pressDelay: event.pointerType === 'touch' ? LONG_PRESS : undefined,
+			onBegin: () => {
+				const boxes = tabsIn(row).map((tab) => {
+					const { left, width } = tab.getBoundingClientRect();
+					return { id: tab.dataset.tab!, left, width };
+				});
+				current = { id, dx: 0, index: boxes.findIndex((b) => b.id === id), boxes };
+				frame = requestAnimationFrame(scroll);
+			},
+			onMove: ({ clientX }) => {
+				x = clientX;
+				follow();
+			},
+			onDrop: () => {
+				if (!current) return;
+				const { index, boxes } = current;
+				if (index !== boxes.findIndex((b) => b.id === id)) onDrop(id, index);
+			},
+			onEnd: () => {
+				cancel.current = null;
+				cancelAnimationFrame(frame);
+				setDrag(null);
+			}
+		});
 	};
 	return { drag, start };
 }
