@@ -32,6 +32,7 @@ tags: [backlog]
 
 ## Done
 
+- reorder-tabs: the Diagrams' tabs dragged into another order
 - [react-flow-13](docs/specs/react-flow-13/): React Flow 12 to 13, the canvas looking and behaving as before
 - palette-help: the explanations of the palettes and the properties hidden behind an i button
 - [mcd-areas](docs/specs/mcd-areas/): free colored Areas with a label behind an MCD, in the app, the exports and over MCP

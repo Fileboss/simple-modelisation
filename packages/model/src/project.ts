@@ -371,7 +371,10 @@ export class ProjectDocument {
 
 	// Diagrams
 
-	/** Oldest first, the order of the tabs. */
+	/**
+	 * In the order of the tabs: by `createdAt`, the time a Diagram was added until its
+	 * tab is moved, then a value between its neighbours'.
+	 */
 	diagrams(): Diagram[] {
 		return [...this.diagramMap.entries()]
 			.filter(([key, d]) => isReadableDiagram(key, d))
@@ -382,10 +385,10 @@ export class ProjectDocument {
 				return {
 					id: d.get('id') as string,
 					kind,
-					// A peer may write anything: a name that is not text, or a time that is not a
-					// number, reads as the default.
+					// A peer may write anything: a name that is not text, or what is not a time,
+					// reads as the default.
 					name: typeof name === 'string' ? name : DEFAULT_DIAGRAM_NAMES[kind],
-					createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0,
+					createdAt: isTime(createdAt) ? createdAt : 0,
 					// Any other value, from a newer version, reads as horizontal.
 					...(kind === 'mcd' && d.get('tidyDirection') === 'vertical'
 						? { tidyDirection: 'vertical' as const }
@@ -464,18 +467,7 @@ export class ProjectDocument {
 				name?.trim() || copyName(original.name, new Set(diagrams.map((d) => d.name)))
 			);
 			const entry = this.requireDiagram(copy);
-			if (following.length > 0) {
-				// Tabs are in the order of creation: between the two, or, with no room left
-				// there, just after the original, moving those that follow as little as needed.
-				const middle = original.createdAt + (following[0].createdAt - original.createdAt) / 2;
-				const fits = middle > original.createdAt && middle < following[0].createdAt;
-				let last = fits ? middle : original.createdAt + 1;
-				entry.set('createdAt', last);
-				for (const d of following) {
-					if (d.createdAt > last) break;
-					this.requireDiagram(d.id).set('createdAt', ++last);
-				}
-			}
+			if (following.length > 0) this.placeDiagram(copy, original, following);
 			if (original.tidyDirection) entry.set('tidyDirection', original.tidyDirection);
 			// As stored: a paste checks and completes them.
 			const stored = (entries: Entries) => [...entries.values()].map((e) => e.toJSON());
@@ -491,6 +483,19 @@ export class ProjectDocument {
 		});
 		this.undoManager.stopCapturing();
 		return copy;
+	}
+
+	/** Moves a Diagram's tab to `index` in their order (from 0), clamped; one undo step. */
+	moveDiagram(id: string, index: number): void {
+		const diagrams = this.diagrams();
+		const from = diagrams.findIndex((d) => d.id === id);
+		if (from === -1) throw new Error(`Unknown diagram ${id}`);
+		const to = Math.min(diagrams.length - 1, Math.max(0, Math.round(index)));
+		if (to === from) return;
+		const others = diagrams.filter((d) => d.id !== id);
+		this.undoManager.stopCapturing();
+		this.doc.transact(() => this.placeDiagram(id, others[to - 1], others.slice(to)));
+		this.undoManager.stopCapturing();
 	}
 
 	renameDiagram(id: string, name: string): void {
@@ -1516,6 +1521,25 @@ export class ProjectDocument {
 		this.edgeMap(diagramId).set(edge.id, toFields(edge));
 	}
 
+	/**
+	 * Dates a Diagram between `previous` (none: first) and those that follow: tabs
+	 * are in that order. With no room left there, just after `previous`, moving
+	 * those that follow as little as needed.
+	 */
+	private placeDiagram(id: string, previous: Diagram | undefined, following: Diagram[]): void {
+		const next = following[0]?.createdAt;
+		const after = previous ? previous.createdAt + 1 : next! - 1;
+		const middle = previous && next !== undefined ? (previous.createdAt + next) / 2 : after;
+		const fits =
+			(!previous || middle > previous.createdAt) && (next === undefined || middle < next);
+		let last = fits ? middle : after;
+		this.requireDiagram(id).set('createdAt', last);
+		for (const d of following) {
+			if (d.createdAt > last) break;
+			this.requireDiagram(d.id).set('createdAt', ++last);
+		}
+	}
+
 	private setBox(
 		diagramId: string,
 		nodeId: string,
@@ -1895,6 +1919,10 @@ function parseFile(data: unknown): ProjectFile {
 	}
 	return file as ProjectFile;
 }
+
+/** A time as `Date` has them: whole numbers around it stay apart, so there is room to order. */
+const isTime = (value: unknown): value is number =>
+	typeof value === 'number' && Math.abs(value) <= 8.64e15;
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 

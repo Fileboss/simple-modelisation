@@ -1342,3 +1342,101 @@ describe('Duplicate a Diagram', () => {
 		expect(project.nodes(d).length).toBeGreaterThan(0);
 	});
 });
+
+describe('Move a Diagram', () => {
+	function setup(count = 4) {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const ids = [...'ABCDEFGH'].slice(0, count).map((name) => project.addDiagram('mcd', name));
+		const names = () =>
+			project
+				.diagrams()
+				.map((d) => d.name)
+				.join('');
+		return { project, ids, names };
+	}
+
+	it('goes anywhere, and nowhere else moves', () => {
+		for (let from = 0; from < 4; from++) {
+			for (let to = 0; to < 4; to++) {
+				const { project, ids, names } = setup();
+				project.moveDiagram(ids[from], to);
+				const expected = [...'ABCD'];
+				expected.splice(to, 0, ...expected.splice(from, 1));
+				expect(names()).toBe(expected.join(''));
+			}
+		}
+	});
+
+	it('is clamped, one undo step, kept by a file, and leaves new Diagrams last', () => {
+		const { project, ids, names } = setup();
+		project.moveDiagram(ids[0], 99);
+		expect(names()).toBe('BCDA');
+		project.renameDiagram(ids[0], 'Z');
+		project.undo();
+		expect(names()).toBe('BCDA');
+		project.undo();
+		expect(names()).toBe('ABCD');
+		project.moveDiagram(ids[3], -5);
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(
+			ProjectDocument.fromFile(file)
+				.diagrams()
+				.map((d) => d.name)
+				.join('')
+		).toBe('DABC');
+		project.addDiagram('system', 'N');
+		expect(names()).toBe('DABCN');
+		project.duplicateDiagram(ids[3], 'd');
+		expect(names()).toBe('DdABCN');
+		expect(() => project.moveDiagram('gone', 0)).toThrow('Unknown diagram');
+	});
+
+	it('writes nothing when it does not move', () => {
+		const { project, ids } = setup();
+		let updates = 0;
+		project.subscribe(() => updates++);
+		project.moveDiagram(ids[1], 1);
+		expect(updates).toBe(0);
+	});
+
+	it('finds room whatever the dates, however often', () => {
+		const { project, ids, names } = setup(3);
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			{ set(key: string, value: unknown): void }
+		>;
+		for (const id of ids) stored.get(id)!.set('createdAt', 5);
+		const start = names();
+		const last = project.diagrams()[2].id;
+		project.moveDiagram(last, 0);
+		expect(names()).toBe(start[2] + start[0] + start[1]);
+		// Between the same two, over and over.
+		for (let i = 0; i < 200; i++) {
+			const [a, b, c] = project.diagrams().map((d) => d.name);
+			project.moveDiagram(project.diagrams()[2].id, 1);
+			expect(names()).toBe(a + c + b);
+		}
+		for (const bad of ['bad', 1e17, -1e300, Infinity]) {
+			for (const id of ids) stored.get(id)!.set('createdAt', bad);
+			const before = names();
+			project.moveDiagram(project.diagrams()[0].id, 2);
+			expect(names()).toBe(before[1] + before[2] + before[0]);
+			project.moveDiagram(project.diagrams()[2].id, 0);
+			expect(names()).toBe(before);
+		}
+	});
+
+	it('two peers moving at once end with one order', () => {
+		const { project, ids } = setup();
+		const other = new ProjectDocument();
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		project.moveDiagram(ids[0], 3);
+		other.moveDiagram(ids[3], 0);
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(other.doc));
+		const order = (p: ProjectDocument) => p.diagrams().map((d) => d.name);
+		expect(order(project)).toEqual(order(other));
+		expect([...order(project)].sort()).toEqual([...'ABCD']);
+	});
+});

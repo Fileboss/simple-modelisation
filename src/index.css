@@ -190,11 +190,15 @@ select {
 	padding: 6px 16px 0;
 	border-bottom: 1px solid var(--border);
 	background: var(--surface);
+	/* More tabs than fit scroll in their row, not the page with them. */
+	overflow: auto hidden;
+	scrollbar-width: thin;
 }
 
 .tabs > button {
 	margin-bottom: 6px;
 	color: var(--muted);
+	flex: none;
 }
 
 .tab {
@@ -203,6 +207,31 @@ select {
 	border: 1px solid transparent;
 	border-bottom: none;
 	border-radius: 6px 6px 0 0;
+	flex: none;
+	/* Dragged along its row; a long press does not select its name. */
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+
+/* Safari would not let one type in a field that inherits it. */
+.tab input {
+	-webkit-user-select: text;
+	user-select: text;
+}
+
+.tabs-dragging .tab {
+	transition: transform 120ms;
+}
+
+.tabs-dragging .tab-dragged {
+	position: relative;
+	z-index: 1;
+	border-color: var(--border);
+	background: var(--bg);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+	cursor: grabbing;
+	transition: none;
 }
 
 .tab-open {

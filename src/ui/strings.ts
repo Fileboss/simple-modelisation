@@ -28,6 +28,7 @@ export const strings = {
 		addMcd: '+ MCD',
 		deleteDiagram: 'Delete diagram',
 		duplicateDiagram: 'Duplicate diagram',
+		moveTabHint: 'Drag to reorder (Alt+Shift+← or →)',
 		unreadable: (count: number) =>
 			`${count} ${count === 1 ? 'entry' : 'entries'} of this Project could not be read (written by another version of the app?). The rest works as usual.`,
 		cannotShow: 'This Project could not be shown.',
