@@ -132,7 +132,9 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 				to: nameOf(c.target),
 				label: c.label,
 				flow: c.flow ?? null,
-				label_position: c.labelPosition ?? null
+				label_position: c.labelPosition ?? null,
+				from_anchor: c.sourceAnchor ?? null,
+				to_anchor: c.targetAnchor ?? null
 			}))
 		};
 	}

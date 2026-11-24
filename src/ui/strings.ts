@@ -122,7 +122,27 @@ export const strings = {
 	},
 	connection: {
 		moveLabel: 'Drag along the line',
-		automaticLabel: 'Place the label automatically'
+		automaticLabel: 'Place the label automatically',
+		moveEnd: 'Drag to another point, or to another Component',
+		ends: {
+			source: (component: string) => `Leaves ${component} from`,
+			target: (component: string) => `Reaches ${component} at`
+		},
+		automaticEnd: 'Automatic',
+		anchors: {
+			'top-left': 'Top, left',
+			top: 'Top',
+			'top-right': 'Top, right',
+			'right-top': 'Right, top',
+			right: 'Right',
+			'right-bottom': 'Right, bottom',
+			'bottom-left': 'Bottom, left',
+			bottom: 'Bottom',
+			'bottom-right': 'Bottom, right',
+			'left-top': 'Left, top',
+			left: 'Left',
+			'left-bottom': 'Left, bottom'
+		}
 	},
 	/** On the button showing what a heading's section is about. */
 	help: (title: string) => `Help: ${title}`,

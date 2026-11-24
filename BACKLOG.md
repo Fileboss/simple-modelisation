@@ -9,7 +9,6 @@ tags: [backlog]
 
 ## To do
 
-- connection-anchors, next, in the same pull request: the ends of a Connection moved between 12 anchors per Component, or to another Component, in the app, the images and over MCP
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
@@ -33,6 +32,7 @@ tags: [backlog]
 
 ## Done
 
+- [connection-anchors](docs/specs/connection-anchors/): the ends of a Connection moved between 12 Anchors per Component, or to another Component, in the app, the images and over MCP
 - [connection-labels](docs/specs/connection-labels/): Connection labels moved along their line and wrapped, in the app, the images and over MCP
 - reorder-tabs: the Diagrams' tabs dragged into another order
 - [react-flow-13](docs/specs/react-flow-13/): React Flow 12 to 13, the canvas looking and behaving as before

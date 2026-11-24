@@ -7,7 +7,7 @@ import {
 	type MeasureText,
 	type PillSize
 } from '@simple-modelisation/model/label-placement.ts';
-import type { ConnectionEdge } from '@simple-modelisation/model/project.ts';
+import { anchorsOf, type ConnectionEdge } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import type { Box, Point } from '../canvas/geometry';
 import type { Layout } from '../canvas/layout';
@@ -86,6 +86,7 @@ export const placeConnectionLabels: Layout = (nodes, edges) => {
 			target: e.target,
 			label: connectionPill(e.data as Partial<ConnectionEdge> | undefined),
 			points: (e.data as Partial<ConnectionEdge> | undefined)?.points,
+			anchors: anchorsOf((e.data ?? {}) as Partial<ConnectionEdge>),
 			labelPosition: (e.data as Partial<ConnectionEdge> | undefined)?.labelPosition
 		})),
 		measureInPage,

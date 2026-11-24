@@ -1,3 +1,4 @@
+import { isAnchor, type Anchor, type Anchors } from './anchors.ts';
 import {
 	checkProblem,
 	cleanCheck,
@@ -138,7 +139,15 @@ export type ConnectionEdge = DiagramEdge &
 		flow?: Flow;
 		/** How far along its line its label was put, from 0 to 1; absent: placed automatically. */
 		labelPosition?: number;
+		/** Where its ends are attached; absent: automatic. */
+		sourceAnchor?: Anchor;
+		targetAnchor?: Anchor;
 	};
+
+/** The Anchors of a Connection, as routes take them. */
+export const anchorsOf = (
+	connection: Pick<ConnectionEdge, 'sourceAnchor' | 'targetAnchor'>
+): Anchors => ({ source: connection.sourceAnchor, target: connection.targetAnchor });
 
 /** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
 export type ZoneNode = DiagramNode & {
@@ -919,6 +928,71 @@ export class ProjectDocument {
 		}
 		if (flow === null) connection.delete('flow');
 		else if (FLOWS.includes(flow)) connection.set('flow', flow);
+	}
+
+	/**
+	 * Attaches an end of a Connection to a Component, its own or another, at an
+	 * Anchor (null: automatic). False when it cannot be: not onto the Component at
+	 * the other end, nor onto what is no Component.
+	 */
+	attachConnection(
+		diagramId: string,
+		connectionId: string,
+		end: 'source' | 'target',
+		componentId: string,
+		anchor: Anchor | null
+	): boolean {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		const other = end === 'source' ? 'target' : 'source';
+		const kept = { componentId: String(connection?.get(other)) };
+		const moved = { componentId, anchor };
+		return end === 'source'
+			? this.attachEnds(diagramId, connectionId, moved, kept)
+			: this.attachEnds(diagramId, connectionId, kept, moved);
+	}
+
+	/**
+	 * Attaches both ends of a Connection at once, so that they can be swapped. An
+	 * end without an `anchor` keeps its own. False, and nothing done, when an end is
+	 * no Component, or both would become the same.
+	 */
+	attachEnds(
+		diagramId: string,
+		connectionId: string,
+		source: { componentId: string; anchor?: Anchor | null },
+		target: { componentId: string; anchor?: Anchor | null }
+	): boolean {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		if (connection?.get('type') !== 'connection') return false;
+		// One already from a Component to itself (a file, two peers at once) can be changed.
+		const isLoop = source.componentId === target.componentId;
+		const wasLoop = connection.get('source') === connection.get('target');
+		if (isLoop && !(wasLoop && connection.get('source') === source.componentId)) return false;
+		const nodes = this.nodeMap(diagramId);
+		const changes: [string, string | null][] = [];
+		for (const [key, end] of [
+			['source', source],
+			['target', target]
+		] as const) {
+			const { componentId, anchor } = end;
+			if (nodes.get(componentId)?.get('type') !== 'component') return false;
+			if (connection.get(key) !== componentId) changes.push([key, componentId]);
+			if (anchor === undefined) continue;
+			if (anchor !== null && !isAnchor(anchor)) return false;
+			if ((connection.get(`${key}Anchor`) ?? null) !== anchor) {
+				changes.push([`${key}Anchor`, anchor]);
+			}
+		}
+		if (changes.length === 0) return true;
+		this.doc.transact(() => {
+			for (const [key, value] of changes) {
+				if (value === null) connection.delete(key);
+				else connection.set(key, value);
+			}
+			// A Tidy up's bends led elsewhere.
+			connection.delete('points');
+		});
+		return true;
 	}
 
 	/** Puts a Connection's label along its line (0 to 1), or back to the automatic placing with null. */
@@ -1781,14 +1855,26 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	return read as DiagramNode;
 }
 
+const OPTIONAL_EDGE_FIELDS = [
+	'flow',
+	'relative',
+	'fkName',
+	'labelPosition',
+	'sourceAnchor',
+	'targetAnchor'
+];
+
 /** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
 function readEdge(edge: Record<string, unknown>): DiagramEdge {
-	if (!['flow', 'relative', 'fkName', 'labelPosition'].some((key) => key in edge)) {
+	if (!OPTIONAL_EDGE_FIELDS.some((key) => key in edge)) {
 		return edge as DiagramEdge;
 	}
 	const read = { ...edge };
 	const at = read.labelPosition;
 	if (read.type !== 'connection' || !isNumber(at) || at < 0 || at > 1) delete read.labelPosition;
+	for (const key of ['sourceAnchor', 'targetAnchor']) {
+		if (read.type !== 'connection' || !isAnchor(read[key])) delete read[key];
+	}
 	if ((read.type !== 'leg' && read.type !== 'isa') || !isForeignKeyName(read.fkName)) {
 		delete read.fkName;
 	}
@@ -1881,7 +1967,16 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	inheritance: ['x', 'y', 'parent', 'constraint', 'translation']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
-	connection: ['source', 'target', 'label', 'flow', 'labelPosition', 'points'],
+	connection: [
+		'source',
+		'target',
+		'label',
+		'flow',
+		'labelPosition',
+		'sourceAnchor',
+		'targetAnchor',
+		'points'
+	],
 	leg: ['source', 'target', 'cardinality', 'relative', 'fkName', 'points'],
 	isa: ['source', 'target', 'fkName', 'points']
 };

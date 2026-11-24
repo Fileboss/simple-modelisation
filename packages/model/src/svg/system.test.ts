@@ -311,3 +311,27 @@ describe('Connection labels', () => {
 		expect(svg).toContain('&lt;every&gt;');
 	});
 });
+
+describe('Connection Anchors', () => {
+	it('are where the line starts and ends, its label on it', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 600, 0);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, 'GET');
+		const draw = () =>
+			systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES, legend: false });
+		const path = (svg: string) => /<path d="([^"]+)" fill="none" stroke="#475569"/.exec(svg)![1];
+		const automatic = path(draw());
+		project.attachConnection(d, id, 'source', a, 'bottom-left');
+		project.attachConnection(d, id, 'target', b, 'bottom');
+		const svg = draw();
+		expect(path(svg)).not.toBe(automatic);
+		expect(path(svg)).toMatch(/^M 37.5,64 /);
+		expect(path(svg)).toMatch(/L 675,64$/);
+		// Under both boxes: the frame holds it.
+		const y = Number(/<text x="[\d.]+" y="([\d.]+)"[^>]*>GET</.exec(svg)![1]);
+		expect(y).toBeGreaterThan(64);
+	});
+});

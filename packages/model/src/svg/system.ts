@@ -20,15 +20,17 @@ import {
 	type SkinLook
 } from '../looks.ts';
 import { skinFits } from '../skins.ts';
-import type {
-	ComponentType,
-	DiagramEdge,
-	DiagramNode,
-	DiskKind,
-	Flow,
-	Hosting,
-	Provider,
-	Runtime
+import {
+	anchorsOf,
+	type ComponentType,
+	type ConnectionEdge,
+	type DiagramEdge,
+	type DiagramNode,
+	type DiskKind,
+	type Flow,
+	type Hosting,
+	type Provider,
+	type Runtime
 } from '../project.ts';
 import type { ENGLISH_NAMES } from '../names.ts';
 import { effectiveProviders, nodeBox, zoneParents } from '../zones.ts';
@@ -114,6 +116,7 @@ export function systemSvg(
 			target: e.target,
 			label: pills.get(e.id)!.text,
 			points: e.points as Point[] | undefined,
+			anchors: anchorsOf(e as ConnectionEdge),
 			labelPosition: e.labelPosition as number | undefined
 		})),
 		measure
@@ -130,7 +133,12 @@ export function systemSvg(
 		const source = solid.get(edge.source);
 		const target = solid.get(edge.target);
 		if (!source || !target) continue;
-		const route = connectionRoute(source, target, edge.points as Point[] | undefined);
+		const route = connectionRoute(
+			source,
+			target,
+			edge.points as Point[] | undefined,
+			anchorsOf(edge as ConnectionEdge)
+		);
 		// A route may run outside the boxes (around them): the frame holds it too.
 		for (const p of route) extent.push({ x: p.x - 6, y: p.y - 6, width: 12, height: 12 });
 		const { flow, text } = pills.get(edge.id)!;

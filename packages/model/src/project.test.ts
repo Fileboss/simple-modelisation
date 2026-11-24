@@ -1497,3 +1497,113 @@ describe('A Connection label put along its line', () => {
 		}
 	});
 });
+
+describe('The ends of a Connection', () => {
+	function setup() {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const d = project.addDiagram('system');
+		const [a, b, c] = ['A', 'B', 'C'].map((n, i) =>
+			project.addComponent(d, 'service', n, i * 400, 0)
+		);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, 'GET');
+		project.setConnectionFlow(d, id, 'read');
+		project.setLabelPosition(d, id, 0.3);
+		const connection = () => project.edges(d)[0];
+		return { project, d, a, b, c, id, connection };
+	}
+
+	it('are attached to an Anchor, then automatic again, in one undo step each', () => {
+		const { project, d, a, id, connection } = setup();
+		project.stopCapturing();
+		expect(project.attachConnection(d, id, 'source', a, 'top-left')).toBe(true);
+		expect(connection()).toMatchObject({ source: a, sourceAnchor: 'top-left' });
+		expect(connection()).not.toHaveProperty('targetAnchor');
+		project.stopCapturing();
+		project.attachConnection(d, id, 'source', a, null);
+		expect(connection()).not.toHaveProperty('sourceAnchor');
+		project.undo();
+		expect(connection().sourceAnchor).toBe('top-left');
+		project.undo();
+		expect(connection()).not.toHaveProperty('sourceAnchor');
+	});
+
+	it('go to another Component, keeping the label, its place and the Flow, losing old bends', () => {
+		const { project, d, a, b, c, id, connection } = setup();
+		project.arrange(d, new Map(), new Map([[id, [{ x: 1, y: 2 }]]]));
+		expect(connection().points).toBeDefined();
+		expect(project.attachConnection(d, id, 'target', c, 'left')).toBe(true);
+		expect(connection()).toEqual({
+			id,
+			type: 'connection',
+			source: a,
+			target: c,
+			label: 'GET',
+			flow: 'read',
+			labelPosition: 0.3,
+			targetAnchor: 'left'
+		});
+		expect(project.attachEnds(d, id, { componentId: c }, { componentId: b })).toBe(true);
+		expect(connection()).toMatchObject({ source: c, target: b, targetAnchor: 'left' });
+		expect(project.attachEnds(d, id, { componentId: b }, { componentId: c, anchor: null })).toBe(
+			true
+		);
+		expect(connection()).toMatchObject({ source: b, target: c });
+	});
+
+	it('refuse what makes no sense, writing nothing', () => {
+		const { project, d, a, b, c, id } = setup();
+		const note = project.addNote(d, 0, 0, 'x');
+		const zone = project.addZone(d, 0, 0);
+		const file = JSON.stringify(project.toFile());
+		let updates = 0;
+		project.subscribe(() => updates++);
+		expect(project.attachConnection(d, id, 'source', b, 'top')).toBe(false);
+		for (const bad of [note, zone, 'gone']) {
+			expect(project.attachConnection(d, id, 'target', bad, 'top')).toBe(false);
+		}
+		expect(project.attachConnection(d, id, 'target', c, 'middle' as never)).toBe(false);
+		expect(project.attachConnection(d, 'gone', 'target', c, 'top')).toBe(false);
+		expect(
+			project.attachEnds(d, id, { componentId: c, anchor: 'top' }, { componentId: 'gone' })
+		).toBe(false);
+		// Already there.
+		expect(project.attachConnection(d, id, 'source', a, null)).toBe(true);
+		expect(updates).toBe(0);
+		expect(JSON.stringify(project.toFile())).toBe(file);
+	});
+
+	it('moved by two peers onto one Component make a loop, which can be changed', () => {
+		const { project, d, a, c, id, connection } = setup();
+		const other = new ProjectDocument();
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		project.attachConnection(d, id, 'source', c, 'top');
+		other.attachConnection(d, id, 'target', c, 'left');
+		Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(other.doc));
+		expect(connection()).toMatchObject({ source: c, target: c });
+		expect(project.attachConnection(d, id, 'target', c, 'bottom')).toBe(true);
+		expect(connection()).toMatchObject({ target: c, targetAnchor: 'bottom' });
+		expect(project.attachEnds(d, id, { componentId: a }, { componentId: a })).toBe(false);
+		expect(project.attachConnection(d, id, 'source', a, null)).toBe(true);
+		expect(connection()).toMatchObject({ source: a, target: c });
+	});
+
+	it('are kept by a file and a paste; what a file or a peer should not have written is left out', () => {
+		const { project, d, a, id, connection } = setup();
+		project.attachConnection(d, id, 'source', a, 'bottom-right');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).toFile()).toEqual(project.toFile());
+		expect(project.edges(project.duplicateDiagram(d))[0].sourceAnchor).toBe('bottom-right');
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			Map<string, Map<string, { set(key: string, value: unknown): void }>>
+		>;
+		for (const bad of ['middle', 'constructor', 3, {}, null]) {
+			stored.get(d)!.get('edges')!.get(id)!.set('sourceAnchor', bad);
+			expect(connection()).not.toHaveProperty('sourceAnchor');
+			file.diagrams[0].edges[0].sourceAnchor = bad;
+			expect(ProjectDocument.fromFile(file).edges(d)[0]).not.toHaveProperty('sourceAnchor');
+		}
+	});
+});

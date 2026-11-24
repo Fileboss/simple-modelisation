@@ -566,6 +566,44 @@ select {
 	opacity: 1;
 }
 
+.anchor,
+.connection-end {
+	position: absolute;
+	/* Over the boxes, selected ones too (React Flow raises them by 1000). */
+	z-index: 2000;
+	box-sizing: border-box;
+	border-radius: 50%;
+}
+
+.anchor {
+	width: 8px;
+	height: 8px;
+	border: 1.5px solid var(--accent);
+	background: var(--surface);
+	pointer-events: none;
+}
+
+.anchor-taken {
+	width: 12px;
+	height: 12px;
+	background: var(--accent);
+}
+
+.connection-end {
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--accent);
+	background: var(--surface);
+	cursor: grab;
+	pointer-events: all;
+	touch-action: none;
+}
+
+.connection-end-moving {
+	cursor: grabbing;
+	background: var(--accent);
+}
+
 .edge-label {
 	position: absolute;
 	padding: 1px 6px;
@@ -2039,6 +2077,11 @@ select {
 }
 
 @media (pointer: coarse) {
+	.connection-end {
+		width: 28px;
+		height: 28px;
+		border-width: 3px;
+	}
 	.help-button {
 		width: 36px;
 		height: 36px;

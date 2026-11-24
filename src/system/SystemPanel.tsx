@@ -1,3 +1,4 @@
+import { ANCHORS, type Anchor } from '@simple-modelisation/model/anchors.ts';
 import { isPerson } from '@simple-modelisation/model/component-types.ts';
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
@@ -200,6 +201,8 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 						{strings.connection.automaticLabel}
 					</button>
 				)}
+				<AnchorPicker connection={connection} end="source" />
+				<AnchorPicker connection={connection} end="target" />
 				<HelpHeading level={3} title={strings.flow.title}>
 					<p>{strings.flow.hint}</p>
 				</HelpHeading>
@@ -222,4 +225,38 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 	}
 
 	return <p className="panel-hint">{strings.system.panelHint}</p>;
+}
+
+/** Where an end of a Connection is attached to its Component. */
+function AnchorPicker({
+	connection,
+	end
+}: {
+	connection: ConnectionEdge;
+	end: 'source' | 'target';
+}) {
+	const { project, diagramId } = useCanvas();
+	const componentId = connection[end];
+	const name = String(project.nodes(diagramId).find((n) => n.id === componentId)?.name ?? '');
+	return (
+		<label className="panel-field">
+			<span>{strings.connection.ends[end](name)}</span>
+			<select
+				value={(end === 'source' ? connection.sourceAnchor : connection.targetAnchor) ?? ''}
+				onChange={(e) => {
+					const anchor = (e.currentTarget.value || null) as Anchor | null;
+					project.stopCapturing();
+					project.attachConnection(diagramId, connection.id, end, componentId, anchor);
+					project.stopCapturing();
+				}}
+			>
+				<option value="">{strings.connection.automaticEnd}</option>
+				{ANCHORS.map((anchor) => (
+					<option key={anchor} value={anchor}>
+						{strings.connection.anchors[anchor]}
+					</option>
+				))}
+			</select>
+		</label>
+	);
 }

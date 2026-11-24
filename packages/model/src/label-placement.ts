@@ -1,3 +1,4 @@
+import type { Anchors } from './anchors.ts';
 import {
 	connectionRoute,
 	distance,
@@ -14,6 +15,7 @@ export type LabelledConnection = {
 	label: string;
 	/** Stored bends, when a Tidy up routed it. */
 	points?: Point[];
+	anchors?: Anchors;
 	/** How far along its line it was put (0 to 1); absent: placed automatically. */
 	labelPosition?: number;
 };
@@ -228,7 +230,10 @@ export function placeLabels(
 		const source = boxes.get(connection.source);
 		const target = boxes.get(connection.target);
 		if (!source?.width || !target?.width) continue;
-		routes.set(connection.id, connectionRoute(source, target, connection.points));
+		routes.set(
+			connection.id,
+			connectionRoute(source, target, connection.points, connection.anchors)
+		);
 	}
 	// Boxes, their badges and every arrowhead, unlabelled Connections' too.
 	const obstacles = [

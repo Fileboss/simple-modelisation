@@ -17,9 +17,11 @@ import {
 	CIF_SIZE,
 	INHERITANCE_SIZE,
 	NOTE_WIDTHS,
-	ZONE_PADDING
+	ZONE_PADDING,
+	anchorsOf,
+	type ConnectionEdge
 } from './project.ts';
-import { drawnRoute, labelPoint, pointAlong, type Side } from './geometry.ts';
+import { connectionRoute, labelPoint, pointAlong, type Side } from './geometry.ts';
 import { clearPosition, pillSize, pillText } from './label-placement.ts';
 import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
@@ -262,6 +264,11 @@ export async function layoutDiagram(
 	place(result.children ?? []);
 
 	const routes = new Map<string, Point[]>();
+	const attached = new Set(
+		edges
+			.filter((e) => e.sourceAnchor !== undefined || e.targetAnchor !== undefined)
+			.map((e) => e.id)
+	);
 	for (const edge of result.edges ?? []) {
 		const link = links[Number(edge.id)];
 		const section = edge.sections?.[0];
@@ -277,9 +284,12 @@ export async function layoutDiagram(
 				];
 		const rounded = bends.map((p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
 		const route = link.reversed ? rounded.reverse() : rounded;
-		routes.set(link.edge, route);
+		// One attached to an Anchor is drawn from it, without bends.
+		if (!attached.has(link.edge)) routes.set(link.edge, route);
 		// A Connection back the other way follows the same line: together, a two-way arrow.
-		for (const back of link.returns ?? []) routes.set(back, [...route].reverse());
+		for (const back of link.returns ?? []) {
+			if (!attached.has(back)) routes.set(back, [...route].reverse());
+		}
 	}
 
 	const loose = nodes.filter(isLoose);
@@ -390,8 +400,10 @@ function placeNotes(
 	// puts it first: a Note must not hide a line or its label.
 	for (const edge of allEdges) {
 		const bends = routes.get(edge.id);
-		if (!bends || !positions.has(edge.source) || !positions.has(edge.target)) continue;
-		const route = drawnRoute(boxOf(edge.source), bends, boxOf(edge.target));
+		const anchors = anchorsOf(edge as ConnectionEdge);
+		if (!bends && !anchors.source && !anchors.target) continue;
+		if (!positions.has(edge.source) || !positions.has(edge.target)) continue;
+		const route = connectionRoute(boxOf(edge.source), boxOf(edge.target), bends, anchors);
 		route.slice(1).forEach((b, i) => {
 			const a = route[i];
 			obstacles.set(`${edge.id}:${i}`, {
@@ -699,7 +711,9 @@ export function layoutFingerprint(
 				e.target,
 				e.label ?? null,
 				e.flow ?? null,
-				e.labelPosition ?? null
+				e.labelPosition ?? null,
+				e.sourceAnchor ?? null,
+				e.targetAnchor ?? null
 			])
 	]);
 }

@@ -650,3 +650,37 @@ describe('Tidy up and Connection labels', () => {
 		expect(print()).not.toBe(before);
 	});
 });
+
+describe('Tidy up and Anchors', () => {
+	it('keeps them, stores them no bends, and places the Components as without', async () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const [a, b, c] = ['A', 'B', 'C'].map((n) => project.addComponent(d, 'service', n, 0, 0));
+		const first = project.addConnection(d, a, b)!;
+		const second = project.addConnection(d, b, c)!;
+		const back = project.addConnection(d, c, b)!;
+		const tidy = () => layoutDiagram(project.nodes(d), project.edges(d), estimatedSize, 'system');
+		const before = await tidy();
+		expect([...before.routes.keys()].sort()).toEqual([first, second, back].sort());
+		project.attachConnection(d, first, 'target', b, 'top');
+		project.attachConnection(d, back, 'source', c, 'bottom');
+		const after = await tidy();
+		expect([...after.routes.keys()]).toEqual([second]);
+		expect(after.positions).toEqual(before.positions);
+		project.arrange(d, after.positions, after.routes);
+		const edges = new Map(project.edges(d).map((e) => [e.id, e]));
+		expect(edges.get(first)).toMatchObject({ targetAnchor: 'top' });
+		expect(edges.get(first)).not.toHaveProperty('points');
+	});
+
+	it('starts again when a peer moves an end meanwhile', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const [a, b] = ['A', 'B'].map((n) => project.addComponent(d, 'service', n, 0, 0));
+		const id = project.addConnection(d, a, b)!;
+		const print = () => layoutFingerprint(project.nodes(d), project.edges(d));
+		const before = print();
+		project.attachConnection(d, id, 'source', a, 'top');
+		expect(print()).not.toBe(before);
+	});
+});
