@@ -1,6 +1,7 @@
 import type {
 	CifNode,
 	InheritanceNode,
+	IsaEdge,
 	AssociationNode,
 	ComponentNode,
 	ConnectionEdge,
@@ -142,19 +143,26 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 			id: e.id,
 			name: e.name,
 			attributes: e.attributes,
+			comment: e.comment ?? null,
+			// By id and name: Attribute names need not be unique.
+			unique_groups: (e.uniques ?? []).map((group) =>
+				group.map((id) => ({ id, name: e.attributes.find((a) => a.id === id)!.name }))
+			),
 			...box(e)
 		})),
 		associations: only<AssociationNode>(nodes, 'association').map((a) => ({
 			id: a.id,
 			name: a.name,
 			attributes: a.attributes,
+			comment: a.comment ?? null,
 			legs: legs
 				.filter((l) => l.source === a.id)
 				.map((l) => ({
 					id: l.id,
 					entity: nameOf(l.target),
 					cardinality: l.cardinality,
-					relative: l.relative === true
+					relative: l.relative === true,
+					foreign_key: l.fkName ?? null
 				})),
 			...box(a)
 		})),
@@ -164,6 +172,10 @@ export function describeDiagram(project: ProjectDocument, reference: string) {
 			children: edges
 				.filter((e) => e.type === 'isa' && e.source === i.id)
 				.map((e) => nameOf(e.target)),
+			// The names given to the foreign keys of its children.
+			foreign_keys: only<IsaEdge>(edges, 'isa')
+				.filter((e) => e.source === i.id && e.fkName)
+				.map((e) => ({ child: { id: e.target, name: nameOf(e.target) }, name: e.fkName })),
 			constraint: i.constraint ?? 'none',
 			translation: i.translation ?? 'reference',
 			...box(i)

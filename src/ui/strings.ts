@@ -1,3 +1,4 @@
+import { ENGLISH_PROBLEMS } from '@simple-modelisation/model/sql/constraints.ts';
 import { ENGLISH_NAMES } from '@simple-modelisation/model/names.ts';
 
 // Every UI string, in one place so a French translation can be added later.
@@ -216,6 +217,22 @@ export const strings = {
 		addReflexive: '+ Reflexive association',
 		optional: 'Optional',
 		optionalHint: 'The column accepts NULL',
+		unique: 'Unique',
+		uniqueHint: 'No two rows have the same value (UNIQUE)',
+		uniqueGroups: 'Unique together',
+		addUniqueGroup: '+ Unique group',
+		saveUniqueGroup: 'Add',
+		removeUniqueGroup: 'Remove unique group',
+		cancel: 'Cancel',
+		checkAndComment: 'Check, comment',
+		check: 'Check (SQL)',
+		checkPlaceholder: 'price >= 0',
+		comment: 'Comment',
+		commentPlaceholder: 'Written in the SQL (COMMENT ON)',
+		foreignKeyTo: (entity: string) => `Name of the foreign key to ${entity}`,
+		problems: ENGLISH_PROBLEMS,
+		foreignKeyOf: (entity: string) => `Name of the foreign key of ${entity}`,
+		foreignKeyPlaceholder: 'Generated',
 		legs: 'Legs',
 		relative: (entity: string) =>
 			`Relative identifier (R): ${entity} is identified within the other`,

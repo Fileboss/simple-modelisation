@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useCanvas } from '../canvas/canvas-context';
 import type { Selection } from '../canvas/DiagramCanvas';
 import { PanelField } from '../canvas/PanelField';
@@ -5,6 +6,7 @@ import {
 	CARDINALITIES,
 	canBeRelative,
 	type AssociationNode,
+	type Attribute,
 	type Cardinality,
 	type CifNode,
 	type CifRole,
@@ -13,6 +15,7 @@ import {
 	type InheritanceConstraint,
 	type InheritanceNode,
 	type InheritanceTranslation,
+	type IsaEdge,
 	type EntityNode,
 	type LegEdge
 } from '@simple-modelisation/model/project.ts';
@@ -23,6 +26,8 @@ import {
 	type DataType,
 	type DataTypeKind
 } from '@simple-modelisation/model/data-types.ts';
+import { ConstraintError, MAX_COMMENT } from '@simple-modelisation/model/sql/constraints.ts';
+import { foreignKeyOf } from '@simple-modelisation/model/sql/mld.ts';
 import { strings } from '../ui/strings';
 import { umlMultiplicity, useNotation } from './notation';
 
@@ -42,7 +47,13 @@ export function McdPanel({ selection }: { selection: Selection }) {
 					value={element.name}
 					onChange={(name) => project.renameNode(diagramId, element.id, name)}
 				/>
+				<CommentField
+					key={`comment-${element.id}`}
+					value={element.comment ?? ''}
+					onChange={(comment) => project.setComment(diagramId, element.id, comment)}
+				/>
 				<AttributesEditor element={element} />
+				{isEntity && <UniqueGroups key={element.id} entity={element} />}
 				{isEntity && <ParentPicker entityId={element.id} />}
 				{isEntity ? (
 					<button
@@ -161,7 +172,23 @@ function AttributesEditor({ element }: { element: EntityNode | AssociationNode }
 								/>
 								{strings.mcd.optional}
 							</label>
+							<label title={strings.mcd.uniqueHint}>
+								<input
+									type="checkbox"
+									checked={attribute.unique ?? false}
+									onChange={(e) =>
+										project.setAttributeUnique(
+											diagramId,
+											element.id,
+											attribute.id,
+											e.currentTarget.checked
+										)
+									}
+								/>
+								{strings.mcd.unique}
+							</label>
 						</div>
+						<AttributeSql elementId={element.id} attribute={attribute} />
 					</li>
 				))}
 			</ul>
@@ -175,6 +202,185 @@ function AttributesEditor({ element }: { element: EntityNode | AssociationNode }
 				{strings.mcd.addAttribute}
 			</button>
 		</>
+	);
+}
+
+/** An Attribute's Check and Comment, folded away until used. */
+function AttributeSql({ elementId, attribute }: { elementId: string; attribute: Attribute }) {
+	const { project, diagramId } = useCanvas();
+	const isUsed = Boolean(attribute.check || attribute.comment);
+	const [isOpen, setOpen] = useState(isUsed);
+	return (
+		<details open={isOpen} onToggle={(e) => setOpen(e.currentTarget.open)}>
+			<summary>
+				{strings.mcd.checkAndComment}
+				{isUsed && ' •'}
+			</summary>
+			<CheckedField
+				label={strings.mcd.check}
+				value={attribute.check ?? ''}
+				placeholder={strings.mcd.checkPlaceholder}
+				onChange={(check) => project.setAttributeCheck(diagramId, elementId, attribute.id, check)}
+			/>
+			<CommentField
+				value={attribute.comment ?? ''}
+				onChange={(comment) =>
+					project.setAttributeComment(diagramId, elementId, attribute.id, comment)
+				}
+			/>
+		</details>
+	);
+}
+
+/** A text field whose change may be refused: the text stays, with the reason under it. */
+function CheckedField(props: CheckedFieldProps) {
+	// Changed elsewhere (a peer, an undo): the refused text and its reason go.
+	return <CheckedInput key={props.value} {...props} />;
+}
+
+type CheckedFieldProps = {
+	label: string;
+	value: string;
+	placeholder: string;
+	/** Throws why it refuses. */
+	onChange: (value: string) => void;
+};
+
+function CheckedInput({ label, value, placeholder, onChange }: CheckedFieldProps) {
+	const [problem, setProblem] = useState<string | null>(null);
+	return (
+		<label className="panel-field">
+			<span>{label}</span>
+			<input
+				defaultValue={value}
+				placeholder={placeholder}
+				aria-invalid={problem !== null}
+				onBlur={(e) => {
+					const next = e.currentTarget.value.trim();
+					try {
+						if (next !== value) onChange(next);
+						setProblem(null);
+					} catch (error) {
+						if (!(error instanceof ConstraintError)) throw error;
+						setProblem(strings.mcd.problems[error.problem]);
+					}
+				}}
+				onKeyDown={(e) => {
+					if (e.key === 'Enter') e.currentTarget.blur();
+				}}
+			/>
+			{problem && (
+				<span role="alert" className="panel-problem">
+					{problem}
+				</span>
+			)}
+		</label>
+	);
+}
+
+function CommentField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+	return (
+		<label className="panel-field">
+			<span>{strings.mcd.comment}</span>
+			<textarea
+				key={value}
+				rows={2}
+				maxLength={MAX_COMMENT}
+				defaultValue={value}
+				placeholder={strings.mcd.commentPlaceholder}
+				onBlur={(e) => {
+					const next = e.currentTarget.value.trim();
+					if (next !== value) onChange(next);
+				}}
+			/>
+		</label>
+	);
+}
+
+/** An Entity's Unique groups: each one's Attributes, and a new one once two are chosen. */
+function UniqueGroups({ entity }: { entity: EntityNode }) {
+	const { project, diagramId } = useCanvas();
+	const [draft, setDraft] = useState<string[] | null>(null);
+	if (entity.attributes.length < 2) return null;
+	const groups = entity.uniques ?? [];
+	const save = (next: string[][]) => {
+		project.stopCapturing();
+		project.setUniqueGroups(diagramId, entity.id, next);
+	};
+	const toggled = (group: string[], id: string) =>
+		group.includes(id) ? group.filter((other) => other !== id) : [...group, id];
+	// An Attribute a Participant removed meanwhile does not count.
+	const chosen = draft?.filter((id) => entity.attributes.some((a) => a.id === id)) ?? [];
+	const choices = (group: string[], change: (group: string[]) => void, isSaved: boolean) =>
+		entity.attributes.map((a) => (
+			<label key={a.id}>
+				<input
+					type="checkbox"
+					checked={group.includes(a.id)}
+					// Two at least: the group itself is removed with its ×.
+					disabled={isSaved && group.length === 2 && group.includes(a.id)}
+					onChange={() => change(toggled(group, a.id))}
+				/>
+				{a.name}
+			</label>
+		));
+	return (
+		<>
+			{(groups.length > 0 || draft) && <h3>{strings.mcd.uniqueGroups}</h3>}
+			<ul className="attribute-editor">
+				{groups.map((group, index) => (
+					<li key={index}>
+						<div className="attribute-row attribute-details">
+							{choices(group, (next) => save(groups.with(index, next)), true)}
+							<button
+								aria-label={strings.mcd.removeUniqueGroup}
+								onClick={() => save(groups.filter((other) => other !== group))}
+							>
+								×
+							</button>
+						</div>
+					</li>
+				))}
+				{draft && (
+					<li>
+						<div className="attribute-row attribute-details">
+							{choices(chosen, setDraft, false)}
+						</div>
+						<div className="attribute-row">
+							<button
+								disabled={chosen.length < 2}
+								onClick={() => {
+									save([...groups, chosen]);
+									setDraft(null);
+								}}
+							>
+								{strings.mcd.saveUniqueGroup}
+							</button>
+							<button onClick={() => setDraft(null)}>{strings.mcd.cancel}</button>
+						</div>
+					</li>
+				)}
+			</ul>
+			{!draft && (
+				<button className="panel-action" onClick={() => setDraft([])}>
+					{strings.mcd.addUniqueGroup}
+				</button>
+			)}
+		</>
+	);
+}
+
+/** The name of the foreign key a Leg or an Inheritance link makes. */
+function ForeignKeyField({ edge, label }: { edge: LegEdge | IsaEdge; label: string }) {
+	const { project, diagramId } = useCanvas();
+	return (
+		<CheckedField
+			key={edge.id}
+			label={label}
+			value={edge.fkName ?? ''}
+			placeholder={strings.mcd.foreignKeyPlaceholder}
+			onChange={(name) => project.setForeignKeyName(diagramId, edge.id, name)}
+		/>
 	);
 }
 
@@ -265,10 +471,10 @@ function ParentPicker({ entityId }: { entityId: string }) {
 function InheritanceEditor({ inheritance }: { inheritance: InheritanceNode }) {
 	const { project, diagramId } = useCanvas();
 	const names = new Map(project.nodes(diagramId).map((n) => [n.id, String(n.name ?? '')]));
-	const children = project
+	const links = project
 		.edges(diagramId)
-		.filter((e) => e.type === 'isa' && e.source === inheritance.id)
-		.map((e) => names.get(e.target));
+		.filter((e): e is IsaEdge => e.type === 'isa' && e.source === inheritance.id);
+	const children = links.map((e) => names.get(e.target));
 	return (
 		<>
 			<h2>{strings.mcd.inheritance}</h2>
@@ -316,6 +522,16 @@ function InheritanceEditor({ inheritance }: { inheritance: InheritanceNode }) {
 					))}
 				</select>
 			</label>
+			{links
+				// By reference makes a foreign key; still shown while named, so that it can be cleared.
+				.filter((link) => link.fkName || !inheritance.translation)
+				.map((link) => (
+					<ForeignKeyField
+						key={link.id}
+						edge={link}
+						label={strings.mcd.foreignKeyOf(names.get(link.target) ?? '')}
+					/>
+				))}
 		</>
 	);
 }
@@ -412,6 +628,12 @@ function LegRow({ leg, nextTo }: { leg: LegEdge; nextTo?: string }) {
 	const { project, diagramId } = useCanvas();
 	const nameOf = (id: string) =>
 		String(project.nodes(diagramId).find((n) => n.id === id)?.name ?? '');
+	const foreignKey = foreignKeyOf(
+		project
+			.edges(diagramId)
+			.filter((e): e is LegEdge => e.type === 'leg' && e.source === leg.source),
+		leg
+	);
 	// In Merise only, where the row is the Leg itself (in UML, the other end's multiplicity);
 	// still shown while set, so that an R that no longer applies can be cleared.
 	const offered =
@@ -420,6 +642,12 @@ function LegRow({ leg, nextTo }: { leg: LegEdge; nextTo?: string }) {
 	return (
 		<>
 			<LegCardinality leg={leg} nextTo={nextTo} nameOf={nameOf} />
+			{(leg.fkName || foreignKey.makes) && (
+				<ForeignKeyField
+					edge={leg}
+					label={strings.mcd.foreignKeyTo(nameOf(foreignKey.references))}
+				/>
+			)}
 			{offered && (
 				<label className="panel-check">
 					<input

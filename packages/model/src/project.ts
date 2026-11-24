@@ -1,3 +1,10 @@
+import {
+	checkProblem,
+	cleanCheck,
+	cleanComment,
+	ConstraintError,
+	isForeignKeyName
+} from './sql/constraints.ts';
 import * as Y from 'yjs';
 import { cleanDataType, dataType, isDataType, type DataType } from './data-types.ts';
 import { COMPONENT_TYPE_IDS, isPerson, type ComponentType } from './component-types.ts';
@@ -177,15 +184,28 @@ export type Attribute = {
 	type: DataType;
 	/** Whether the column accepts NULL; an Identifier is never optional. */
 	optional: boolean;
+	unique?: true;
+	/** An SQL condition its values must meet, with the script's column names (ADR 0010). */
+	check?: string;
+	/** What it means, kept in the database (COMMENT ON). */
+	comment?: string;
 };
 
-export type EntityNode = DiagramNode & { type: 'entity'; name: string; attributes: Attribute[] };
+export type EntityNode = DiagramNode & {
+	type: 'entity';
+	name: string;
+	attributes: Attribute[];
+	comment?: string;
+	/** Unique groups: the ids of two of its Attributes or more, unique together. */
+	uniques?: string[][];
+};
 
 export type AssociationNode = DiagramNode & {
 	type: 'association';
 	name: string;
 	/** Attributes carried by the Association; their `identifier` flag is always false. */
 	attributes: Attribute[];
+	comment?: string;
 };
 
 export const CARDINALITIES = ['0,1', '1,1', '0,n', '1,n'] as const;
@@ -225,8 +245,11 @@ export type InheritanceNode = DiagramNode & {
 	translation?: Exclude<InheritanceTranslation, 'reference'>;
 };
 
-/** Joins an Inheritance (source) to one of its child Entities (target). */
-export type IsaEdge = DiagramEdge & { type: 'isa' };
+/**
+ * Joins an Inheritance (source) to one of its child Entities (target); `fkName`
+ * names the foreign key it makes, by reference.
+ */
+export type IsaEdge = DiagramEdge & { type: 'isa'; fkName?: string };
 
 /** Where a new Inheritance sits from its parent's corner. */
 export const INHERITANCE_OFFSET = { x: 0, y: 120 };
@@ -247,10 +270,10 @@ export type CifRole = 'determinant' | 'determined' | 'none';
 /**
  * Joins an Association (source) to one of its Entities (target). `relative`, on
  * a 1,1 Leg of a binary Association: that Entity is identified relative to the
- * other one.
+ * other one. `fkName` names the foreign key it makes.
  */
 export type LegEdge = DiagramEdge &
-	Route & { type: 'leg'; cardinality: Cardinality; relative?: true };
+	Route & { type: 'leg'; cardinality: Cardinality; relative?: true; fkName?: string };
 
 /** The JSON file a Project exports to and imports from. */
 export type ProjectFile = {
@@ -1020,8 +1043,14 @@ export class ProjectDocument {
 			}
 		}
 		this.doc.transact(() => {
+			// Set again to the same parent, the link keeps its foreign key's name.
+			let fkName: unknown;
 			for (const [id, edge] of edges) {
-				if (edge.get('type') === 'isa' && edge.get('target') === childId) edges.delete(id);
+				if (edge.get('type') !== 'isa' || edge.get('target') !== childId) continue;
+				if (nodes.get(edge.get('source') as string)?.get('parent') === parentId) {
+					fkName ??= edge.get('fkName');
+				}
+				edges.delete(id);
 			}
 			if (parentId !== null) {
 				// The parent's first Inheritance by id, as the MLD reads it, should peers have made two.
@@ -1044,7 +1073,8 @@ export class ProjectDocument {
 					id: crypto.randomUUID(),
 					type: 'isa',
 					source: inheritance.get('id') as string,
-					target: childId
+					target: childId,
+					...(isForeignKeyName(fkName) && { fkName })
 				};
 				this.insertEdge(diagramId, isa);
 			}
@@ -1191,7 +1221,11 @@ export class ProjectDocument {
 	}
 
 	removeAttribute(diagramId: string, nodeId: string, attributeId: string): void {
-		this.updateAttributes(diagramId, nodeId, (list) => list.filter((a) => a.id !== attributeId));
+		this.doc.transact(() => {
+			this.updateAttributes(diagramId, nodeId, (list) => list.filter((a) => a.id !== attributeId));
+			const groups = this.nodeMap(diagramId).get(nodeId)?.get('uniques');
+			if (groups !== undefined) this.setUniqueGroups(diagramId, nodeId, readGroups(groups));
+		});
 	}
 
 	/** Makes an Entity's Attribute part of its Identifier, or no longer. */
@@ -1225,6 +1259,68 @@ export class ProjectDocument {
 		this.updateAttributes(diagramId, nodeId, (list) =>
 			list.map((a) => (a.id === attributeId ? { ...a, optional: optional && canBeOptional(a) } : a))
 		);
+	}
+
+	setAttributeUnique(
+		diagramId: string,
+		nodeId: string,
+		attributeId: string,
+		unique: boolean
+	): void {
+		this.updateAttributes(diagramId, nodeId, (list) =>
+			list.map((a) => (a.id === attributeId ? withOptional(a, 'unique', unique || undefined) : a))
+		);
+	}
+
+	/** Sets an Attribute's Check, or clears it with an empty one; throws why it is refused. */
+	setAttributeCheck(diagramId: string, nodeId: string, attributeId: string, check: string): void {
+		const text = cleanCheck(check);
+		const problem = text ? checkProblem(text) : null;
+		if (problem) throw new ConstraintError(problem);
+		this.updateAttributes(diagramId, nodeId, (list) =>
+			list.map((a) => (a.id === attributeId ? withOptional(a, 'check', text || undefined) : a))
+		);
+	}
+
+	/** Sets an Attribute's Comment, or clears it with an empty one. */
+	setAttributeComment(
+		diagramId: string,
+		nodeId: string,
+		attributeId: string,
+		comment: string
+	): void {
+		const text = cleanComment(comment);
+		this.updateAttributes(diagramId, nodeId, (list) =>
+			list.map((a) => (a.id === attributeId ? withOptional(a, 'comment', text || undefined) : a))
+		);
+	}
+
+	/** Sets an Entity's or an Association's Comment, or clears it with an empty one. */
+	setComment(diagramId: string, nodeId: string, comment: string): void {
+		const node = this.nodeMap(diagramId).get(nodeId);
+		if (node?.get('type') !== 'entity' && node?.get('type') !== 'association') return;
+		const text = cleanComment(comment);
+		if (!text) node.delete('comment');
+		else if (node.get('comment') !== text) node.set('comment', text);
+	}
+
+	/** Sets an Entity's Unique groups, each of two of its Attributes or more; others are left out. */
+	setUniqueGroups(diagramId: string, entityId: string, groups: string[][]): void {
+		const node = this.nodeMap(diagramId).get(entityId);
+		if (node?.get('type') !== 'entity') return;
+		const attributes = (node.get('attributes') as Partial<Attribute>[] | undefined) ?? [];
+		const kept = uniqueGroups(groups, completeAttributes(attributes));
+		if (kept.length === 0) node.delete('uniques');
+		else node.set('uniques', kept);
+	}
+
+	/** Names the foreign key a Leg or an Inheritance link makes, or clears the name with null. */
+	setForeignKeyName(diagramId: string, edgeId: string, name: string | null): void {
+		const edge = this.edgeMap(diagramId).get(edgeId);
+		if (edge?.get('type') !== 'leg' && edge?.get('type') !== 'isa') return;
+		if (name === null || name === '') edge.delete('fkName');
+		else if (!isForeignKeyName(name)) throw new ConstraintError('foreignKeyName');
+		else if (edge.get('fkName') !== name) edge.set('fkName', name);
 	}
 
 	// Undo and redo
@@ -1394,9 +1490,43 @@ function completeAttributes(attributes: Partial<Attribute>[]): Attribute[] {
 			name: a.name ?? 'attribute',
 			identifier: a.identifier ?? false,
 			type,
-			optional: canBeOptional({ identifier: a.identifier ?? false, type }) && (a.optional ?? false)
+			optional: canBeOptional({ identifier: a.identifier ?? false, type }) && (a.optional ?? false),
+			// Whatever a file or a peer wrote: what the rules refuse is left out.
+			...(a.unique === true && { unique: true as const }),
+			...(isString(a.check) && checkProblem(a.check) === null && { check: a.check }),
+			...(isString(a.comment) && cleanComment(a.comment) && { comment: cleanComment(a.comment) })
 		};
 	});
+}
+
+/** An Attribute with an optional field set, or without it. */
+function withOptional<K extends 'unique' | 'check' | 'comment'>(
+	attribute: Attribute,
+	key: K,
+	value: Attribute[K]
+): Attribute {
+	const next = { ...attribute };
+	if (value === undefined) delete next[key];
+	else next[key] = value;
+	return next;
+}
+
+/** Stored Unique groups, or none when a peer or a file wrote something else. */
+const readGroups = (value: unknown): string[][] =>
+	Array.isArray(value) ? value.slice(0, 100).map(stringList) : [];
+
+/** The groups as they can be: known Attributes, each once, two or more, no group twice. */
+function uniqueGroups(groups: string[][], attributes: Attribute[]): string[][] {
+	const known = new Set(attributes.map((a) => a.id));
+	const seen = new Set<string>();
+	return groups
+		.map((group) => [...new Set(group)].filter((id) => known.has(id)))
+		.filter((group) => {
+			const key = JSON.stringify([...group].sort());
+			if (group.length < 2 || seen.has(key)) return false;
+			seen.add(key);
+			return true;
+		});
 }
 
 /** An Identifier or an Auto-increment column is never NULL. */
@@ -1425,6 +1555,19 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	const read: Record<string, unknown> = attributes
 		? { ...node, attributes: completeAttributes(attributes) }
 		: { ...node };
+	if ('comment' in read) {
+		const comment = isString(read.comment) ? cleanComment(read.comment) : '';
+		if (comment && attributes) read.comment = comment;
+		else delete read.comment;
+	}
+	if ('uniques' in read) {
+		const groups =
+			read.type === 'entity'
+				? uniqueGroups(readGroups(read.uniques), read.attributes as Attribute[])
+				: [];
+		if (groups.length > 0) read.uniques = groups;
+		else delete read.uniques;
+	}
 	for (const [key, allowed] of NODE_CHOICES) {
 		if (key in read && !allowed.includes(read[key] as string)) delete read[key];
 	}
@@ -1449,8 +1592,11 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 
 /** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
 function readEdge(edge: Record<string, unknown>): DiagramEdge {
-	if (!('flow' in edge) && !('relative' in edge)) return edge as DiagramEdge;
+	if (!('flow' in edge) && !('relative' in edge) && !('fkName' in edge)) return edge as DiagramEdge;
 	const read = { ...edge };
+	if ((read.type !== 'leg' && read.type !== 'isa') || !isForeignKeyName(read.fkName)) {
+		delete read.fkName;
+	}
 	if (read.type !== 'connection' || !FLOWS.includes(read.flow as Flow)) delete read.flow;
 	// Only `true` on a 1,1 Leg, whatever a file or a peer wrote.
 	if (read.type !== 'leg' || read.relative !== true || read.cardinality !== '1,1') {
@@ -1533,15 +1679,15 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	],
 	zone: ['x', 'y', 'name', 'width', 'height', 'provider'],
 	note: ['x', 'y', 'text', 'color', 'width'],
-	entity: ['x', 'y', 'name', 'attributes'],
-	association: ['x', 'y', 'name', 'attributes'],
+	entity: ['x', 'y', 'name', 'attributes', 'comment', 'uniques'],
+	association: ['x', 'y', 'name', 'attributes', 'comment'],
 	cif: ['x', 'y', 'association', 'determinants', 'determined'],
 	inheritance: ['x', 'y', 'parent', 'constraint', 'translation']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
 	connection: ['source', 'target', 'label', 'flow', 'points'],
-	leg: ['source', 'target', 'cardinality', 'relative', 'points'],
-	isa: ['source', 'target', 'points']
+	leg: ['source', 'target', 'cardinality', 'relative', 'fkName', 'points'],
+	isa: ['source', 'target', 'fkName', 'points']
 };
 
 /** An element with only its type's known fields (those it has). */

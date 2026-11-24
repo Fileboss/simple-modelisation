@@ -348,9 +348,28 @@ select {
 }
 
 .panel-field input,
+.panel-field textarea,
 .panel-field select {
 	border-color: var(--border);
 	color: var(--text);
+}
+
+.panel-field textarea {
+	font: inherit;
+	resize: vertical;
+}
+
+.panel-problem {
+	color: var(--danger);
+}
+
+.attribute-editor details {
+	margin-top: 4px;
+	color: var(--muted);
+}
+
+.attribute-editor summary {
+	cursor: pointer;
 }
 
 .skin-grid {

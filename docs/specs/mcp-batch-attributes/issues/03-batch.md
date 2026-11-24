@@ -17,4 +17,4 @@ The `batch` tool: write operations played all or nothing on a copy of the docume
 ## Acceptance criteria
 
 - [x] The `batch` cases of the spec's Testing Decisions pass
-- [ ] Checked by hand: a batch building an MCD appears at once in an open browser (not done: covered by the one-update test)
+- [x] Checked by hand: a batch building an MCD appears at once in an open browser (done during sql-constraints)

@@ -76,14 +76,43 @@ export function linesText(lines: MldLine[]): string {
 
 const list = (names: string[]) => names.map(identifier).join(', ');
 
-/** A string literal: quotes doubled. */
-const literal = (text: string) => `'${text.replace(/'/g, "''")}'`;
+/**
+ * A string literal: quotes doubled. With a backslash, an escape string, which
+ * reads the same whatever the database's standard_conforming_strings.
+ */
+const literal = (text: string) => {
+	const quoted = `'${text.replace(/'/g, "''")}'`;
+	return text.includes('\\') ? `E${quoted.replaceAll('\\', '\\\\')}` : quoted;
+};
 
 /**
  * A `--` comment on one line: a line break in a name (from a file or an agent)
  * would end the comment and leave the rest as SQL.
  */
 const comment = (text: string) => `-- ${text.replace(/\s*[\n\r\v\f\u0085\u2028\u2029]+\s*/g, ' ')}`;
+
+/** A constraint's name, quoted when PostgreSQL would read it otherwise (capitals, a reserved word). */
+const constraintName = (name: string) => (/[A-Z]/.test(name) ? `"${name}"` : identifier(name));
+
+/** The COMMENT ON statements: a paragraph per table. */
+function commentsOn(mld: Mld): string[] {
+	return mld.tables.flatMap((table) => {
+		const name = identifier(table.name);
+		const lines: string[] = [];
+		if (table.comment) lines.push(`COMMENT ON TABLE ${name} IS ${literal(table.comment)};`);
+		for (const column of table.columns.filter((c) => c.comment)) {
+			lines.push(
+				`COMMENT ON COLUMN ${name}.${identifier(column.name)} IS ${literal(column.comment!)};`
+			);
+		}
+		for (const fk of table.foreignKeys.filter((f) => f.comment)) {
+			lines.push(
+				`COMMENT ON CONSTRAINT ${constraintName(fk.name!)} ON ${name} IS ${literal(fk.comment!)};`
+			);
+		}
+		return lines.length > 0 ? [lines.join('\n')] : [];
+	});
+}
 
 /**
  * The PostgreSQL script creating the MLD's tables. A foreign key to a table
@@ -104,17 +133,18 @@ export function postgresScript(mld: Mld, title: string): string {
 			const check = column.check
 				? ` CHECK (${identifier(column.name)} IN (${column.check.map(literal).join(', ')}))`
 				: '';
-			return `   ${identifier(column.name)} ${type}${notNull && type !== 'SERIAL' ? ' NOT NULL' : ''}${check}`;
+			const condition = column.condition ? ` CHECK (${column.condition})` : '';
+			return `   ${identifier(column.name)} ${type}${notNull && type !== 'SERIAL' ? ' NOT NULL' : ''}${check}${condition}`;
 		});
 		if (table.primaryKey.length > 0) lines.push(`   PRIMARY KEY (${list(table.primaryKey)})`);
 		for (const columns of table.unique) lines.push(`   UNIQUE (${list(columns)})`);
 		for (const fk of table.foreignKeys) {
-			const clause = `FOREIGN KEY (${list(fk.columns)}) REFERENCES ${identifier(fk.table)} (${list(fk.references)})`;
+			const clause = `CONSTRAINT ${constraintName(fk.name!)} FOREIGN KEY (${list(fk.columns)}) REFERENCES ${identifier(fk.table)} (${list(fk.references)})`;
 			if (created.has(fk.table)) lines.push(`   ${clause}`);
 			else deferred.push(`ALTER TABLE ${identifier(table.name)} ADD ${clause};`);
 		}
 		return `CREATE TABLE ${identifier(table.name)} (\n${lines.join(',\n')}\n);`;
 	});
 
-	return [header.join('\n'), ...statements, ...deferred].join('\n\n') + '\n';
+	return [header.join('\n'), ...statements, ...deferred, ...commentsOn(mld)].join('\n\n') + '\n';
 }

@@ -126,6 +126,18 @@ _Avoid_: Column type, SQL type
 The Attribute(s) that uniquely identify an Entity, shown underlined.
 _Avoid_: Primary key, ID
 
+**Unique group**:
+Two Attributes or more of an Entity whose values are unique together.
+_Avoid_: Composite key, unique index
+
+**Check**:
+An SQL condition an Attribute's values must meet, written in the script as a CHECK.
+_Avoid_: Validation, rule
+
+**Comment**:
+What an Entity, an Association or an Attribute means, kept in the database by the script (COMMENT ON); not drawn.
+_Avoid_: Description, Note (the sticky note on a Diagram)
+
 **Relative identifier**:
 An Entity identified within another: its 1,1 Leg is marked R, and its table's key starts with the other Entity's key.
 _Avoid_: Weak entity, identifying relationship (other notations' words)
