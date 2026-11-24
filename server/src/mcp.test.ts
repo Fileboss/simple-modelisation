@@ -99,15 +99,10 @@ describe('MCP endpoint', () => {
 			'set_cardinality',
 			'set_component',
 			'set_connection',
-			'set_disk_kind',
 			'set_entity',
-			'set_hosting',
 			'set_inheritance',
 			'set_inheritance_options',
 			'set_note',
-			'set_provider',
-			'set_runtime',
-			'set_skin',
 			'set_zone'
 		]);
 	});
@@ -340,7 +335,7 @@ describe('MCP endpoint', () => {
 			provider: 'scaleway'
 		});
 		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
-		await call(client, 'set_provider', { ...at, component: 'API', provider: 'hetzner' });
+		await call(client, 'set_component', { ...at, component: 'API', provider: 'hetzner' });
 		const read = async () =>
 			(await call(client, 'get_diagram', at)).components.map(
 				(c: { name: string; hosting: string | null; provider: string | null }) => [
@@ -353,7 +348,7 @@ describe('MCP endpoint', () => {
 			['DB', 'managed', 'scaleway'],
 			['API', null, 'hetzner']
 		]);
-		await call(client, 'set_provider', { ...at, component: 'API', provider: 'none' });
+		await call(client, 'set_component', { ...at, component: 'API', provider: 'none' });
 		expect((await read())[1]).toEqual(['API', null, null]);
 	});
 
@@ -362,8 +357,8 @@ describe('MCP endpoint', () => {
 		const at = { project: id, diagram: 'Architecture' };
 		await call(client, 'add_component', { ...at, type: 'gateway', name: 'Proxy', skin: 'caddy' });
 		await call(client, 'add_component', { ...at, type: 'service', name: 'Finance' });
-		await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'nextjs' });
-		const refused = await call(client, 'set_skin', {
+		await call(client, 'set_component', { ...at, component: 'Finance', skin: 'nextjs' });
+		const refused = await call(client, 'set_component', {
 			...at,
 			component: 'Finance',
 			skin: 'tailscale'
@@ -375,10 +370,12 @@ describe('MCP endpoint', () => {
 			['Finance', 'nextjs']
 		]);
 		// Runtimes are no longer Skins.
-		const runtime = await call(client, 'set_skin', { ...at, component: 'Finance', skin: 'bun' });
-		expect(runtime.error).toMatch(
-			/No "bun" Skin for this Component\. "bun" is a service's runtime/
-		);
+		const runtime = await call(client, 'set_component', {
+			...at,
+			component: 'Finance',
+			skin: 'bun'
+		});
+		expect(runtime.error).toMatch(/No "bun" Skin for a service\. "bun" is a service's runtime/);
 	});
 
 	it('writes Notes on both kinds of Diagram, beside an element or in a free spot', async () => {
@@ -446,20 +443,20 @@ describe('MCP endpoint', () => {
 			provider: 'aws'
 		});
 		expect(provided.error).toBe('A person has no provider.');
-		const setHosting = await call(client, 'set_hosting', {
+		const setHosting = await call(client, 'set_component', {
 			...at,
 			component: 'Buyer',
 			hosting: 'vm'
 		});
 		expect(setHosting.error).toBe('A person has no hosting.');
-		const setProvider = await call(client, 'set_provider', {
+		const setProvider = await call(client, 'set_component', {
 			...at,
 			component: 'Buyer',
 			provider: 'aws'
 		});
 		expect(setProvider.error).toBe('A person has no provider.');
 		// Clearing is harmless and accepted.
-		const cleared = await call(client, 'set_hosting', {
+		const cleared = await call(client, 'set_component', {
 			...at,
 			component: 'Buyer',
 			hosting: 'none'
@@ -489,7 +486,7 @@ describe('MCP endpoint', () => {
 			runtime: 'bun'
 		});
 		await call(client, 'add_component', { ...at, type: 'service', name: 'Indexer' });
-		await call(client, 'set_runtime', { ...at, service: 'Indexer', runtime: 'rust' });
+		await call(client, 'set_component', { ...at, component: 'Indexer', runtime: 'rust' });
 		const onDatabase = await call(client, 'add_component', {
 			...at,
 			type: 'database',
@@ -498,7 +495,11 @@ describe('MCP endpoint', () => {
 		});
 		expect(onDatabase.error).toBe('Only a service has a runtime.');
 		await call(client, 'add_component', { ...at, type: 'database', name: 'DB' });
-		const notAService = await call(client, 'set_runtime', { ...at, service: 'DB', runtime: 'go' });
+		const notAService = await call(client, 'set_component', {
+			...at,
+			component: 'DB',
+			runtime: 'go'
+		});
 		expect(notAService.error).toBe('Only a service has a runtime.');
 		const read = async () =>
 			(await call(client, 'get_diagram', at)).components.map(
@@ -509,7 +510,7 @@ describe('MCP endpoint', () => {
 			['Indexer', 'rust'],
 			['DB', undefined]
 		]);
-		await call(client, 'set_runtime', { ...at, service: 'Web', runtime: 'none' });
+		await call(client, 'set_component', { ...at, component: 'Web', runtime: 'none' });
 		expect((await read())[0]).toEqual(['Web', null]);
 	});
 
@@ -523,7 +524,7 @@ describe('MCP endpoint', () => {
 			disk_kind: 'ssd'
 		});
 		await call(client, 'add_component', { ...at, type: 'disk', name: 'USB 12 To' });
-		await call(client, 'set_disk_kind', { ...at, disk: 'USB 12 To', kind: 'usb' });
+		await call(client, 'set_component', { ...at, component: 'USB 12 To', disk_kind: 'usb' });
 		const misplaced = await call(client, 'add_component', {
 			...at,
 			type: 'service',
@@ -531,11 +532,19 @@ describe('MCP endpoint', () => {
 			disk_kind: 'ssd'
 		});
 		expect(misplaced.error).toMatch(/Only a disk/);
-		const skinned = await call(client, 'set_skin', { ...at, component: 'SSD 2 To', skin: 's3' });
-		expect(skinned.error).toBe('This Component takes no Skin.');
+		const skinned = await call(client, 'set_component', {
+			...at,
+			component: 'SSD 2 To',
+			skin: 's3'
+		});
+		expect(skinned.error).toBe('A disk takes no Skin.');
 		await call(client, 'add_component', { ...at, type: 'service', name: 'API' });
-		const notADisk = await call(client, 'set_disk_kind', { ...at, disk: 'API', kind: 'ssd' });
-		expect(notADisk.error).toBe('Only a disk has a kind.');
+		const notADisk = await call(client, 'set_component', {
+			...at,
+			component: 'API',
+			disk_kind: 'ssd'
+		});
+		expect(notADisk.error).toBe('Only a disk has a disk_kind.');
 		const { components } = await call(client, 'get_diagram', at);
 		expect(
 			components.map((c: { name: string; type: string; disk_kind?: string }) => [
@@ -556,7 +565,7 @@ describe('MCP endpoint', () => {
 		await call(client, 'add_zone', { ...at, name: 'VPS', provider: 'ovhcloud' });
 		await call(client, 'add_component', { ...at, type: 'gateway', name: 'Caddy', zone: 'VPS' });
 		await call(client, 'add_component', { ...at, type: 'service', name: 'App', zone: 'VPS' });
-		await call(client, 'set_provider', { ...at, component: 'App', provider: 'scaleway' });
+		await call(client, 'set_component', { ...at, component: 'App', provider: 'scaleway' });
 		const read = async () => {
 			const { zones, components } = await call(client, 'get_diagram', at);
 			return {
@@ -597,7 +606,7 @@ describe('MCP endpoint', () => {
 		await call(client, 'connect_components', { ...at, from: 'API', to: 'Data', label: 'files' });
 
 		await call(client, 'set_component', { ...at, component: 'Data', type: 'disk', name: 'SSD' });
-		await call(client, 'set_disk_kind', { ...at, disk: 'SSD', kind: 'ssd' });
+		await call(client, 'set_component', { ...at, component: 'SSD', disk_kind: 'ssd' });
 		const read = async () => {
 			const diagram = await call(client, 'get_diagram', at);
 			const ssd = diagram.components.find((c: { id: string }) => c.id === data);
@@ -773,7 +782,7 @@ describe('MCP endpoint', () => {
 			type: 'service',
 			name: 'API'
 		});
-		await call(client, 'set_hosting', {
+		await call(client, 'set_component', {
 			project: id,
 			diagram: 'Architecture',
 			component: 'API',
@@ -787,7 +796,7 @@ describe('MCP endpoint', () => {
 			['DB', 'managed'],
 			['API', 'kubernetes']
 		]);
-		await call(client, 'set_hosting', {
+		await call(client, 'set_component', {
 			project: id,
 			diagram: 'Architecture',
 			component: 'API',
@@ -1776,5 +1785,180 @@ describe('MCP duplicate_diagram', () => {
 		expect(kept.error).toBeUndefined();
 		expect(kept.results).toHaveLength(30);
 		expect(browser.diagrams()).toHaveLength(2);
+	});
+});
+
+describe('MCP set_component', () => {
+	const at = (id: string) => ({ project: id, diagram: 'Architecture' });
+	const read = async (client: Client, id: string, name: string) =>
+		(await call(client, 'get_diagram', at(id))).components.find(
+			(c: { name: string }) => c.name === name
+		);
+
+	it('changes the type and all that goes with it in one call, then clears it', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_component', { ...at(id), type: 'database', name: 'Store' });
+		await call(client, 'set_component', {
+			...at(id),
+			component: 'Store',
+			type: 'service',
+			name: 'Api',
+			skin: 'nextjs',
+			runtime: 'bun',
+			hosting: 'docker',
+			provider: 'hetzner'
+		});
+		expect(await read(client, id, 'Api')).toMatchObject({
+			type: 'service',
+			skin: 'nextjs',
+			runtime: 'bun',
+			hosting: 'docker',
+			provider: 'hetzner'
+		});
+		// Left out, they stay.
+		await call(client, 'set_component', { ...at(id), component: 'Api', hosting: 'vm' });
+		expect(await read(client, id, 'Api')).toMatchObject({ skin: 'nextjs', runtime: 'bun' });
+		await call(client, 'set_component', {
+			...at(id),
+			component: 'Api',
+			skin: 'generic',
+			runtime: 'none',
+			hosting: 'none',
+			provider: 'none'
+		});
+		expect(await read(client, id, 'Api')).toMatchObject({
+			skin: null,
+			runtime: null,
+			hosting: null,
+			provider: null
+		});
+	});
+
+	it('checks against the type the call gives, and writes nothing when refused', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_component', { ...at(id), type: 'service', name: 'Api' });
+		const refused = async (args: object) =>
+			(await call(client, 'set_component', { ...at(id), component: 'Api', name: 'X', ...args }))
+				.error;
+		expect(await refused({ type: 'person', hosting: 'vm' })).toBe('A person has no hosting.');
+		expect(await refused({ type: 'person', provider: 'aws' })).toBe('A person has no provider.');
+		expect(await refused({ type: 'database', runtime: 'go' })).toBe(
+			'Only a service has a runtime.'
+		);
+		expect(await refused({ disk_kind: 'ssd' })).toBe('Only a disk has a disk_kind.');
+		expect(await refused({ type: 'database', skin: 'nextjs' })).toMatch(/^No "nextjs" Skin for a/);
+		expect(await refused({ type: 'disk', zone: 'Nowhere', disk_kind: 'ssd' })).toMatch(/Nowhere/);
+		expect(await read(client, id, 'Api')).toMatchObject({ type: 'service', skin: null });
+		// Clearing what a type never has is harmless.
+		const cleared = await call(client, 'set_component', {
+			...at(id),
+			component: 'Api',
+			type: 'person',
+			hosting: 'none',
+			provider: 'none',
+			runtime: 'none',
+			disk_kind: 'none'
+		});
+		expect(cleared.error).toBeUndefined();
+	});
+
+	it.each([
+		['a longer name', { name: 'A very long name '.repeat(10).trim() }],
+		['a longer name, asked to stay', { name: 'A very long name '.repeat(10).trim(), zone: 'VPC' }]
+	])('grows its Zone to keep it: %s', async (_case, change) => {
+		const { client, id } = await setup();
+		await call(client, 'add_zone', { ...at(id), name: 'VPC' });
+		await call(client, 'add_component', { ...at(id), type: 'service', name: 'Api', zone: 'VPC' });
+		await call(client, 'set_component', { ...at(id), component: 'Api', ...change });
+		const { zones, components } = await call(client, 'get_diagram', at(id));
+		expect(components[0].zone.name).toBe('VPC');
+		expect(components[0].x + components[0].width).toBeLessThanOrEqual(zones[0].x + zones[0].width);
+	});
+
+	// Long enough for a look to widen its box.
+	const API_NAME = 'Payments and refunds';
+	/** A Zone with a Component placed right against its bottom right corner. */
+	async function atTheEdge(client: Client, id: string, look: object) {
+		await call(client, 'add_zone', { ...at(id), name: 'VPC' });
+		await call(client, 'add_component', { ...at(id), type: 'service', name: API_NAME, ...look });
+		const { zones, components } = await call(client, 'get_diagram', at(id));
+		const [zone, api] = [zones[0], components[0]];
+		await call(client, 'set_component', {
+			...at(id),
+			component: API_NAME,
+			x: zone.x + zone.width - api.width,
+			y: zone.y + zone.height - api.height
+		});
+		return zone as { width: number; height: number };
+	}
+	const zoneNow = async (client: Client, id: string) =>
+		(await call(client, 'get_diagram', at(id))).zones[0];
+
+	it('grows its Zone for a look that makes it bigger, not for one that does not', async () => {
+		const { client, id } = await setup();
+		const zone = await atTheEdge(client, id, {});
+		await call(client, 'set_component', { ...at(id), component: API_NAME, hosting: 'docker' });
+		expect(await zoneNow(client, id)).toMatchObject({ width: zone.width, height: zone.height });
+		const before = await read(client, id, API_NAME);
+		await call(client, 'set_component', { ...at(id), component: API_NAME, skin: 'nextjs' });
+		const after = await read(client, id, API_NAME);
+		const grew = after.width > before.width || after.height > before.height;
+		const now = await zoneNow(client, id);
+		expect(grew).toBe(true);
+		expect(now.width > zone.width || now.height > zone.height).toBe(true);
+		expect(after.zone.name).toBe('VPC');
+	});
+
+	it('leaves its Zone as it is when it shrinks', async () => {
+		const { client, id } = await setup();
+		const zone = await atTheEdge(client, id, { skin: 'nextjs' });
+		await call(client, 'set_component', { ...at(id), component: API_NAME, skin: 'generic' });
+		expect(await zoneNow(client, id)).toMatchObject({ width: zone.width, height: zone.height });
+	});
+
+	it('ends outside every Zone when asked, even once small enough to fit in one', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_zone', { ...at(id), name: 'VPC' });
+		const long = 'Payments and refunds';
+		// Too wide for where it is, so outside, until its name is short.
+		const place = async () => {
+			await call(client, 'set_component', { ...at(id), component: 'Api', name: long });
+			const { width } = await read(client, id, long);
+			const zone = await zoneNow(client, id);
+			await call(client, 'set_component', {
+				...at(id),
+				component: long,
+				x: zone.x + zone.width - width + 10,
+				y: zone.y + 60
+			});
+			expect((await read(client, id, long)).zone).toBeNull();
+		};
+		await call(client, 'add_component', { ...at(id), type: 'service', name: 'Api', zone: 'VPC' });
+		await place();
+		await call(client, 'set_component', { ...at(id), component: long, name: 'Api' });
+		expect((await read(client, id, 'Api')).zone.name).toBe('VPC');
+		await place();
+		await call(client, 'set_component', { ...at(id), component: long, name: 'Api', zone: 'none' });
+		expect((await read(client, id, 'Api')).zone).toBeNull();
+	});
+
+	it('refuses a call that changes nothing, a misnamed field included', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_component', { ...at(id), type: 'disk', name: 'SSD' });
+		for (const args of [{}, { kind: 'ssd' }]) {
+			const refused = await call(client, 'set_component', { ...at(id), component: 'SSD', ...args });
+			expect(refused.error).toMatch(/^Give what to change: type, name/);
+		}
+	});
+
+	it('hints at the runtime on a service only', async () => {
+		const { client, id } = await setup();
+		await call(client, 'add_component', { ...at(id), type: 'database', name: 'DB' });
+		const refused = await call(client, 'set_component', {
+			...at(id),
+			component: 'DB',
+			skin: 'bun'
+		});
+		expect(refused.error).toMatch(/^No "bun" Skin for a database\. Skins: generic, postgresql/);
 	});
 });
