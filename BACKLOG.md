@@ -35,6 +35,7 @@ tags: [backlog]
 
 ## Done
 
+- palette-help: the explanations of the palettes and the properties hidden behind an i button
 - [mcd-areas](docs/specs/mcd-areas/): free colored Areas with a label behind an MCD, in the app, the exports and over MCP
 - mcp-fold-set-component: set_skin, set_hosting, set_provider, set_runtime and set_disk_kind become fields of set_component (37 to 32 MCP tools)
 - [duplicate-diagram](docs/specs/duplicate-diagram/): duplicate a Diagram, from its tab, the phone menu and over MCP

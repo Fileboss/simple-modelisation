@@ -12,6 +12,7 @@ import type {
 	Runtime,
 	ZoneNode
 } from '@simple-modelisation/model/project.ts';
+import { HelpHeading } from '../ui/HelpHeading';
 import { strings } from '../ui/strings';
 import {
 	COMPONENT_TYPES,
@@ -66,8 +67,9 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 				{/* Only a Service has a Runtime: what runs its code on the server. */}
 				{component.componentType === 'service' && (
 					<>
-						<h3>{strings.runtime.title}</h3>
-						<p className="panel-hint">{strings.runtime.hint}</p>
+						<HelpHeading level={3} title={strings.runtime.title}>
+							<p>{strings.runtime.hint}</p>
+						</HelpHeading>
 						<ChoiceGrid
 							key={`${component.id}:runtime`}
 							none={{
@@ -154,15 +156,17 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 		const zone = selection.node as ZoneNode;
 		return (
 			<>
-				<h2>{strings.system.zone}</h2>
+				<HelpHeading title={strings.system.zone}>
+					<p>{strings.system.zoneHint}</p>
+				</HelpHeading>
 				<PanelField
 					label={strings.panel.name}
 					value={zone.name}
 					onChange={(name) => project.renameNode(diagramId, zone.id, name)}
 				/>
-				<p className="panel-hint">{strings.system.zoneHint}</p>
-				<h3>{strings.provider.title}</h3>
-				<p className="panel-hint">{strings.provider.zoneHint}</p>
+				<HelpHeading level={3} title={strings.provider.title}>
+					<p>{strings.provider.zoneHint}</p>
+				</HelpHeading>
 				<ProviderPicker
 					key={zone.id}
 					nodeId={zone.id}
@@ -185,8 +189,9 @@ export function SystemPanel({ selection }: { selection: Selection }) {
 					allowBlank
 					onChange={(label) => project.setEdgeLabel(diagramId, connection.id, label)}
 				/>
-				<h3>{strings.flow.title}</h3>
-				<p className="panel-hint">{strings.flow.hint}</p>
+				<HelpHeading level={3} title={strings.flow.title}>
+					<p>{strings.flow.hint}</p>
+				</HelpHeading>
 				<ChoiceRow
 					label={strings.flow.title}
 					unset={strings.flow.unset}

@@ -332,10 +332,44 @@ select {
 	color: var(--text);
 }
 
-.palette-hint,
-.panel-hint {
+.panel-hint,
+.help-text {
 	color: var(--muted);
 	font-size: 0.85rem;
+}
+
+.help-heading {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.help-button {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border-radius: 50%;
+	color: var(--muted);
+	font-family: Georgia, serif;
+	font-size: 0.8rem;
+	font-style: italic;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.help-button[aria-expanded='true'] {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.help-text {
+	margin-bottom: 10px;
+}
+
+.help-text p {
+	margin: 0 0 8px;
 }
 
 .panel-field {
@@ -1950,6 +1984,10 @@ select {
 }
 
 @media (pointer: coarse) {
+	.help-button {
+		width: 36px;
+		height: 36px;
+	}
 	.area-border {
 		--grip: 26px;
 	}

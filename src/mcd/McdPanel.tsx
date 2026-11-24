@@ -30,6 +30,7 @@ import {
 import { ConstraintError, MAX_COMMENT } from '@simple-modelisation/model/sql/constraints.ts';
 import { foreignKeyOf } from '@simple-modelisation/model/sql/mld.ts';
 import { AreaPanel } from './AreaNode';
+import { HelpHeading } from '../ui/HelpHeading';
 import { strings } from '../ui/strings';
 import { umlMultiplicity, useNotation } from './notation';
 
@@ -214,7 +215,7 @@ function AttributeSql({ elementId, attribute }: { elementId: string; attribute: 
 	const isUsed = Boolean(attribute.check || attribute.comment);
 	const [isOpen, setOpen] = useState(isUsed);
 	return (
-		<details open={isOpen} onToggle={(e) => setOpen(e.currentTarget.open)}>
+		<details className="disclosure" open={isOpen} onToggle={(e) => setOpen(e.currentTarget.open)}>
 			<summary>
 				{strings.mcd.checkAndComment}
 				{isUsed && ' •'}
@@ -480,8 +481,9 @@ function InheritanceEditor({ inheritance }: { inheritance: InheritanceNode }) {
 	const children = links.map((e) => names.get(e.target));
 	return (
 		<>
-			<h2>{strings.mcd.inheritance}</h2>
-			<p className="panel-hint">{strings.mcd.inheritanceHint}</p>
+			<HelpHeading level={2} title={strings.mcd.inheritance}>
+				<p>{strings.mcd.inheritanceHint}</p>
+			</HelpHeading>
 			<p className="panel-field">
 				{names.get(inheritance.parent)} → {children.join(', ')}
 			</p>
@@ -568,8 +570,9 @@ function CifEditor({ cif }: { cif: CifNode }) {
 		leg === cif.determined ? 'determined' : cif.determinants.includes(leg) ? 'determinant' : 'none';
 	return (
 		<>
-			<h2>{strings.mcd.cif}</h2>
-			<p className="panel-hint">{strings.mcd.cifHint}</p>
+			<HelpHeading level={2} title={strings.mcd.cif}>
+				<p>{strings.mcd.cifHint}</p>
+			</HelpHeading>
 			{legs.map((leg) => (
 				<label key={leg.id} className="panel-field leg-row">
 					<span>{names.get(leg.target)}</span>

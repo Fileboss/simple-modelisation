@@ -3,6 +3,7 @@ import { useCanvas } from '../canvas/canvas-context';
 import { AREA_ITEM, NOTE_ITEM } from '../canvas/palette-drag';
 import { PaletteItem } from '../canvas/PaletteItem';
 import { GesturesHint } from '../canvas/GesturesHint';
+import { HelpHeading } from '../ui/HelpHeading';
 import { strings } from '../ui/strings';
 import { useProjectVersion } from '../app/project-hooks';
 import { setNotation, useNotation } from './notation';
@@ -43,7 +44,10 @@ export function McdPalette() {
 					</button>
 				))}
 			</div>
-			<h2>{strings.mcd.palette}</h2>
+			<HelpHeading title={strings.mcd.palette}>
+				<p>{strings.mcd.paletteHint}</p>
+				<GesturesHint />
+			</HelpHeading>
 			<PaletteItem item="entity">
 				<span className="palette-entity" />
 				{strings.mcd.entity}
@@ -60,8 +64,6 @@ export function McdPalette() {
 				/>
 				{strings.area.title}
 			</PaletteItem>
-			<p className="palette-hint">{strings.mcd.paletteHint}</p>
-			<GesturesHint />
 		</aside>
 	);
 }

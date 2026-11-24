@@ -192,8 +192,9 @@ function Canvas({ project, diagram, kind }: Props) {
 		// The drawers of a small screen have their own buttons.
 		if (smallScreen) return;
 		const onKey = (e: KeyboardEvent) => {
-			// Not behind an open menu, which has the keyboard.
-			if (!isSidesShortcut(e) || document.querySelector('details[open], .context-menu')) return;
+			// Not behind an open menu, which has the keyboard (a disclosure in a panel does not).
+			const openMenu = 'details[open]:not(.disclosure), .context-menu';
+			if (!isSidesShortcut(e) || document.querySelector(openMenu)) return;
 			e.preventDefault();
 			setSides(toggledSides);
 		};

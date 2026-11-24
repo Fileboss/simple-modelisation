@@ -14,6 +14,7 @@ import { useCanvas } from '../canvas/canvas-context';
 import { ColorSwatches } from '../canvas/ColorSwatches';
 import { EditableText } from '../canvas/EditableText';
 import { PanelField } from '../canvas/PanelField';
+import { HelpHeading } from '../ui/HelpHeading';
 import { strings } from '../ui/strings';
 
 const HANDLES: ControlPosition[] = [
@@ -80,7 +81,9 @@ export function AreaPanel({ area }: { area: AreaData }) {
 	const { project, diagramId } = useCanvas();
 	return (
 		<>
-			<h2>{strings.area.title}</h2>
+			<HelpHeading title={strings.area.title}>
+				<p>{strings.area.hint}</p>
+			</HelpHeading>
 			<PanelField
 				label={strings.area.label}
 				value={area.label}
@@ -104,7 +107,6 @@ export function AreaPanel({ area }: { area: AreaData }) {
 					project.setAreaColor(diagramId, area.id, color);
 				}}
 			/>
-			<p className="panel-hint">{strings.area.hint}</p>
 		</>
 	);
 }
