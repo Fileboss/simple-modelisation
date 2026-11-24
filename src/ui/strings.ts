@@ -27,6 +27,7 @@ export const strings = {
 		addSystem: '+ System design',
 		addMcd: '+ MCD',
 		deleteDiagram: 'Delete diagram',
+		duplicateDiagram: 'Duplicate diagram',
 		unreadable: (count: number) =>
 			`${count} ${count === 1 ? 'entry' : 'entries'} of this Project could not be read (written by another version of the app?). The rest works as usual.`,
 		cannotShow: 'This Project could not be shown.',

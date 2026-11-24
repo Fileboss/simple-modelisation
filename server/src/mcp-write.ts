@@ -334,6 +334,18 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 	);
 
 	tool(
+		'duplicate_diagram',
+		'Adds a copy of a Diagram right after it, its elements with ids of their own (get_diagram gives them; Attributes keep theirs); named after it, or as given.',
+		{ project: projectArgument, diagram: diagramArgument, name: name().optional() },
+		({ project, diagram, name }) =>
+			// On a copy first: it may add as much as the Project holds.
+			access.writeCopy(project, async (p) => {
+				const id = p.duplicateDiagram(pickDiagram(p, diagram).id, name);
+				return { id, name: p.diagram(id)!.name };
+			})
+	);
+
+	tool(
 		'delete_diagram',
 		'Deletes a Diagram of the Project and everything in it.',
 		{ project: projectArgument, diagram: diagramArgument },

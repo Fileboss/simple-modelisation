@@ -26,7 +26,6 @@ tags: [backlog]
 - SaaS Skins for external services (Stripe, Auth0, SendGrid, Slack…)
 - PNG from export_diagram, so agents can see the diagram they drew (a server-side rasterizer)
 - SQL generation options (ON DELETE / ON UPDATE) and other databases
-- Duplicate a Diagram, in the app and over MCP
 - Custom Skins
 - Selecting several elements by touch (a selection mode or a lasso)
 - Zone colors, and Zones in Tidy up options (direction, spacing)
@@ -37,6 +36,7 @@ tags: [backlog]
 
 ## Done
 
+- [duplicate-diagram](docs/specs/duplicate-diagram/): duplicate a Diagram, from its tab, the phone menu and over MCP
 - [sql-constraints](docs/specs/sql-constraints/): UNIQUE, CHECK, named foreign keys and COMMENT ON, in the panel, the SQL and over MCP
 - [mcp-batch-attributes](docs/specs/mcp-batch-attributes/): set_attribute, remove_attribute, delete_diagram, export_project and an all-or-nothing batch over MCP
 - [note-resize](docs/specs/note-resize/): Notes can be made wider or narrower; other elements later

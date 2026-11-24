@@ -85,6 +85,7 @@ describe('MCP endpoint', () => {
 			'connect_components',
 			'delete_diagram',
 			'delete_elements',
+			'duplicate_diagram',
 			'export_diagram',
 			'export_project',
 			'get_diagram',
@@ -1566,9 +1567,7 @@ describe('MCP batch', () => {
 				args: { diagram: 'Data', text: `${i} ${'x'.repeat(1000)}` }
 			}))
 		});
-		expect(big.error).toBe(
-			'These changes would make the Shared Project too big: none was applied.'
-		);
+		expect(big.error).toMatch(/Project too big: none was applied\.$/);
 		await call(client, 'rename_element', { project: id, diagram: 'Data', name: 'Data 2' });
 		await vi.waitFor(() => expect(browser.diagrams()[1].name).toBe('Data 2'));
 		expect(browser.nodes(data)).toHaveLength(1);
@@ -1717,5 +1716,65 @@ describe('MCP constraints', () => {
 		expect(read.entities[0].comment).toBeNull();
 		expect(read.entities[0].attributes.map((a: { name: string }) => a.name)).toContain('a');
 		expect(read.inheritances).toEqual([]);
+	});
+});
+
+describe('MCP duplicate_diagram', () => {
+	it('copies a Diagram, alone and in a batch, as one change', async () => {
+		const { client, id, browser } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', { ...at, name: 'Customer' });
+		await vi.waitFor(() => expect(browser.nodes(browser.diagrams()[1].id)).toHaveLength(1));
+		let updates = 0;
+		browser.subscribe(() => updates++);
+		const copy = await call(client, 'duplicate_diagram', at);
+		expect(copy.name).toBe('Data copy');
+		await vi.waitFor(() => expect(browser.nodes(copy.id)).toHaveLength(1));
+		expect(updates).toBe(1);
+		const batch = await call(client, 'batch', {
+			project: id,
+			operations: [
+				{ tool: 'duplicate_diagram', args: { diagram: 'Data', name: 'Variant' } },
+				{ tool: 'add_entity', args: { diagram: { $ref: 1 }, name: 'Order' } }
+			]
+		});
+		const variant = await call(client, 'get_diagram', {
+			project: id,
+			diagram: batch.results[0].id
+		});
+		expect(variant.entities.map((e: { name: string }) => e.name)).toEqual(['Customer', 'Order']);
+		expect((await call(client, 'get_diagram', at)).entities).toHaveLength(1);
+		const unknown = await call(client, 'duplicate_diagram', { project: id, diagram: 'Nope' });
+		expect(unknown.error).toMatch(/^No diagram "Nope"/);
+	});
+
+	it('refuses a copy past the size limit, and stops a batch of them early', async () => {
+		const { client, id, browser } = await setup({ maxDocumentBytes: 20_000 });
+		const at = { project: id, diagram: 'Data' };
+		for (let i = 0; i < 6; i++) {
+			await call(client, 'add_note', { ...at, text: `${i} ${'x'.repeat(1900)}` });
+		}
+		const first = (await call(client, 'get_diagram', at)).notes[0].id;
+		const tooBig = 'These changes would make the Shared Project too big: none was applied.';
+		expect((await call(client, 'duplicate_diagram', at)).error).toBe(tooBig);
+		const batch = await call(client, 'batch', {
+			project: id,
+			operations: Array.from({ length: 200 }, () => ({
+				tool: 'duplicate_diagram',
+				args: { diagram: 'Data' }
+			}))
+		});
+		expect(batch.error).toBe(`Operation 2 (duplicate_diagram): ${tooBig}`);
+		// Much written, little kept: edits replacing one another are not a big Project.
+		const kept = await call(client, 'batch', {
+			project: id,
+			operations: Array.from({ length: 30 }, (_, i) => ({
+				tool: 'set_note',
+				args: { diagram: 'Data', note: first, text: `${i} ${'y'.repeat(1900)}` }
+			}))
+		});
+		expect(kept.error).toBeUndefined();
+		expect(kept.results).toHaveLength(30);
+		expect(browser.diagrams()).toHaveLength(2);
 	});
 });
