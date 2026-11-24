@@ -37,7 +37,8 @@ a {
 	text-decoration: none;
 }
 
-button {
+/* Not the canvas's zoom buttons: React Flow's styles are in a CSS layer, under any rule here. */
+button:where(:not(.react-flow__controls-button)) {
 	font: inherit;
 	padding: 4px 10px;
 	border: 1px solid var(--border);
@@ -47,7 +48,17 @@ button {
 	cursor: pointer;
 }
 
-button:hover {
+button:where(:not(.react-flow__controls-button)):hover {
+	border-color: var(--muted);
+}
+
+.react-flow__controls-button {
+	font: inherit;
+	border-radius: 6px;
+	color: var(--text);
+}
+
+.react-flow__controls-button:hover {
 	border-color: var(--muted);
 }
 
@@ -510,11 +521,15 @@ select {
 	font-size: 0.75rem;
 }
 
+/* React Flow names its resize handles so too: they keep the size and color it gives them. */
 .handle {
+	opacity: 0;
+}
+
+.handle:where(.react-flow__handle) {
 	width: 8px;
 	height: 8px;
 	background: var(--accent);
-	opacity: 0;
 }
 
 .react-flow__node:hover .handle,
@@ -1431,14 +1446,6 @@ select {
 	content: '';
 	position: absolute;
 	inset: 0 -5px;
-}
-
-.zone-handle {
-	width: 9px;
-	height: 9px;
-	border-radius: 2px;
-	background: var(--surface);
-	border-color: var(--accent);
 }
 
 .zone-icon {

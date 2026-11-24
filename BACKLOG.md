@@ -9,7 +9,6 @@ tags: [backlog]
 
 ## To do
 
-- Migrate to @xyflow/react 13 (Dependabot PR #52, its CI fails on 12 → 13)
 - Make the ghcr package public once the v0.1.0 image is published
 
 - Findings from the global review after pre-release-fixes (not yet verified):
@@ -35,6 +34,7 @@ tags: [backlog]
 
 ## Done
 
+- [react-flow-13](docs/specs/react-flow-13/): React Flow 12 to 13, the canvas looking and behaving as before
 - palette-help: the explanations of the palettes and the properties hidden behind an i button
 - [mcd-areas](docs/specs/mcd-areas/): free colored Areas with a label behind an MCD, in the app, the exports and over MCP
 - mcp-fold-set-component: set_skin, set_hosting, set_provider, set_runtime and set_disk_kind become fields of set_component (37 to 32 MCP tools)
