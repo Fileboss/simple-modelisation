@@ -1,3 +1,4 @@
+import { withoutAreas } from './areas.ts';
 import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
@@ -149,12 +150,14 @@ function loadElk(): Promise<Elk> {
  * and the Zone sized around it, every element taking part.
  */
 export async function layoutDiagram(
-	allNodes: DiagramNode[],
+	drawnNodes: DiagramNode[],
 	allEdges: DiagramEdge[],
 	sizeOf: (node: DiagramNode) => Size,
 	kind: DiagramKind,
 	direction: TidyDirection = 'horizontal'
 ): Promise<Layout> {
+	// Areas stay where they are, whatever lies over them.
+	const allNodes = withoutAreas(drawnNodes);
 	// Input order steers the layout: sort by id so peers that received the document
 	// in a different order still agree.
 	// A Note follows the element it lies beside, placed afterwards. One far from everything
@@ -625,7 +628,8 @@ const TYPE_CHARS: Record<DataTypeKind, number> = {
 export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
-	if (node.type === 'zone') return { width: node.width as number, height: node.height as number };
+	if (node.type === 'zone' || node.type === 'area')
+		return { width: node.width as number, height: node.height as number };
 	if (node.type === 'note') return noteSize(String(node.text ?? ''), noteWidth(node));
 	if (node.type === 'cif') return CIF_SIZE;
 	if (node.type === 'inheritance') return INHERITANCE_SIZE;
@@ -670,7 +674,10 @@ export function layoutFingerprint(
 ): string {
 	return JSON.stringify([
 		direction,
-		[...nodes].sort(byId).map((n) => [n.id, n.x, n.y, estimatedSize(n)]),
+		// Areas take no part in it.
+		withoutAreas(nodes)
+			.sort(byId)
+			.map((n) => [n.id, n.x, n.y, estimatedSize(n)]),
 		// A Connection's label and Flow make its pill, which needs room along its link.
 		[...edges].sort(byId).map((e) => [e.id, e.source, e.target, e.label ?? null, e.flow ?? null])
 	]);

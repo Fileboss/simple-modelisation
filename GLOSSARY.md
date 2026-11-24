@@ -166,6 +166,10 @@ _Avoid_: Multiplicity (the UML Notation's word for it)
 A parent Entity specialised by child Entities, which share its Attributes and Identifier; constrained X (exclusion), T (totality) or XT (partition), and translated into the MLD by reference, push down or push up.
 _Avoid_: Generalisation (the UML Notation's word for it), subtype, is-a
 
+**Area**:
+A light colored rectangle behind an MCD, with an optional label, to point at a part of it; it holds nothing, and neither Tidy up nor the MLD knows it.
+_Avoid_: Zone (which holds the Components inside it), group, frame
+
 **MLD**:
 The relational model derived from an MCD: its tables, their columns, primary keys and foreign keys, written in Looping's textual notation.
 _Avoid_: Schema, physical model, ERD

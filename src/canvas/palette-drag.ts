@@ -3,6 +3,9 @@ import { useSyncExternalStore, type DragEvent } from 'react';
 /** What both palettes drag to write a Note. */
 export const NOTE_ITEM = 'note';
 
+/** What the MCD palette drags to draw an Area: placed freely, it snaps to nothing. */
+export const AREA_ITEM = 'area';
+
 /** MIME type of what the palette drags onto the canvas. */
 export const PALETTE_MIME = 'application/x-simple-modelisation';
 

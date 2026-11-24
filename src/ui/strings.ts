@@ -119,6 +119,23 @@ export const strings = {
 		copyFailed: 'Copy failed: the browser refused the clipboard. Nothing was removed.',
 		pasteFailed: 'Paste failed: the browser refused the clipboard. Try Edit > Paste.'
 	},
+	area: {
+		title: 'Area',
+		label: 'Label',
+		unnamed: 'Double-click to label',
+		color: 'Color',
+		colors: {
+			blue: 'Blue',
+			teal: 'Teal',
+			green: 'Green',
+			yellow: 'Yellow',
+			orange: 'Orange',
+			red: 'Red',
+			pink: 'Pink',
+			purple: 'Purple'
+		},
+		hint: 'Drag it by its label or its border. It holds nothing, and Tidy up leaves it where it is.'
+	},
 	note: {
 		title: 'Note',
 		text: 'Text',

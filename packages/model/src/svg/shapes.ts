@@ -1,7 +1,7 @@
 import { noteLines } from '../layout.ts';
-import { NOTE_LOOKS } from '../looks.ts';
+import { AREA_LOOKS, NOTE_LOOKS } from '../looks.ts';
 import type { Box } from '../geometry.ts';
-import type { DiagramNode } from '../project.ts';
+import type { AreaNode, DiagramNode } from '../project.ts';
 
 // The canvas styles (index.css), so that images look like the screen.
 export const FONT = "system-ui, 'Segoe UI', Roboto, sans-serif";
@@ -18,6 +18,21 @@ export function noteShape(note: DiagramNode, box: Box): string {
 				`<text x="${box.x + 12}" y="${box.y + 12 + 10 + i * 20}" font-size="14" fill="#3f3a2e" dy="0.35em">${escape(line)}</text>`
 		)
 	].join('');
+}
+
+/** An Area as the canvas draws it: its light color, its label at the top left. */
+export function areaShape(area: AreaNode): string {
+	const look = own(AREA_LOOKS, area.color) ?? AREA_LOOKS.blue;
+	const { x, y, width, height, label } = area;
+	// Cut with an ellipsis as on the canvas, its width guessed.
+	const room = Math.max(1, Math.floor((width - 20) / 7.2));
+	const characters = [...label];
+	const shown =
+		characters.length > room ? `${characters.slice(0, Math.max(0, room - 1)).join('')}…` : label;
+	const text = label
+		? `<text x="${x + 10}" y="${y + 16}" font-size="13" font-weight="600" fill="${look.text}" dy="0.35em">${escape(shown)}</text>`
+		: '';
+	return `<rect x="${x + 0.75}" y="${y + 0.75}" width="${Math.max(0, width - 1.5)}" height="${Math.max(0, height - 1.5)}" rx="10" fill="${look.fill}" stroke="${look.edge}" stroke-width="1.5"/>${text}`;
 }
 
 /**

@@ -55,6 +55,7 @@ import {
 	layoutFingerprint,
 	noteWidth
 } from '@simple-modelisation/model/layout.ts';
+import { areasInOrder } from '@simple-modelisation/model/areas.ts';
 import { zoneContent, zoneParents } from '@simple-modelisation/model/zones.ts';
 import { strings } from '../ui/strings';
 import { useTransientNote } from '../ui/transient-note';
@@ -85,6 +86,7 @@ import {
 	type Clip
 } from '@simple-modelisation/model/clipboard.ts';
 import {
+	AREA_ITEM,
 	armedPaletteItem,
 	armPaletteItem,
 	draggedPaletteItem,
@@ -280,23 +282,30 @@ function Canvas({ project, diagram, kind }: Props) {
 			for (let at = parents.get(id); at; at = parents.get(at)) count++;
 			return count;
 		};
-		return (kind.derive?.(all) ?? all).map((n) =>
-			n.type === 'zone'
-				? {
-						id: n.id,
-						type: n.type,
-						position: { x: n.x, y: n.y },
-						width: n.width as number,
-						height: n.height as number,
-						zIndex: depth(n.id) - 2000,
-						dragHandle: '.zone-title',
-						data: n
-					}
-				: n.type === 'note'
-					? // Its width set here, so that a resize shows live and ends on the stored one.
-						{ id: n.id, type: n.type, position: { x: n.x, y: n.y }, width: noteWidth(n), data: n }
-					: { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n }
-		);
+		// Areas under everything, the bigger under the smaller.
+		const areas = new Map(areasInOrder(all).map((area, rank) => [area.id, rank]));
+		return (kind.derive?.(all) ?? all).map((n): Node => {
+			const node = { id: n.id, type: n.type, position: { x: n.x, y: n.y }, data: n };
+			// The sizes the user gives, set here so that a resize shows live and ends on them.
+			const size = { width: n.width as number, height: n.height as number };
+			switch (n.type) {
+				case 'area':
+					// Far enough apart that React Flow's +1000 for a selected Area does not put it
+					// over the others.
+					return {
+						...node,
+						...size,
+						zIndex: (areas.get(n.id)! - areas.size) * 2000 - 1000,
+						dragHandle: '.area-grip'
+					};
+				case 'zone':
+					return { ...node, ...size, zIndex: depth(n.id) - 2000, dragHandle: '.zone-title' };
+				case 'note':
+					return { ...node, width: noteWidth(n) };
+				default:
+					return node;
+			}
+		});
 	}, [project, diagram.id, kind]);
 	const toEdges = useCallback((): Edge[] => {
 		const all = project.edges(diagram.id);
@@ -379,6 +388,7 @@ function Canvas({ project, diagram, kind }: Props) {
 		(id: string, box: Box, type: string) => {
 			// A Note's height follows its text: only its side and width are kept.
 			if (type === 'note') project.setNoteWidth(diagram.id, id, box.x, box.width);
+			else if (type === 'area') project.setAreaBox(diagram.id, id, box);
 			else project.setZoneBox(diagram.id, id, box);
 		},
 		[project, diagram.id]
@@ -756,13 +766,15 @@ function Canvas({ project, diagram, kind }: Props) {
 		};
 	}, [getNodes, project, diagram.id, diagram.kind, screenToFlowPosition, showClipboardNote]);
 
+	/** Whether an item is placed without snapping: with Alt, or an Area. */
+	const isFree = (item: string, event: { altKey: boolean }) => event.altKey || item === AREA_ITEM;
 	// A palette item dragged over the canvas: drawn where it will land, centred on the pointer, snapped.
 	const [preview, setPreview] = useState<(Box & { label: string }) | null>(null);
 	const previewAt = (event: DragEvent, item = draggedPaletteItem()) => {
 		if (!item || !event.dataTransfer.types.includes(PALETTE_MIME)) return null;
 		const { label, ...size } = kind.dropPreview(item);
 		const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-		return { ...snapping.placeCentred(at, size, event.altKey), label };
+		return { ...snapping.placeCentred(at, size, isFree(item, event)), label };
 	};
 	const clearPreview = () => {
 		setPreview(null);
@@ -795,7 +807,7 @@ function Canvas({ project, diagram, kind }: Props) {
 		const box = previewAt(event, item);
 		clearPreview();
 		endPaletteDrag();
-		if (box) place(item, box, event.altKey);
+		if (box) place(item, box, isFree(item, event));
 	};
 	// The armed palette item, placed where the canvas is tapped: on the background or on
 	// a node (into a Zone).
@@ -808,9 +820,9 @@ function Canvas({ project, diagram, kind }: Props) {
 		armPaletteItem(null);
 		const { width, height } = kind.dropPreview(item);
 		const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-		const box = snapping.placeCentred(at, { width, height }, event.altKey);
+		const box = snapping.placeCentred(at, { width, height }, isFree(item, event));
 		snapping.clearGuides();
-		place(item, box, event.altKey);
+		place(item, box, isFree(item, event));
 	};
 	const place = (item: string, box: Box, free: boolean) => {
 		project.stopCapturing();

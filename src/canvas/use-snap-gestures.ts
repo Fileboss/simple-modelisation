@@ -52,6 +52,8 @@ function usePointer() {
  */
 type Drag = {
 	starts: Map<string, Box>;
+	/** Those that do not snap. */
+	free: Set<string>;
 	pointer: Point;
 	targets: SnapTarget[];
 	positions: Map<string, Point>;
@@ -96,7 +98,8 @@ export function useSnapGestures(
 				if (linkedTo.has(e.target)) linked.add(e.source);
 			}
 			return getNodes().flatMap((n) => {
-				const box = excluded.has(n.id) ? null : boxOf(n);
+				// An Area is behind the Diagram, placed freely: nothing snaps to it.
+				const box = excluded.has(n.id) || n.type === 'area' ? null : boxOf(n);
 				return box ? [{ id: n.id, box, linked: linked.has(n.id) }] : [];
 			});
 		},
@@ -113,8 +116,15 @@ export function useSnapGestures(
 				const box = ids.has(n.id) ? boxOf(n) : null;
 				if (box) starts.set(n.id, box);
 			}
+			// Areas go along without a part in the snapping.
+			const free = new Set(
+				getNodes()
+					.filter((n) => n.type === 'area')
+					.map((n) => n.id)
+			);
 			drag.current = {
 				starts,
+				free,
 				// From where the button went down: React Flow starts the drag a few pixels later,
 				// the nodes still where they were.
 				pointer: screenToFlowPosition(pointer.current.down),
@@ -138,20 +148,20 @@ export function useSnapGestures(
 	/** Snaps the changes React Flow reports before they reach the canvas state. */
 	const snapChanges = useCallback(
 		(changes: NodeChange[]): NodeChange[] => {
-			/** A Zone's or a Note's resize step: its moving sides snapped; the end saves the snapped box. */
+			/** A Zone's, a Note's or an Area's resize step: its moving sides snapped (not an Area's); the end saves the box. */
 			const snapResize = (change: NodeChange, all: NodeChange[]): NodeChange[] => {
 				if (change.type === 'position' && resize.current?.id === change.id) return [];
 				if (change.type !== 'dimensions' || change.resizing === undefined || !change.dimensions) {
 					return [change];
 				}
 				const node = getNodes().find((n) => n.id === change.id);
-				if (!node || (node.type !== 'zone' && node.type !== 'note')) return [change];
+				if (!node || !['zone', 'note', 'area'].includes(node.type ?? '')) return [change];
 				if (change.resizing === false) {
 					const done = resize.current;
 					resize.current = null;
 					setGuides([]);
 					if (!done) return [change];
-					onResized(done.id, done.box, node.type);
+					onResized(done.id, done.box, node.type!);
 					// A Note's height follows its rewrapped text: React Flow measures it again.
 					const height = node.type === 'note' ? change.dimensions.height : done.box.height;
 					return [{ ...change, dimensions: { width: done.box.width, height } }];
@@ -159,7 +169,7 @@ export function useSnapGestures(
 				resize.current ??= {
 					id: node.id,
 					start: boxOf(node)!,
-					targets: targetsBut(new Set([node.id])),
+					targets: node.type === 'area' ? [] : targetsBut(new Set([node.id])),
 					box: boxOf(node)!
 				};
 				const moved = all.find(
@@ -176,9 +186,10 @@ export function useSnapGestures(
 				const sided = snapSides(raw, start, resize.current.targets, threshold());
 				// Snapping never makes a Zone smaller, or a Note narrower or wider, than it may be.
 				const fits =
-					node.type === 'note'
+					node.type === 'area' ||
+					(node.type === 'note'
 						? sided.box.width >= NOTE_WIDTHS.min && sided.box.width <= NOTE_WIDTHS.max
-						: sided.box.width >= ZONE_MIN.width && sided.box.height >= ZONE_MIN.height;
+						: sided.box.width >= ZONE_MIN.width && sided.box.height >= ZONE_MIN.height);
 				const snapped = pointer.current.alt || !fits ? { box: raw, guides: [] } : sided;
 				resize.current.box = snapped.box;
 				setGuides(snapped.guides);
@@ -197,10 +208,13 @@ export function useSnapGestures(
 				const at = screenToFlowPosition(pointer.current.client);
 				const dx = at.x - current.pointer.x;
 				const dy = at.y - current.pointer.y;
-				const raw = [...current.starts.values()].map((b) => ({ ...b, x: b.x + dx, y: b.y + dy }));
-				const snapped = pointer.current.alt
-					? { dx: 0, dy: 0, guides: [] }
-					: snap(boundsOf(raw), current.targets, threshold());
+				const raw = [...current.starts]
+					.filter(([id]) => !current.free.has(id))
+					.map(([, b]) => ({ ...b, x: b.x + dx, y: b.y + dy }));
+				const snapped =
+					pointer.current.alt || raw.length === 0
+						? { dx: 0, dy: 0, guides: [] }
+						: snap(boundsOf(raw), current.targets, threshold());
 				for (const [id, b] of current.starts) {
 					current.positions.set(id, { x: b.x + dx + snapped.dx, y: b.y + dy + snapped.dy });
 				}
