@@ -1,10 +1,12 @@
 import { dataType, type DataType } from '../data-types.ts';
+import { MAX_NAME, namesColumn } from './constraints.ts';
 import type {
 	AssociationNode,
 	Attribute,
 	Cardinality,
 	CifNode,
 	InheritanceNode,
+	IsaEdge,
 	DiagramEdge,
 	DiagramNode,
 	EntityNode,
@@ -19,9 +21,16 @@ export type Column = {
 	foreign?: boolean;
 	/** The only values allowed (an Inheritance's type column). */
 	check?: string[];
+	/** The Check of its Attribute. */
+	condition?: string;
+	comment?: string;
 };
 
 export type ForeignKey = {
+	/** Unique in its table: the one given on the Leg or Inheritance link, else made from its columns. */
+	name?: string;
+	/** The Comment of the Association it translates. */
+	comment?: string;
 	columns: string[];
 	table: string;
 	references: string[];
@@ -32,8 +41,9 @@ export type Table = {
 	columns: Column[];
 	primaryKey: string[];
 	foreignKeys: ForeignKey[];
-	/** Column groups that must be unique (the foreign key of a 1-1 Association). */
+	/** Column groups that must be unique (a 1-1 Association's foreign key, unique Attributes and groups). */
 	unique: string[][];
+	comment?: string;
 };
 
 /**
@@ -43,6 +53,35 @@ export type Table = {
 export type Mld = { tables: Table[]; warnings: string[]; notes: string[] };
 
 const maxIsOne = (cardinality: Cardinality) => cardinality.endsWith(',1');
+
+/**
+ * Of the two Legs of a binary Association with a max of 1, the one whose Entity
+ * takes the foreign key: the 1,1 one when both have a max of 1, else the second.
+ */
+function receivingLeg(a: LegEdge, b: LegEdge): LegEdge {
+	if (maxIsOne(a.cardinality) && maxIsOne(b.cardinality)) {
+		return a.cardinality === '1,1' && b.cardinality !== '1,1' ? a : b;
+	}
+	return maxIsOne(a.cardinality) ? a : b;
+}
+
+/**
+ * The foreign key a Leg of an Association (`legs`, all its own) stands for: the
+ * Entity it references, and whether the Leg is the one that makes it (the other
+ * Leg of a binary Association stands for the same key).
+ */
+export function foreignKeyOf(
+	legs: LegEdge[],
+	leg: LegEdge
+): { references: string; makes: boolean } {
+	const [a, b] = legs;
+	if (legs.length !== 2 || (!maxIsOne(a.cardinality) && !maxIsOne(b.cardinality))) {
+		return { references: leg.target, makes: true };
+	}
+	// A relative identifier's key goes to its own Entity.
+	const receiving = legs.find((l) => l.relative) ?? receivingLeg(a, b);
+	return { references: (receiving === a ? b : a).target, makes: receiving.id === leg.id };
+}
 
 /**
  * Derives the MLD of an MCD with the Merise rules: an Entity is a table keyed
@@ -58,7 +97,13 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	const legs = edges.filter((e): e is LegEdge => e.type === 'leg');
 
 	const tables = new Map<string, Table>();
-	for (const entity of entities) tables.set(entity.id, entityTable(entity));
+	// Kept apart: an Inheritance's child says its own with the table it ends up in.
+	const entityWarnings = new Map<string, string[]>();
+	for (const entity of entities) {
+		const own: string[] = [];
+		tables.set(entity.id, entityTable(entity, own));
+		entityWarnings.set(entity.id, own);
+	}
 	const entityNames = new Map(entities.map((e) => [e.id, e.name]));
 	const notes: string[] = [];
 	const parentIds = new Set(
@@ -102,6 +147,7 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 		warnings,
 		notes
 	);
+	for (const [id, own] of entityWarnings) if (!children.has(id)) warnings.push(...own);
 	const lateLinks = relative.filter((l) => late.has(l.weak));
 	for (const link of lateLinks.filter((l) => isParent(l.weak))) {
 		warnings.push(
@@ -177,27 +223,20 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 			);
 		}
 		if (maxIsOne(a.cardinality) || maxIsOne(b.cardinality)) {
-			// The key goes to a side of max 1: the 1,1 one when both are, else the second.
-			const receiving =
-				maxIsOne(a.cardinality) && maxIsOne(b.cardinality)
-					? a.cardinality === '1,1' && b.cardinality !== '1,1'
-						? a
-						: b
-					: maxIsOne(a.cardinality)
-						? a
-						: b;
+			const receiving = receivingLeg(a, b);
 			const other = receiving === a ? b : a;
 			const table = target(receiving)!;
 			const referenced = target(other)!;
 			const optional = receiving.cardinality === '0,1';
 			const both = maxIsOne(a.cardinality) && maxIsOne(b.cardinality);
-			const columns = addForeignKey(table, referenced, association.name, optional, warnings);
+			const columns = addForeignKey(table, referenced, association.name, optional, warnings, {
+				name: receiving.fkName ?? other.fkName,
+				comment: association.comment
+			});
 			// Without its foreign key, the table would hold data for a link it cannot express.
 			if (!columns) continue;
 			if (both) table.unique.push(columns);
-			for (const attribute of association.attributes ?? []) {
-				table.columns.push(attributeColumn(table, attribute, optional));
-			}
+			addAttributes(table, association.attributes ?? [], optional, warnings);
 		} else {
 			associationTables.push(associationTable(association, own, target, warnings));
 		}
@@ -209,11 +248,58 @@ export function deriveMld(nodes: DiagramNode[], edges: DiagramEdge[]): Mld {
 	for (const table of ordered) {
 		if (seen.has(table.name)) warnings.push(`Two tables are named ${table.name}.`);
 		seen.add(table.name);
+		nameForeignKeys(table, warnings);
+		table.unique = distinctUniques(table);
 	}
 	return { tables: ordered, warnings, notes };
 }
 
-type RelativeLink = { weak: string; strong: string; association: AssociationNode };
+/**
+ * Names a table's foreign keys, each once: those given first, then the others
+ * from their columns, cut to what PostgreSQL keeps and numbered when taken.
+ */
+function nameForeignKeys(table: Table, warnings: string[]): void {
+	const taken = new Set<string>();
+	const free = (wanted: string) => {
+		let name = wanted.slice(0, MAX_NAME);
+		for (let rank = 2; taken.has(name); rank++) {
+			name = `${wanted.slice(0, MAX_NAME - `_${rank}`.length)}_${rank}`;
+		}
+		taken.add(name);
+		return name;
+	};
+	// Every given name is taken before a repeat is numbered, so it never takes another's.
+	const repeats: ForeignKey[] = [];
+	for (const fk of table.foreignKeys.filter((f) => f.name)) {
+		if (taken.has(fk.name!)) repeats.push(fk);
+		else taken.add(fk.name!);
+	}
+	for (const fk of repeats) {
+		warnings.push(`Two foreign keys of ${table.name} are named ${fk.name}: one is numbered.`);
+		fk.name = free(fk.name!);
+	}
+	for (const fk of table.foreignKeys.filter((f) => !f.name)) {
+		fk.name = free(`fk_${table.name}_${fk.columns.join('_')}`);
+	}
+}
+
+/** What is unique beyond the primary key, each once whatever the order of its columns. */
+function distinctUniques(table: Table): string[][] {
+	const key = (columns: string[]) => [...columns].sort().join();
+	const seen = new Set([key(table.primaryKey)]);
+	return table.unique.filter((columns) => {
+		if (seen.has(key(columns))) return false;
+		seen.add(key(columns));
+		return true;
+	});
+}
+
+type RelativeLink = {
+	weak: string;
+	strong: string;
+	association: AssociationNode;
+	fkName?: string;
+};
 
 /**
  * The relative identifiers that can apply: a 1,1 Leg marked R on a binary
@@ -245,7 +331,12 @@ function relativeLinks(
 				`The relative identifier of ${entityNames.get(leg.target)} is ignored: an Inheritance child takes its key from its parent.`
 			);
 		} else {
-			links.push({ weak: leg.target, strong: other.target, association });
+			links.push({
+				weak: leg.target,
+				strong: other.target,
+				association,
+				fkName: leg.fkName ?? other.fkName
+			});
 		}
 	}
 	return links;
@@ -274,11 +365,14 @@ function applyRelativeLinks(
 		// A link is ready once its strong Entity has its whole key.
 		const ready = left.filter((l) => !waiting.has(l.strong));
 		if (ready.length === 0) break;
-		for (const { weak, strong, association } of ready) {
+		for (const { weak, strong, association, fkName } of ready) {
 			// Translated here even when it cannot reference: its warning is said once.
 			state.handled.add(association.id);
 			const table = tables.get(weak)!;
-			const columns = addForeignKey(table, tables.get(strong)!, association.name, false, warnings);
+			const columns = addForeignKey(table, tables.get(strong)!, association.name, false, warnings, {
+				name: fkName,
+				comment: association.comment
+			});
 			if (!columns) continue;
 			// The foreign keys lead the key and the columns, in the order of the Legs, as
 			// Looping writes it; the Entity's own Identifier comes after.
@@ -289,9 +383,7 @@ function applyRelativeLinks(
 				...leading.map((name) => table.columns.find((c) => c.name === name)!),
 				...table.columns.filter((c) => !leading.includes(c.name))
 			];
-			for (const attribute of association.attributes ?? []) {
-				table.columns.push(attributeColumn(table, attribute, false));
-			}
+			addAttributes(table, association.attributes ?? [], false, warnings);
 		}
 		left = left.filter((l) => !ready.includes(l));
 	}
@@ -351,6 +443,7 @@ function applyInheritances(
 	const inheritances = new Map(found.map((n) => [n.id, canonical.get(n.parent)!]));
 	// One parent per child: the first Inheritance a file or a peer gave it.
 	const inheritanceOf = new Map<string, InheritanceNode>();
+	const fkNames = new Map<string, string | undefined>();
 	for (const edge of edges) {
 		const inheritance = inheritances.get(edge.source);
 		if (
@@ -360,6 +453,7 @@ function applyInheritances(
 			!inheritanceOf.has(edge.target)
 		) {
 			inheritanceOf.set(edge.target, inheritance);
+			fkNames.set(edge.target, (edge as IsaEdge).fkName);
 		}
 	}
 	const depth = (id: string): number => {
@@ -418,8 +512,13 @@ function applyInheritances(
 						.map((c) => byId.get(c)!.name)
 				});
 			}
-			for (const attribute of own)
-				parentTable.columns.push(attributeColumn(parentTable, attribute, true));
+			addUniqueGroups(
+				parentTable,
+				child,
+				addAttributes(parentTable, own, true, warnings),
+				warnings
+			);
+			if (child.comment) notes.push(noTable(child.name, parent.name));
 			tables.set(childId, parentTable);
 			pushedUp.add(childId);
 			continue;
@@ -447,12 +546,21 @@ function applyInheritances(
 				`Entity "${child.name}" cannot reference its parent ${parent.name}, which has no primary key.`
 			);
 		} else {
-			table.primaryKey.push(...addForeignKey(table, parentTable, child.name, false, warnings)!);
+			table.primaryKey.push(
+				...addForeignKey(table, parentTable, child.name, false, warnings, {
+					name: fkNames.get(childId)
+				})!
+			);
 		}
-		for (const attribute of own) table.columns.push(attributeColumn(table, attribute, false));
+		if (child.comment) table.comment = child.comment;
+		addUniqueGroups(table, child, addAttributes(table, own, false, warnings), warnings);
 		tables.set(childId, table);
 	}
-	for (const id of pushedDown) tables.delete(id);
+	for (const id of pushedDown) {
+		tables.delete(id);
+		const parent = byId.get(id)!;
+		if (parent.comment) notes.push(noTable(parent.name, 'its children'));
+	}
 
 	for (const inheritance of new Set(children.map((c) => inheritanceOf.get(c)!))) {
 		const parent = byId.get(inheritance.parent)!.name;
@@ -488,7 +596,10 @@ function applyInheritances(
 	return { pushedDown, children: new Set(children) };
 }
 
-function entityTable(entity: EntityNode): Table {
+const noTable = (entity: string, into: string) =>
+	`The Comment of ${entity} is left out: it has no table of its own, its columns are in ${into}.`;
+
+function entityTable(entity: EntityNode, warnings: string[]): Table {
 	const table: Table = {
 		name: snakeCase(entity.name),
 		columns: [],
@@ -500,12 +611,53 @@ function entityTable(entity: EntityNode): Table {
 	const attributes = [...(entity.attributes ?? [])].sort(
 		(x, y) => Number(y.identifier) - Number(x.identifier)
 	);
+	const columns = addAttributes(table, attributes, false, warnings);
 	for (const attribute of attributes) {
-		const column = attributeColumn(table, attribute, false);
-		table.columns.push(column);
-		if (attribute.identifier) table.primaryKey.push(column.name);
+		if (attribute.identifier) table.primaryKey.push(columns.get(attribute.id)!);
 	}
+	addUniqueGroups(table, entity, columns, warnings);
+	if (entity.comment) table.comment = entity.comment;
 	return table;
+}
+
+/** Adds the columns of Attributes, with what each says of its own; the column of each Attribute. */
+function addAttributes(
+	table: Table,
+	attributes: Attribute[],
+	forceNullable: boolean,
+	warnings: string[]
+): Map<string, string> {
+	const columns = new Map<string, string>();
+	for (const attribute of attributes) {
+		const column = attributeColumn(table, attribute, forceNullable);
+		table.columns.push(column);
+		columns.set(attribute.id, column.name);
+		if (attribute.unique) table.unique.push([column.name]);
+		if (column.condition && !namesColumn(column.condition, column.name)) {
+			warnings.push(
+				`The Check of "${attribute.name}" in ${table.name} does not name its column ${column.name}.`
+			);
+		}
+	}
+	return columns;
+}
+
+/** An Entity's Unique groups on its table, where its columns are. */
+function addUniqueGroups(
+	table: Table,
+	entity: EntityNode,
+	columns: Map<string, string>,
+	warnings: string[]
+): void {
+	for (const group of entity.uniques ?? []) {
+		const names = group.map((id) => columns.get(id));
+		if (names.every((name) => name !== undefined)) table.unique.push(names);
+		else {
+			warnings.push(
+				`A Unique group of "${entity.name}" is ignored: it holds an Identifier its table does not have.`
+			);
+		}
+	}
 }
 
 function attributeColumn(table: Table, attribute: Attribute, forceNullable: boolean): Column {
@@ -514,7 +666,9 @@ function attributeColumn(table: Table, attribute: Attribute, forceNullable: bool
 		name: uniqueName(table, snakeCase(attribute.name)),
 		// An auto-increment column is never NULL: copied onto a 0,1 side, it is a plain integer.
 		type: nullable && attribute.type.kind === 'serial' ? dataType('integer') : attribute.type,
-		nullable
+		nullable,
+		...(attribute.check && { condition: attribute.check }),
+		...(attribute.comment && { comment: attribute.comment })
 	};
 }
 
@@ -537,13 +691,14 @@ function associationTable(
 		unique: []
 	};
 	for (const leg of legs) {
-		const columns = addForeignKey(table, target(leg)!, association.name, false, warnings);
+		const columns = addForeignKey(table, target(leg)!, association.name, false, warnings, {
+			name: leg.fkName
+		});
 		// A Leg a CIF determines is a NOT NULL column outside the key.
 		if (!determined.has(leg.id)) table.primaryKey.push(...(columns ?? []));
 	}
-	for (const attribute of association.attributes ?? []) {
-		table.columns.push(attributeColumn(table, attribute, false));
-	}
+	addAttributes(table, association.attributes ?? [], false, warnings);
+	if (association.comment) table.comment = association.comment;
 	return table;
 }
 
@@ -553,7 +708,8 @@ function addForeignKey(
 	referenced: Table,
 	associationName: string,
 	nullable: boolean,
-	warnings: string[]
+	warnings: string[],
+	{ name: given, comment }: Pick<ForeignKey, 'name' | 'comment'>
 ): string[] | null {
 	if (referenced.primaryKey.length === 0) {
 		warnings.push(
@@ -573,6 +729,8 @@ function addForeignKey(
 		return name;
 	});
 	table.foreignKeys.push({
+		...(given && { name: given }),
+		...(comment && { comment }),
 		columns,
 		table: referenced.name,
 		references: [...referenced.primaryKey]

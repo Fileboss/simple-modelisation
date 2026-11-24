@@ -99,6 +99,7 @@ describe('MCP endpoint', () => {
 			'set_component',
 			'set_connection',
 			'set_disk_kind',
+			'set_entity',
 			'set_hosting',
 			'set_inheritance',
 			'set_inheritance_options',
@@ -1571,5 +1572,150 @@ describe('MCP batch', () => {
 		await call(client, 'rename_element', { project: id, diagram: 'Data', name: 'Data 2' });
 		await vi.waitFor(() => expect(browser.diagrams()[1].name).toBe('Data 2'));
 		expect(browser.nodes(data)).toHaveLength(1);
+	});
+});
+
+describe('MCP constraints', () => {
+	it('sets, reads back and clears UNIQUE, CHECK, Comments and foreign key names', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		await call(client, 'add_entity', {
+			...at,
+			name: 'Product',
+			attributes: [
+				{ name: 'id', type: 'serial', identifier: true },
+				{ name: 'sku', unique: true, comment: 'The code' },
+				{ name: 'price', type: 'decimal(10,2)', check: 'price >= 0' }
+			]
+		});
+		await call(client, 'add_entity', { ...at, name: 'Book' });
+		await call(client, 'add_association', {
+			...at,
+			name: 'shelved',
+			from: { entity: 'Product', cardinality: '1,1' },
+			to: { entity: 'Book', cardinality: '0,n' }
+		});
+		await call(client, 'set_entity', {
+			...at,
+			element: 'Product',
+			comment: 'What we sell',
+			unique_groups: [['sku', 'price']]
+		});
+		await call(client, 'set_entity', { ...at, element: 'shelved', comment: 'Where' });
+		await call(client, 'set_cardinality', {
+			...at,
+			association: 'shelved',
+			entity: 'Product',
+			foreign_key: 'fk_shelf'
+		});
+		const { sql } = await call(client, 'get_mcd_sql', at);
+		expect(sql).toContain('price NUMERIC(10,2) NOT NULL CHECK (price >= 0)');
+		expect(sql).toContain('UNIQUE (sku),\n   UNIQUE (sku, price)');
+		expect(sql).toContain('CONSTRAINT fk_shelf FOREIGN KEY (book_id)');
+		expect(sql).toContain("COMMENT ON TABLE product IS 'What we sell';");
+		expect(sql).toContain("COMMENT ON COLUMN product.sku IS 'The code';");
+		expect(sql).toContain("COMMENT ON CONSTRAINT fk_shelf ON product IS 'Where';");
+
+		const read = await call(client, 'get_diagram', at);
+		expect(read.entities[0]).toMatchObject({
+			comment: 'What we sell',
+			unique_groups: [[{ name: 'sku' }, { name: 'price' }]]
+		});
+		expect(read.entities[0].attributes[1]).toMatchObject({ unique: true, comment: 'The code' });
+		expect(read.associations[0]).toMatchObject({ comment: 'Where' });
+		expect(read.associations[0].legs[0]).toMatchObject({
+			cardinality: '1,1',
+			foreign_key: 'fk_shelf'
+		});
+
+		await call(client, 'batch', {
+			project: id,
+			operations: [
+				{
+					tool: 'set_attribute',
+					args: {
+						diagram: 'Data',
+						element: 'Product',
+						attribute: 'sku',
+						unique: false,
+						comment: null
+					}
+				},
+				{
+					tool: 'set_attribute',
+					args: { diagram: 'Data', element: 'Product', attribute: 'price', check: null }
+				},
+				{
+					tool: 'set_entity',
+					args: { diagram: 'Data', element: 'Product', comment: null, unique_groups: [] }
+				},
+				{ tool: 'set_entity', args: { diagram: 'Data', element: 'shelved', comment: null } },
+				{
+					tool: 'set_cardinality',
+					args: { diagram: 'Data', association: 'shelved', entity: 'Product', foreign_key: null }
+				}
+			]
+		});
+		const cleared = (await call(client, 'get_mcd_sql', at)).sql;
+		expect(cleared).not.toMatch(/UNIQUE|CHECK|COMMENT|fk_shelf/);
+		expect(cleared).toContain('CONSTRAINT fk_product_book_id');
+
+		await call(client, 'set_inheritance', {
+			...at,
+			entity: 'Book',
+			parent: 'Product',
+			foreign_key: 'fk_is_product'
+		});
+		expect((await call(client, 'get_diagram', at)).inheritances[0].foreign_keys).toMatchObject([
+			{ child: { name: 'Book' }, name: 'fk_is_product' }
+		]);
+	});
+
+	it('refuses bad values and writes nothing of the call', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Data' };
+		const bad = 'a > 0); DROP TABLE x; --';
+		const entity = await call(client, 'add_entity', {
+			...at,
+			name: 'Bad',
+			attributes: [{ name: 'a', check: bad }]
+		});
+		expect(entity.error).toBe('A Check needs its parentheses balanced.');
+		await call(client, 'add_entity', { ...at, name: 'Product', attributes: [{ name: 'a' }] });
+		await call(client, 'add_entity', { ...at, name: 'Other' });
+		const set = await call(client, 'set_attribute', {
+			...at,
+			element: 'Product',
+			attribute: 'a',
+			name: 'b',
+			check: bad
+		});
+		expect(set.error).toBe('A Check needs its parentheses balanced.');
+		const group = await call(client, 'set_entity', {
+			...at,
+			element: 'Product',
+			comment: 'x',
+			unique_groups: [['a', 'a']]
+		});
+		expect(group.error).toBe('A Unique group is of two Attributes or more.');
+		const long = await call(client, 'set_attribute', {
+			...at,
+			element: 'Product',
+			attribute: 'a',
+			check: `x${' '.repeat(500_000)}x`
+		}).catch((error: Error) => ({ error: error.message }));
+		expect(long.error).toMatch(/500|too_big|Too big/);
+		const key = await call(client, 'set_inheritance', {
+			...at,
+			entity: 'Other',
+			parent: 'Product',
+			foreign_key: 'a b'
+		});
+		expect(key.error).toMatch(/^A foreign key name is/);
+		const read = await call(client, 'get_diagram', at);
+		expect(read.entities.map((e: { name: string }) => e.name)).toEqual(['Product', 'Other']);
+		expect(read.entities[0].comment).toBeNull();
+		expect(read.entities[0].attributes.map((a: { name: string }) => a.name)).toContain('a');
+		expect(read.inheritances).toEqual([]);
 	});
 });

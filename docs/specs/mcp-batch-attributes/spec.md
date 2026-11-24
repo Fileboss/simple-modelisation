@@ -68,7 +68,7 @@ Kept in BACKLOG.md, since the app has none of them yet:
 - UNIQUE and CHECK constraints set on Attributes (the SQL only derives them now).
 - Naming foreign keys.
 - Duplicating a Diagram.
-- Comments on elements.
+- SQL comments (COMMENT ON); first noted here as comments on elements, a misreading.
 
 ## Further Notes
 

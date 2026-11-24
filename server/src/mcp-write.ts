@@ -28,6 +28,14 @@ import {
 	layoutFingerprint,
 	noteSize
 } from '@simple-modelisation/model/layout.ts';
+import {
+	checkProblem,
+	cleanCheck,
+	ENGLISH_PROBLEMS,
+	isForeignKeyName,
+	MAX_CHECK,
+	MAX_COMMENT
+} from '@simple-modelisation/model/sql/constraints.ts';
 import { SERVICE_FRAMEWORKS, SKIN_IDS, skinFits } from '@simple-modelisation/model/skins.ts';
 import {
 	nodeBox,
@@ -79,12 +87,49 @@ const typeArgument = z
 	.describe(
 		'Data type: integer, bigint, decimal(p,s), text, text(n), boolean, date, datetime, uuid or serial (auto-increment). Default text.'
 	);
+const checkText = z
+	.string()
+	.max(MAX_CHECK)
+	.describe(
+		'An SQL condition its values must meet, with the column names of get_mcd_sql (snake_case), written as CHECK (…): price >= 0. No ";" nor SQL comment outside quotes.'
+	);
+const commentText = z
+	.string()
+	.max(MAX_COMMENT)
+	.describe('What it means, written in the SQL as COMMENT ON.');
+const foreignKeyArgument = z
+	.string()
+	.nullable()
+	.optional()
+	.describe('The name of the foreign key it makes in the SQL; null for the generated one.');
 const attributeInput = z.object({
 	name: name(),
 	type: typeArgument.optional(),
 	identifier: z.boolean().optional().describe('Part of the Identifier (Entities only).'),
-	optional: z.boolean().optional().describe('The column accepts NULL.')
+	optional: z.boolean().optional().describe('The column accepts NULL.'),
+	unique: z.boolean().optional().describe('UNIQUE in the SQL.'),
+	check: checkText.optional(),
+	comment: commentText.optional()
 });
+
+/** Refuses a Check the Project document would, before anything is written. */
+function requireCheck(check: string | null | undefined) {
+	const problem = check ? checkProblem(cleanCheck(check)) : null;
+	if (problem) throw new ToolError(ENGLISH_PROBLEMS[problem]);
+}
+
+/** Refuses a foreign key name the Project document would, before anything is written. */
+function requireForeignKeyName(name: string | null | undefined) {
+	if (name && !isForeignKeyName(name)) throw new ToolError(ENGLISH_PROBLEMS.foreignKeyName);
+}
+
+/** Refuses Attributes with a Data type or a Check that is wrong, before anything is written. */
+function requireAttributes(attributes: { type?: string; check?: string }[]) {
+	for (const { type, check } of attributes) {
+		if (type) parseDataType(type);
+		requireCheck(check);
+	}
+}
 
 /** `decimal(10,2)`, `text(120)`, `serial`… into a Data type. */
 export function parseDataType(text: string): DataType {
@@ -262,6 +307,9 @@ function addAttributes(
 		if (input.type) project.setAttributeType(diagramId, nodeId, id, parseDataType(input.type));
 		if (input.identifier) project.toggleIdentifier(diagramId, nodeId, id);
 		if (input.optional) project.setAttributeOptional(diagramId, nodeId, id, true);
+		if (input.unique) project.setAttributeUnique(diagramId, nodeId, id, true);
+		if (input.check) project.setAttributeCheck(diagramId, nodeId, id, input.check);
+		if (input.comment) project.setAttributeComment(diagramId, nodeId, id, input.comment);
 	}
 }
 
@@ -732,7 +780,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		({ project, diagram, name, attributes = [] }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
-				attributes.forEach((a) => a.type && parseDataType(a.type));
+				requireAttributes(attributes);
 				const { x, y } = freeSpot(nodesOf(p, d.id));
 				const id = p.addEntity(d.id, x, y, name);
 				if (attributes.some((a) => a.identifier)) {
@@ -756,7 +804,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		({ project, diagram, element, attribute }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
-				if (attribute.type) parseDataType(attribute.type);
+				requireAttributes([attribute]);
 				// A Note has text, neither a name nor Attributes.
 				const target = pick(
 					nodesOf(p, d.id).filter((n) => n.type !== 'note'),
@@ -796,21 +844,25 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_attribute',
-		'Changes an Attribute of an Entity or an Association: its name, Data type, part of the Identifier (Entities only; an Identifier is never optional), whether it accepts NULL, its position in the list. Fields left out stay as they are.',
+		'Changes an Attribute of an Entity or an Association: its name, Data type, part of the Identifier (Entities only; an Identifier is never optional), whether it accepts NULL, UNIQUE, CHECK and COMMENT ON in the SQL, its position in the list. Fields left out stay as they are.',
 		{
 			...attributeArguments,
 			name: name().optional(),
 			type: typeArgument.optional(),
 			identifier: z.boolean().optional().describe('Part of the Identifier (Entities only).'),
 			optional: z.boolean().optional().describe('The column accepts NULL.'),
+			unique: z.boolean().optional().describe('UNIQUE in the SQL.'),
+			check: checkText.nullable().optional(),
+			comment: commentText.nullable().optional(),
 			position: z
 				.number()
 				.int()
 				.optional()
 				.describe('Its place in the list, from 1; beyond the ends, first or last.')
 		},
-		({ project, diagram, element, attribute, name, type, identifier, optional, position }) =>
+		({ project, diagram, element, attribute, ...fields }) =>
 			access.write(project, (p) => {
+				const { name, type, identifier, optional, position, unique, check, comment } = fields;
 				const {
 					diagramId,
 					target,
@@ -820,6 +872,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					throw new ToolError('Only an Entity has an Identifier.');
 				}
 				const dataType = type === undefined ? undefined : parseDataType(type);
+				requireCheck(check);
 				// What the app would quietly undo is refused, so the agent knows NULL was not set.
 				if (optional) {
 					if (identifier ?? found.identifier) {
@@ -836,6 +889,9 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					p.toggleIdentifier(diagramId, target.id, id);
 				}
 				if (optional !== undefined) p.setAttributeOptional(diagramId, target.id, id, optional);
+				if (unique !== undefined) p.setAttributeUnique(diagramId, target.id, id, unique);
+				if (check !== undefined) p.setAttributeCheck(diagramId, target.id, id, check ?? '');
+				if (comment !== undefined) p.setAttributeComment(diagramId, target.id, id, comment ?? '');
 				if (position !== undefined) p.moveAttributeTo(diagramId, target.id, id, position - 1);
 				return { id };
 			})
@@ -854,6 +910,43 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				} = attributeTarget(p, diagram, element, attribute);
 				p.removeAttribute(diagramId, target.id, found.id);
 				return { deleted: found.id };
+			})
+	);
+
+	tool(
+		'set_entity',
+		"Sets the Comment of an Entity or an Association (COMMENT ON in the SQL) and an Entity's Unique groups (its Attributes unique together; one alone is set_attribute unique). Fields left out stay as they are.",
+		{
+			project: projectArgument,
+			diagram: diagramArgument,
+			element: z.string().describe('Entity or Association id or exact name.'),
+			comment: commentText.nullable().optional(),
+			unique_groups: z
+				.array(z.array(z.string()).min(2).max(100))
+				.max(100)
+				.optional()
+				.describe('All the groups, each of Attribute ids or exact names; [] for none.')
+		},
+		({ project, diagram, element, comment, unique_groups: groups }) =>
+			access.write(project, (p) => {
+				const d = pickDiagram(p, diagram, 'mcd');
+				const target = pick(
+					nodesOf(p, d.id).filter((n) => n.type === 'entity' || n.type === 'association'),
+					element,
+					'element'
+				);
+				if (groups && target.type !== 'entity') {
+					throw new ToolError('Only an Entity has Unique groups.');
+				}
+				const attributes = target.attributes as Attribute[];
+				const ids = groups?.map((group) => {
+					const found = [...new Set(group.map((a) => pick(attributes, a, 'attribute').id))];
+					if (found.length < 2) throw new ToolError('A Unique group is of two Attributes or more.');
+					return found;
+				});
+				if (comment !== undefined) p.setComment(d.id, target.id, comment ?? '');
+				if (ids) p.setUniqueGroups(d.id, target.id, ids);
+				return { id: target.id };
 			})
 	);
 
@@ -876,7 +969,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 		({ project, diagram, name, legs, from, to, attributes = [] }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'mcd');
-				attributes.forEach((a) => a.type && parseDataType(a.type));
+				requireAttributes(attributes);
 				if (legs && (from || to)) throw new ToolError('Give legs, or from and to, not both.');
 				const wanted = legs ?? (from && to ? [from, to] : null);
 				if (!wanted) throw new ToolError('Give legs (two or more), or from and to.');
@@ -972,15 +1065,20 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_inheritance',
-		'Makes an Entity a child of a parent Entity (null: of none), sharing its Attributes and Identifier; one parent per Entity, no cycles.',
+		'Makes an Entity a child of a parent Entity (null: of none), sharing its Attributes and Identifier; foreign_key names the key its table references the parent by; one parent per Entity, no cycles.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			entity: z.string().describe('Child Entity id or exact name.'),
-			parent: z.string().nullable().describe('Parent Entity id or exact name, or null.')
+			parent: z.string().nullable().describe('Parent Entity id or exact name, or null.'),
+			foreign_key: foreignKeyArgument
 		},
-		({ project, diagram, entity, parent }) =>
+		({ project, diagram, entity, parent, foreign_key: foreignKey }) =>
 			access.write(project, (p) => {
+				requireForeignKeyName(foreignKey);
+				if (foreignKey && parent === null) {
+					throw new ToolError('Without a parent there is no foreign key to name.');
+				}
 				const d = pickDiagram(p, diagram, 'mcd');
 				const entities = nodesOf(p, d.id, 'entity');
 				const child = pick(entities, entity, 'entity');
@@ -989,6 +1087,8 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					throw new ToolError('An Entity cannot inherit from itself or a descendant.');
 				}
 				p.setParent(d.id, child.id, to?.id ?? null);
+				const link = p.edges(d.id).find((e) => e.type === 'isa' && e.target === child.id);
+				if (link && foreignKey !== undefined) p.setForeignKeyName(d.id, link.id, foreignKey);
 				return { ok: true };
 			})
 	);
@@ -1022,17 +1122,20 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_cardinality',
-		"Sets the Cardinality of an Association's Leg next to an Entity; for a reflexive Association, give the Leg's id. relative: true marks a 1,1 Leg of a binary Association as a relative identifier (the Entity is identified within the other one, whose key leads its table's key).",
+		"Sets the Cardinality of an Association's Leg next to an Entity; for a reflexive Association, give the Leg's id. relative: true marks a 1,1 Leg of a binary Association as a relative identifier (the Entity is identified within the other one, whose key leads its table's key). foreign_key names the foreign key the Leg makes: on a binary Association the name on the Leg of max 1 goes first. Fields left out stay as they are.",
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			association: z.string().describe('Association id or exact name.'),
 			entity: z.string().describe('Entity id or exact name, or the Leg id.'),
-			cardinality,
+			cardinality: cardinality.optional(),
+			foreign_key: foreignKeyArgument,
 			relative: z.boolean().optional().describe('Default: unchanged (false once not 1,1).')
 		},
-		({ project, diagram, association, entity, cardinality: value, relative }) =>
+		({ project, diagram, association, entity, relative, ...fields }) =>
 			access.write(project, (p) => {
+				const { cardinality: given, foreign_key: foreignKey } = fields;
+				requireForeignKeyName(foreignKey);
 				const d = pickDiagram(p, diagram, 'mcd');
 				const target = pick(nodesOf(p, d.id, 'association'), association, 'association');
 				const legs = p.edges(d.id).filter((e): e is LegEdge => e.source === target.id);
@@ -1049,13 +1152,15 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				}
 				// Checked before writing anything, with the Cardinality it is about to get.
 				const leg = matching[0];
+				const value = given ?? leg.cardinality;
 				const after = legs.map((l) => (l.id === leg.id ? { ...l, cardinality: value } : l));
 				if (relative && !canBeRelative(after, leg.id)) {
 					throw new ToolError(
 						'A relative identifier goes on a 1,1 Leg of a binary Association between two Entities.'
 					);
 				}
-				p.setCardinality(d.id, leg.id, value);
+				if (given) p.setCardinality(d.id, leg.id, given);
+				if (foreignKey !== undefined) p.setForeignKeyName(d.id, leg.id, foreignKey);
 				if (relative !== undefined) p.setRelative(d.id, leg.id, relative);
 				return { id: leg.id };
 			})
