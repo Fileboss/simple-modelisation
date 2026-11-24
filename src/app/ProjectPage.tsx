@@ -171,7 +171,7 @@ function CompactHeader(props: ActionsProps) {
 
 /** The open Diagram's name, opening the list of Diagrams: switch, add, rename, delete. */
 function DiagramPicker({ project }: { project: ProjectDocument }) {
-	const { diagrams, open, select, add } = useOpenDiagram(project);
+	const { diagrams, open, select, add, duplicate } = useOpenDiagram(project);
 	const menu = useRef<HTMLDetailsElement>(null);
 	useMenuDismiss(menu);
 	const [renaming, setRenaming] = useState(false);
@@ -217,6 +217,7 @@ function DiagramPicker({ project }: { project: ProjectDocument }) {
 					<>
 						<hr />
 						<button onClick={() => setRenaming(true)}>{strings.project.renameDiagram}</button>
+						<button onClick={() => duplicate(open.id)}>{strings.project.duplicateDiagram}</button>
 						{confirming ? (
 							<span className="confirm-inline">
 								<span>{strings.project.confirmDeleteDiagram(open.name)}</span>
@@ -266,13 +267,18 @@ function DiagramLabel({ diagram }: { diagram: Diagram }) {
 function useOpenDiagram(project: ProjectDocument) {
 	const [searchParams, setSearchParams] = useSearchParams();
 	const diagrams = project.diagrams();
-	const open = diagrams.find((d) => d.id === searchParams.get('d')) ?? diagrams[0];
+	const named = (key: string) => diagrams.find((d) => d.id === searchParams.get(key));
+	// A copy undone or deleted gives way to what it was made from.
+	const open = named('d') ?? named('from') ?? diagrams[0];
 	const select = (id: string) => setSearchParams({ d: id }, { replace: true });
 	const add = (kind: DiagramKind) => {
 		project.stopCapturing();
 		select(project.addDiagram(kind));
 	};
-	return { diagrams, open, select, add };
+	const duplicate = (id: string) => {
+		setSearchParams({ d: project.duplicateDiagram(id), from: id }, { replace: true });
+	};
+	return { diagrams, open, select, add, duplicate };
 }
 
 function ProjectActions({ project, projectId, status, onCopied, inMenu }: ActionsProps) {
@@ -445,7 +451,7 @@ function ExportMenu({ project }: { project: ProjectDocument }) {
 /** The open Diagram, under its tabs (`tabs`; on a small screen the header picks it). */
 function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: boolean }) {
 	useProjectVersion(project);
-	const { diagrams, open, select, add } = useOpenDiagram(project);
+	const { diagrams, open, select, add, duplicate } = useOpenDiagram(project);
 	// Entries this version cannot read (malformed, or from another version): left out, and said.
 	const unreadable = project.unreadable(open?.id);
 
@@ -472,6 +478,7 @@ function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: b
 							isOpen={d.id === open?.id}
 							onSelect={() => select(d.id)}
 							onRename={(name) => project.renameDiagram(d.id, name)}
+							onDuplicate={() => duplicate(d.id)}
 							onDelete={() => project.deleteDiagram(d.id)}
 						/>
 					))}
@@ -495,10 +502,11 @@ type TabProps = {
 	isOpen: boolean;
 	onSelect: () => void;
 	onRename: (name: string) => void;
+	onDuplicate: () => void;
 	onDelete: () => void;
 };
 
-function DiagramTab({ diagram, isOpen, onSelect, onRename, onDelete }: TabProps) {
+function DiagramTab({ diagram, isOpen, onSelect, onRename, onDuplicate, onDelete }: TabProps) {
 	return (
 		<div className={`tab ${isOpen ? 'tab-open' : ''}`}>
 			<div className="tab-name" role="button" tabIndex={0} onClick={onSelect}>
@@ -506,14 +514,24 @@ function DiagramTab({ diagram, isOpen, onSelect, onRename, onDelete }: TabProps)
 				<EditableText value={diagram.name} onChange={onRename} />
 			</div>
 			{isOpen && (
-				<button
-					className="tab-close"
-					title={strings.project.deleteDiagram}
-					aria-label={strings.project.deleteDiagram}
-					onClick={onDelete}
-				>
-					×
-				</button>
+				<>
+					<button
+						className="tab-action"
+						title={strings.project.duplicateDiagram}
+						aria-label={strings.project.duplicateDiagram}
+						onClick={onDuplicate}
+					>
+						⧉
+					</button>
+					<button
+						className="tab-action"
+						title={strings.project.deleteDiagram}
+						aria-label={strings.project.deleteDiagram}
+						onClick={onDelete}
+					>
+						×
+					</button>
+				</>
 			)}
 		</div>
 	);

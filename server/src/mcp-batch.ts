@@ -39,7 +39,7 @@ function writeToolsOn(copy: ProjectDocument | undefined) {
 	const onCopy: ProjectAccess = {
 		read: async (_reference, use) => use(copy!),
 		write: async (_reference, change) => change(copy!),
-		writeCopy: () => Promise.reject(new ToolError('A batch cannot hold another batch.'))
+		writeCopy: async (_reference, change) => change(copy!, () => undefined)
 	};
 	const tools = new Map<string, WriteTool>();
 	registerWriteTools(
@@ -74,7 +74,7 @@ export function registerBatchTool(tool: RegisterTool, access: ProjectAccess) {
 				.max(MAX_OPERATIONS)
 		},
 		({ project, operations }) =>
-			access.writeCopy(project, async (p) => {
+			access.writeCopy(project, async (p, checkGrowth) => {
 				const tools = writeToolsOn(p);
 				const results: unknown[] = [];
 				for (const [index, operation] of operations.entries()) {
@@ -85,6 +85,7 @@ export function registerBatchTool(tool: RegisterTool, access: ProjectAccess) {
 						const parsed = schema.safeParse({ ...args, project });
 						if (!parsed.success) throw new ToolError(z.prettifyError(parsed.error));
 						results.push(await run(parsed.data));
+						checkGrowth();
 					} catch (error) {
 						// Any failure names its operation, so that the agent knows which one to fix.
 						const message = error instanceof Error ? error.message : String(error);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import type { DataType } from './data-types.ts';
 import { estimatedSize } from './layout.ts';
@@ -1220,5 +1220,125 @@ describe('Component type change', () => {
 		expect(node().skin).toBeNull();
 		project.setComponentType(d, store, 'mainframe' as never);
 		expect(node().componentType).toBe('cache');
+	});
+});
+
+describe('Duplicate a Diagram', () => {
+	/** An MCD with everything that links elements together. */
+	function mcd() {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const d = project.addDiagram('mcd', 'Data');
+		const [a, b, c] = ['A', 'B', 'C'].map((name) => project.addEntity(d, 10.4, 20, name));
+		const association = project.addAssociation(d, a, b, 'links');
+		project.addLeg(d, association, c);
+		project.addCif(d, association);
+		project.setParent(d, c, b);
+		const other = project.addAttribute(d, a, 'code');
+		const id = (project.nodes(d).find((n) => n.id === a)!.attributes as { id: string }[])[0].id;
+		project.setUniqueGroups(d, a, [[id, other]]);
+		project.setForeignKeyName(d, project.edges(d)[0].id, 'fk_x');
+		project.addNote(d, 5, 5, 'hello');
+		project.setTidyDirection(d, 'vertical');
+		return { project, d };
+	}
+	/** Content with each id replaced by its rank, so that two copies compare equal. */
+	const shape = (project: ProjectDocument, d: string) => {
+		const nodes = project.nodes(d);
+		const edges = project.edges(d);
+		let text = JSON.stringify({ nodes, edges });
+		[...nodes, ...edges].forEach((e, i) => (text = text.replaceAll(e.id, `#${i}`)));
+		return JSON.parse(text);
+	};
+
+	it('copies every element with ids of its own, its links inside the copy', () => {
+		const { project, d } = mcd();
+		const copy = project.duplicateDiagram(d);
+		expect(shape(project, copy)).toEqual(shape(project, d));
+		expect(project.diagram(copy)).toMatchObject({ kind: 'mcd', tidyDirection: 'vertical' });
+		const ids = new Set(project.nodes(d).map((n) => n.id));
+		expect(project.nodes(copy).some((n) => ids.has(n.id))).toBe(false);
+		const before = shape(project, d);
+		project.deleteElements(copy, [project.nodes(copy)[0].id], []);
+		expect(shape(project, d)).toEqual(before);
+	});
+
+	it('goes right after the original, named after it', () => {
+		const project = new ProjectDocument();
+		const first = project.addDiagram('system', 'One');
+		project.addDiagram('system', 'Two');
+		const names = () => project.diagrams().map((d) => d.name);
+		const copy = project.duplicateDiagram(first);
+		expect(project.diagram(copy)!.name).toBe('One copy');
+		project.duplicateDiagram(copy);
+		project.duplicateDiagram(first, ' Variant ');
+		expect(names()).toEqual(['One', 'Variant', 'One copy', 'One copy 2', 'Two']);
+		expect(() => project.duplicateDiagram('gone')).toThrow('Unknown diagram');
+	});
+
+	it('keeps the order of the tabs', () => {
+		vi.useFakeTimers();
+		try {
+			const project = new ProjectDocument();
+			const ids = ['One', 'Two', 'Three'].map((name) => {
+				vi.advanceTimersByTime(1000);
+				return project.addDiagram('system', name);
+			});
+			const names = () => project.diagrams().map((d) => d.name);
+			project.duplicateDiagram(ids[0]);
+			project.duplicateDiagram(ids[2]);
+			expect(names()).toEqual(['One', 'One copy', 'Two', 'Three', 'Three copy']);
+			const imported = ProjectDocument.fromFile(JSON.parse(JSON.stringify(project.toFile())));
+			expect(imported.diagrams().map((d) => d.name)).toEqual(names());
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('finds its place whatever the dates: equal, used up, malformed or ahead', () => {
+		const project = new ProjectDocument();
+		const [a, b, c] = ['A', 'B', 'C'].map((name) => project.addDiagram('system', name));
+		const names = () => project.diagrams().map((d) => d.name);
+		const stored = project.doc.getMap('diagrams') as never as {
+			get(id: string): { set(key: string, value: unknown): void };
+		};
+		for (const id of [a, b, c]) stored.get(id).set('createdAt', 5);
+		const [first, second, third] = names();
+		project.duplicateDiagram(project.diagrams()[0].id, 'copy');
+		expect(names()).toEqual([first, 'copy', second, third]);
+		for (let i = 0; i < 80; i++) project.duplicateDiagram(project.diagrams()[0].id, `c${i}`);
+		expect(names().slice(0, 3)).toEqual([first, 'c79', 'c78']);
+		expect(names().slice(-3)).toEqual(['copy', second, third]);
+
+		const last = project.diagrams().at(-1)!.id;
+		stored.get(last).set('createdAt', Date.now() + 1e9);
+		project.duplicateDiagram(last, 'ahead');
+		project.addDiagram('system', 'new');
+		expect(names().slice(-3)).toEqual([third, 'ahead', 'new']);
+	});
+
+	it('names a copy whatever the name', () => {
+		const project = new ProjectDocument();
+		const copyOf = (name: string) =>
+			project.diagram(project.duplicateDiagram(project.addDiagram('system', name)))!.name;
+		expect(copyOf('X copy 2')).toBe('X copy 3');
+		expect(copyOf('Budget copy 2024')).toBe('Budget copy 2025');
+		expect(copyOf('copy')).toBe('copy copy');
+		const blank = project.addDiagram('system');
+		(project.doc.getMap('diagrams') as never as Map<string, Map<string, unknown>>)
+			.get(blank)!
+			.set('name', '');
+		expect(project.diagram(project.duplicateDiagram(blank))!.name).toBe('copy 2');
+	});
+
+	it('is one undo step, apart from the edits around it', () => {
+		const { project, d } = mcd();
+		const copy = project.duplicateDiagram(d);
+		project.renameDiagram(copy, 'Variant');
+		project.undo();
+		expect(project.diagram(copy)!.name).toBe('Data copy');
+		project.undo();
+		expect(project.diagrams().map((x) => x.id)).toEqual([d]);
+		expect(project.nodes(d).length).toBeGreaterThan(0);
 	});
 });

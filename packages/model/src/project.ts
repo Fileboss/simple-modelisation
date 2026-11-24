@@ -307,11 +307,14 @@ export class ProjectDocument {
 	private readonly diagramMap: Y.Map<Fields>;
 	private readonly undoManager: Y.UndoManager;
 
-	constructor(doc: Y.Doc = new Y.Doc()) {
+	/** Without `undo`, nothing is tracked: what an edit replaces is freed at once (the server's use). */
+	constructor(doc: Y.Doc = new Y.Doc(), { undo = true }: { undo?: boolean } = {}) {
 		this.doc = doc;
 		this.meta = doc.getMap('meta');
 		this.diagramMap = doc.getMap('diagrams');
-		this.undoManager = new Y.UndoManager([this.meta, this.diagramMap]);
+		this.undoManager = new Y.UndoManager([this.meta, this.diagramMap], {
+			captureTransaction: () => undo
+		});
 	}
 
 	// Project
@@ -357,7 +360,7 @@ export class ProjectDocument {
 						: {})
 				};
 			})
-			.sort((a, b) => a.createdAt - b.createdAt);
+			.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
 	}
 
 	/**
@@ -402,12 +405,60 @@ export class ProjectDocument {
 			diagram.set('id', id);
 			diagram.set('kind', kind);
 			diagram.set('name', name.trim() || DEFAULT_DIAGRAM_NAMES[kind]);
-			diagram.set('createdAt', Date.now());
+			// After every other, even one made in this millisecond or by a peer whose clock is ahead.
+			diagram.set('createdAt', Math.max(Date.now(), (this.diagrams().at(-1)?.createdAt ?? 0) + 1));
 			diagram.set('nodes', new Y.Map<Fields>());
 			diagram.set('edges', new Y.Map<Fields>());
 			this.diagramMap.set(id, diagram);
 		});
 		return id;
+	}
+
+	/**
+	 * Adds a copy of a Diagram right after it, with elements of its own: what a paste
+	 * of them all takes. One undo step. Returns the copy's id.
+	 */
+	duplicateDiagram(id: string, name?: string): string {
+		const diagrams = this.diagrams();
+		const at = diagrams.findIndex((d) => d.id === id);
+		if (at === -1) throw new Error(`Unknown diagram ${id}`);
+		const original = diagrams[at];
+		const following = diagrams.slice(at + 1);
+		let copy = '';
+		this.undoManager.stopCapturing();
+		this.doc.transact(() => {
+			copy = this.addDiagram(
+				original.kind,
+				name?.trim() || copyName(original.name, new Set(diagrams.map((d) => d.name)))
+			);
+			const entry = this.requireDiagram(copy);
+			if (following.length > 0) {
+				// Tabs are in the order of creation: between the two, or, with no room left
+				// there, just after the original, moving those that follow as little as needed.
+				const middle = original.createdAt + (following[0].createdAt - original.createdAt) / 2;
+				const fits = middle > original.createdAt && middle < following[0].createdAt;
+				let last = fits ? middle : original.createdAt + 1;
+				entry.set('createdAt', last);
+				for (const d of following) {
+					if (d.createdAt > last) break;
+					this.requireDiagram(d.id).set('createdAt', ++last);
+				}
+			}
+			if (original.tidyDirection) entry.set('tidyDirection', original.tidyDirection);
+			// As stored: a paste checks and completes them.
+			const stored = (entries: Entries) => [...entries.values()].map((e) => e.toJSON());
+			this.paste(
+				copy,
+				{
+					nodes: stored(this.nodeMap(id)) as DiagramNode[],
+					edges: stored(this.edgeMap(id)) as DiagramEdge[]
+				},
+				0,
+				0
+			);
+		});
+		this.undoManager.stopCapturing();
+		return copy;
 	}
 
 	renameDiagram(id: string, name: string): void {
@@ -1456,6 +1507,16 @@ export class ProjectDocument {
 		if (!isReadableDiagram(id, diagram)) throw new Error(`Unknown diagram ${id}`);
 		return diagram;
 	}
+}
+
+/** `X copy`, then `X copy 2`…, counting on from a copy's own number: the first not taken. */
+function copyName(name: string, taken: Set<string>): string {
+	const [, base, isCopy, number] = /^(.*?)( copy(?: (\d{1,6}))?)?$/s.exec(name.trim())!;
+	const start = `${base} copy`.trim();
+	let rank = isCopy ? Number(number ?? 1) + 1 : 1;
+	const named = () => (rank === 1 ? start : `${start} ${rank}`);
+	while (taken.has(named())) rank++;
+	return named();
 }
 
 function roundedBox(box: { x: number; y: number; width: number; height: number }) {

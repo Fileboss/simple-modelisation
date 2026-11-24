@@ -42,9 +42,14 @@ export type ProjectAccess = {
 	write<T>(reference: string, change: (project: ProjectDocument) => T): Promise<T>;
 	/**
 	 * Runs `change` on a copy of a Shared Project, then applies all it did in
-	 * one transaction; when it throws, the Shared Project is left as it was.
+	 * one transaction; when it throws, or makes the Shared Project too big, it is
+	 * left as it was. `checkGrowth` throws once far too much was added, for a
+	 * change of many steps to stop early.
 	 */
-	writeCopy<T>(reference: string, change: (project: ProjectDocument) => Promise<T>): Promise<T>;
+	writeCopy<T>(
+		reference: string,
+		change: (project: ProjectDocument, checkGrowth: () => void) => Promise<T>
+	): Promise<T>;
 };
 
 export const projectArgument = z
@@ -75,7 +80,7 @@ export function createMcpHandler(options: Options) {
 		return instance.openDirectConnection(id, { agent: true });
 	};
 	const wrap = <T>(doc: Y.Doc, use: (project: ProjectDocument) => T): T => {
-		const project = new ProjectDocument(doc);
+		const project = new ProjectDocument(doc, { undo: false });
 		try {
 			return use(project);
 		} finally {
@@ -121,27 +126,37 @@ export function createMcpHandler(options: Options) {
 				const state = Y.encodeStateAsUpdate(doc);
 				checkSize(doc, state.byteLength);
 				const copy = new Y.Doc();
+				const checkCopy = () => {
+					const size = Y.encodeStateAsUpdate(copy).byteLength;
+					if (size <= maxDocumentBytes) return;
+					log(`refused mcp changes size: ${doc.name} ${size} bytes`);
+					throw new ToolError(
+						'These changes would make the Shared Project too big: none was applied.'
+					);
+				};
+				let added = 0;
 				let result: Awaited<ReturnType<typeof change>>;
 				let update: Uint8Array;
 				try {
 					Y.applyUpdate(copy, state);
 					const before = Y.encodeStateVector(copy);
-					const project = new ProjectDocument(copy);
+					copy.on('update', (bytes: Uint8Array) => (added += bytes.byteLength));
+					const project = new ProjectDocument(copy, { undo: false });
 					try {
-						result = await change(project);
+						result = await change(project, () => {
+							// Measured only once as much was written: an edit may replace another.
+							if (added <= maxDocumentBytes) return;
+							checkCopy();
+							added = 0;
+						});
 					} finally {
 						project.destroy();
 					}
+					// Many changes land at once: the size they reach counts, not only the one before.
+					checkCopy();
 					update = Y.encodeStateAsUpdate(copy, before);
 				} finally {
 					copy.destroy();
-				}
-				// Many operations land at once: the size they reach counts, not only the one before.
-				if (state.byteLength + update.byteLength > maxDocumentBytes) {
-					log(`refused mcp batch size: ${doc.name} ${state.byteLength + update.byteLength} bytes`);
-					throw new ToolError(
-						'These changes would make the Shared Project too big: none was applied.'
-					);
 				}
 				await connection.transact((target) => Y.applyUpdate(target, update));
 				return result;
