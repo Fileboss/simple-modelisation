@@ -1,12 +1,8 @@
 import { useCoarsePointer } from '../ui/media';
 import { strings } from '../ui/strings';
 
-/** The canvas gestures, under every palette. */
+/** The canvas gestures, in every palette's help. */
 export function GesturesHint() {
 	const coarsePointer = useCoarsePointer();
-	return (
-		<p className="palette-hint">
-			{coarsePointer ? strings.canvas.touchGestures : strings.canvas.gestures}
-		</p>
-	);
+	return <p>{coarsePointer ? strings.canvas.touchGestures : strings.canvas.gestures}</p>;
 }

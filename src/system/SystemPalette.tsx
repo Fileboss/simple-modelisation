@@ -1,6 +1,7 @@
 import { NOTE_ITEM } from '../canvas/palette-drag';
 import { PaletteItem } from '../canvas/PaletteItem';
 import { GesturesHint } from '../canvas/GesturesHint';
+import { HelpHeading } from '../ui/HelpHeading';
 import { strings } from '../ui/strings';
 import { COMPONENT_TYPES, ZONE_ITEM } from './catalog';
 import { GenericIcon } from './ComponentIcon';
@@ -8,7 +9,10 @@ import { GenericIcon } from './ComponentIcon';
 export function SystemPalette() {
 	return (
 		<aside className="palette">
-			<h2>{strings.system.palette}</h2>
+			<HelpHeading title={strings.system.palette}>
+				<p>{strings.system.paletteHint}</p>
+				<GesturesHint />
+			</HelpHeading>
 			{COMPONENT_TYPES.map((info) => (
 				<PaletteItem key={info.type} item={info.type}>
 					<GenericIcon type={info.type} color={info.color} />
@@ -25,8 +29,6 @@ export function SystemPalette() {
 				<span className="palette-note" aria-hidden="true" />
 				{strings.note.title}
 			</PaletteItem>
-			<p className="palette-hint">{strings.system.paletteHint}</p>
-			<GesturesHint />
 		</aside>
 	);
 }
