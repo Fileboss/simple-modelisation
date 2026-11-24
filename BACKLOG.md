@@ -18,7 +18,6 @@ tags: [backlog]
   - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
 
 - Model cleanups: edges() without reading every node again, pasteable once per paste, one bounding-box helper
-- MCP: fold set_skin, set_hosting, set_provider, set_runtime and set_disk_kind into set_component (fewer, clearer tools for agents; breaks agents calling the old ones, so before MCP use grows)
 - MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
 - Numbered steps on Connections (1, 2, 3), to read a journey through the system
 - A Job Component type (cron, batch, worker)
@@ -36,6 +35,7 @@ tags: [backlog]
 
 ## Done
 
+- mcp-fold-set-component: set_skin, set_hosting, set_provider, set_runtime and set_disk_kind become fields of set_component (37 to 32 MCP tools)
 - [duplicate-diagram](docs/specs/duplicate-diagram/): duplicate a Diagram, from its tab, the phone menu and over MCP
 - [sql-constraints](docs/specs/sql-constraints/): UNIQUE, CHECK, named foreign keys and COMMENT ON, in the panel, the SQL and over MCP
 - [mcp-batch-attributes](docs/specs/mcp-batch-attributes/): set_attribute, remove_attribute, delete_diagram, export_project and an all-or-nothing batch over MCP

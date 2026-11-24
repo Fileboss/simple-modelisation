@@ -1,4 +1,4 @@
-import { isPerson } from '@simple-modelisation/model/component-types.ts';
+import { isPerson, type ComponentType } from '@simple-modelisation/model/component-types.ts';
 import { dataType, isDataType, type DataType } from '@simple-modelisation/model/data-types.ts';
 import {
 	CARDINALITIES,
@@ -14,6 +14,10 @@ import {
 	PROVIDERS,
 	RUNTIMES,
 	type Attribute,
+	type DiskKind,
+	type Hosting,
+	type Provider,
+	type Runtime,
 	ZONE_DEFAULT,
 	ZONE_PADDING,
 	type DiagramNode,
@@ -313,15 +317,55 @@ function addAttributes(
 	}
 }
 
-/** Why a Skin is refused, listing the ones the type offers; a Disk offers none. */
-function skinRefusal(skin: string, offered: readonly string[], what: string): string {
-	const products = offered.filter((id) => id !== 'generic');
-	if (products.length === 0) return `${what[0].toUpperCase()}${what.slice(1)} takes no Skin.`;
+/** Why a type refuses a Skin, listing the ones it offers; a Disk offers none. */
+function skinRefusal(skin: string, type: ComponentType): string {
+	const offered: readonly string[] = SKIN_IDS[type];
+	if (offered.length === 0) return `A ${type} takes no Skin.`;
 	// Runtimes were Service Skins once: point an agent that remembers them to the right field.
-	const runtime = (RUNTIMES as readonly string[]).includes(skin)
-		? ` "${skin}" is a service's runtime: set it with runtime or set_runtime.`
-		: '';
-	return `No "${skin}" Skin for ${what}.${runtime} Skins: ${offered.join(', ')}.`;
+	const runtime =
+		type === 'service' && (RUNTIMES as readonly string[]).includes(skin)
+			? ` "${skin}" is a service's runtime: set it with runtime.`
+			: '';
+	return `No "${skin}" Skin for a ${type}.${runtime} Skins: ${['generic', ...offered].join(', ')}.`;
+}
+
+/** `none` clears a field. */
+const orNull = <T extends string>(value: T | 'none') => (value === 'none' ? null : value);
+
+/** What shows on a Component beyond its type and name. */
+type Look = {
+	skin?: string;
+	runtime?: Runtime | 'none';
+	hosting?: Hosting | 'none';
+	provider?: Provider | 'none';
+	disk_kind?: DiskKind | 'none';
+};
+
+/** Refuses what a Component of this type does not take, before anything is written. */
+function requireLook(type: ComponentType, look: Look) {
+	// Clearing is harmless: an agent resetting every Component must not stop at a Person.
+	const gives = (value?: string) => Boolean(value) && value !== 'none';
+	const { skin } = look;
+	if (skin && skin !== 'generic' && !skinFits(type, skin)) {
+		throw new ToolError(skinRefusal(skin, type));
+	}
+	if (gives(look.disk_kind) && type !== 'disk') {
+		throw new ToolError('Only a disk has a disk_kind.');
+	}
+	if (gives(look.runtime) && type !== 'service') {
+		throw new ToolError('Only a service has a runtime.');
+	}
+	if (gives(look.hosting) && isPerson(type)) throw new ToolError('A person has no hosting.');
+	if (gives(look.provider) && isPerson(type)) throw new ToolError('A person has no provider.');
+}
+
+function applyLook(project: ProjectDocument, diagramId: string, id: string, look: Look) {
+	const { skin, runtime, hosting, provider, disk_kind: diskKind } = look;
+	if (skin) project.setSkin(diagramId, id, skin === 'generic' ? null : skin);
+	if (runtime) project.setRuntime(diagramId, id, orNull(runtime));
+	if (hosting) project.setHosting(diagramId, id, orNull(hosting));
+	if (provider) project.setProvider(diagramId, id, orNull(provider));
+	if (diskKind) project.setDiskKind(diagramId, id, orNull(diskKind));
 }
 
 /** The write tools: each call is one transaction that open browsers receive live. */
@@ -380,17 +424,11 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.describe('For a disk (physical storage attached to a machine): hdd, ssd, nvme or usb.'),
 			zone: zoneArgument.optional().describe('Zone id or exact name to place the Component in.')
 		},
-		({ project, diagram, type, name, skin, runtime, hosting, provider, disk_kind, zone }) =>
+		({ project, diagram, type, name, zone, ...look }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
-				if (skin && !skinFits(type, skin)) {
-					throw new ToolError(skinRefusal(skin, SKIN_IDS[type], `a ${type}`));
-				}
 				// Checked before anything is drawn: a refused call leaves the Diagram as it was.
-				if (disk_kind && type !== 'disk') throw new ToolError('Only a disk has a disk_kind.');
-				if (runtime && type !== 'service') throw new ToolError('Only a service has a runtime.');
-				if (isPerson(type) && hosting) throw new ToolError('A person has no hosting.');
-				if (isPerson(type) && provider) throw new ToolError('A person has no provider.');
+				requireLook(type, look);
 				const zoneId = zone ? pick(nodesOf(p, d.id, 'zone'), zone, 'zone').id : undefined;
 				const size = estimatedSize({
 					id: '',
@@ -399,17 +437,13 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					y: 0,
 					name,
 					componentType: type,
-					skin,
-					runtime,
-					diskKind: disk_kind
+					skin: look.skin && look.skin !== 'generic' ? look.skin : null,
+					runtime: look.runtime,
+					diskKind: look.disk_kind
 				});
 				const { x, y } = placeNew(p, d.id, size, zoneId);
 				const id = p.addComponent(d.id, type, name, x, y);
-				if (skin) p.setSkin(d.id, id, skin);
-				if (runtime) p.setRuntime(d.id, id, runtime);
-				if (hosting) p.setHosting(d.id, id, hosting);
-				if (provider) p.setProvider(d.id, id, provider);
-				if (disk_kind) p.setDiskKind(d.id, id, disk_kind);
+				applyLook(p, d.id, id, look);
 				return { id };
 			})
 	);
@@ -459,7 +493,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					'zone'
 				) as ZoneNode;
 				if (name) p.renameNode(d.id, target.id, name);
-				if (provider) p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
+				if (provider) p.setProvider(d.id, target.id, orNull(provider));
 				const to = { x: x ?? target.x, y: y ?? target.y };
 				if (to.x !== target.x || to.y !== target.y) {
 					const dx = Math.round(to.x) - target.x;
@@ -485,13 +519,37 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 	tool(
 		'set_component',
-		'Changes a Component in place, keeping its id and Connections: its type (a Skin the new type lacks goes back to generic; becoming or leaving person drops hosting and provider), its name, and its place: x and y, or a zone to move it into (after its content, the Zone growing), or zone "none" to move it out of every Zone. Give a position or a zone, not both.',
+		'Changes a Component in place, keeping its id and Connections; fields left out stay as they are, but a new type drops what it does not take: a Skin it lacks, the runtime off service, the disk_kind off disk, hosting and provider to or from person. Its place: x and y, or a zone to move it into (after its content, the Zone growing), or zone "none" to move it out of every Zone; a position or a zone, not both.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
 			component: z.string().describe('Component id or exact name.'),
 			type: componentTypeArgument.optional(),
 			name: name().optional(),
+			skin: z
+				.string()
+				.optional()
+				.describe(
+					'A product or framework its type offers (a refusal lists them), or "generic". What runs a service is its runtime.'
+				),
+			runtime: z
+				.enum([...RUNTIMES, 'none'])
+				.optional()
+				.describe(`Services only. ${runtimeArgument.description} "none" clears it.`),
+			hosting: z
+				.enum([...HOSTINGS, 'none'])
+				.optional()
+				.describe(`${hostingArgument.description} "none" clears it.`),
+			provider: z
+				.enum([...PROVIDERS, 'none'])
+				.optional()
+				.describe(
+					'Whose infrastructure the Component runs on, with any Hosting. "none" clears it: it then takes the Provider of its Zone if any.'
+				),
+			disk_kind: z
+				.enum([...DISK_KINDS, 'none'])
+				.optional()
+				.describe('Disks only. "none" clears it.'),
 			x: z.number().optional(),
 			y: z.number().optional(),
 			zone: z
@@ -499,14 +557,22 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.optional()
 				.describe('Zone id or exact name, or "none" for outside every Zone.')
 		},
-		({ project, diagram, component, type, name, x, y, zone }) =>
+		({ project, diagram, component, type, name, x, y, zone, ...look }) =>
 			access.write(project, (p) => {
 				// Checked before anything changes: a refused call leaves the Diagram as it was.
 				if (zone !== undefined && (x !== undefined || y !== undefined)) {
 					throw new ToolError('Give a position or a zone, not both.');
 				}
+				// Not a success that did nothing: a misnamed field would go unnoticed.
+				if ([type, name, x, y, zone, ...Object.values(look)].every((v) => v === undefined)) {
+					throw new ToolError(
+						'Give what to change: type, name, skin, runtime, hosting, provider, disk_kind, x, y or zone.'
+					);
+				}
 				const d = pickDiagram(p, diagram, 'system');
 				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
+				// With the type the call gives: a new type and what goes with it come together.
+				requireLook(type ?? (target.componentType as ComponentType), look);
 				const zones = nodesOf(p, d.id, 'zone');
 				// A Zone really named "none" wins over the "outside every Zone" meaning.
 				const outside = zone === 'none' && !zones.some((z) => z.id === zone || z.name === zone);
@@ -515,18 +581,30 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 
 				if (type) p.setComponentType(d.id, target.id, type);
 				if (name) p.renameNode(d.id, target.id, name);
-				const current = () => p.nodes(d.id).find((n) => n.id === target.id)!;
+				applyLook(p, d.id, target.id, look);
 
 				if (x !== undefined || y !== undefined) {
 					p.moveNode(d.id, target.id, x ?? target.x, y ?? target.y);
-				} else if (zoneId || outside) {
-					// Already where asked: nothing moves, so its routes stay.
-					if ((outside ? undefined : zoneId) === parentBefore) return { id: target.id };
-					const spot = placeNew(p, d.id, estimatedSize(current()), zoneId, target.id);
-					p.moveNode(d.id, target.id, spot.x, spot.y);
-				} else if (parentBefore) {
-					// A new name or type changes the box: its Zone grows rather than lose it.
-					growToHold(p, d.id, parentBefore, nodeBox(current(), estimatedSize), target.id);
+					return { id: target.id };
+				}
+				const nodes = nodesOf(p, d.id);
+				const now = nodes.find((n) => n.id === target.id)!;
+				const [was, size] = [estimatedSize(target), estimatedSize(now)];
+				const isBigger = size.width > was.width || size.height > was.height;
+				if (zoneId || outside) {
+					// Where it lies with its new box: a smaller one may fit in a Zone it overflowed, a
+					// bigger one overflow the Zone it is asked to stay in, which grows instead.
+					const parent = zoneParents(nodes, estimatedSize).get(target.id);
+					const stays = zoneId === parent || (isBigger && zoneId === parentBefore && zoneId);
+					if (!stays) {
+						const spot = placeNew(p, d.id, size, zoneId, target.id);
+						p.moveNode(d.id, target.id, spot.x, spot.y);
+						return { id: target.id };
+					}
+				}
+				// Not moved, so its routes stay: its Zone grows rather than lose it.
+				if (parentBefore && isBigger && !outside) {
+					growToHold(p, d.id, parentBefore, nodeBox(now, estimatedSize), target.id);
 				}
 				return { id: target.id };
 			})
@@ -588,113 +666,7 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 					throw new ToolError(`No connection "${connection}". Known: ${known || 'none'}.`);
 				}
 				if (label !== undefined) p.setEdgeLabel(d.id, target.id, label);
-				if (flow) p.setConnectionFlow(d.id, target.id, flow === 'none' ? null : flow);
-				return { id: target.id };
-			})
-	);
-
-	tool(
-		'set_skin',
-		'Gives a Component the look of a product or a framework, or the generic look with "generic". What runs a service is its runtime (set_runtime), not a Skin.',
-		{
-			project: projectArgument,
-			diagram: diagramArgument,
-			component: z.string().describe('Component id or exact name.'),
-			skin: z.string()
-		},
-		({ project, diagram, component, skin }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram, 'system');
-				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
-				if (skin !== 'generic' && !skinFits(String(target.componentType), skin)) {
-					// A Component from an older file may have a type the catalog does not know.
-					const skins: readonly string[] =
-						SKIN_IDS[target.componentType as keyof typeof SKIN_IDS] ?? [];
-					throw new ToolError(skinRefusal(skin, ['generic', ...skins], 'this Component'));
-				}
-				p.setSkin(d.id, target.id, skin === 'generic' ? null : skin);
-				return { id: target.id };
-			})
-	);
-
-	tool(
-		'set_hosting',
-		'Says where a Component runs (bare-metal, vm, docker, kubernetes, managed, serverless, external), or clears it with "none".',
-		{
-			project: projectArgument,
-			diagram: diagramArgument,
-			component: z.string().describe('Component id or exact name.'),
-			hosting: z.enum([...HOSTINGS, 'none'])
-		},
-		({ project, diagram, component, hosting }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram, 'system');
-				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
-				// Clearing is harmless: an agent resetting every Component must not stop at a Person.
-				if (isPerson(target.componentType) && hosting !== 'none') {
-					throw new ToolError('A person has no hosting.');
-				}
-				p.setHosting(d.id, target.id, hosting === 'none' ? null : hosting);
-				return { id: target.id };
-			})
-	);
-
-	tool(
-		'set_provider',
-		`Says whose infrastructure a Component runs on (${PROVIDERS.join(', ')}), or clears it with "none", after which it takes its Zone's Provider if any. It goes with any Hosting.`,
-		{
-			project: projectArgument,
-			diagram: diagramArgument,
-			component: z.string().describe('Component id or exact name.'),
-			provider: z.enum([...PROVIDERS, 'none'])
-		},
-		({ project, diagram, component, provider }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram, 'system');
-				const target = pick(nodesOf(p, d.id, 'component'), component, 'component');
-				if (isPerson(target.componentType) && provider !== 'none') {
-					throw new ToolError('A person has no provider.');
-				}
-				p.setProvider(d.id, target.id, provider === 'none' ? null : provider);
-				return { id: target.id };
-			})
-	);
-
-	tool(
-		'set_disk_kind',
-		'Says what a disk is (hdd, ssd, nvme, usb), or clears it with "none".',
-		{
-			project: projectArgument,
-			diagram: diagramArgument,
-			disk: z.string().describe('Disk id or exact name.'),
-			kind: z.enum([...DISK_KINDS, 'none'])
-		},
-		({ project, diagram, disk, kind }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram, 'system');
-				const target = pick(nodesOf(p, d.id, 'component'), disk, 'component');
-				if (target.componentType !== 'disk') throw new ToolError('Only a disk has a kind.');
-				p.setDiskKind(d.id, target.id, kind === 'none' ? null : kind);
-				return { id: target.id };
-			})
-	);
-
-	tool(
-		'set_runtime',
-		`Says what runs a service's code (${RUNTIMES.join(', ')}), or clears it with "none". It shows as the service's logo without a Skin, else as a badge beside it.`,
-		{
-			project: projectArgument,
-			diagram: diagramArgument,
-			service: z.string().describe('Service id or exact name.'),
-			runtime: z.enum([...RUNTIMES, 'none'])
-		},
-		({ project, diagram, service, runtime }) =>
-			access.write(project, (p) => {
-				const d = pickDiagram(p, diagram, 'system');
-				const target = pick(nodesOf(p, d.id, 'component'), service, 'component');
-				if (target.componentType !== 'service')
-					throw new ToolError('Only a service has a runtime.');
-				p.setRuntime(d.id, target.id, runtime === 'none' ? null : runtime);
+				if (flow) p.setConnectionFlow(d.id, target.id, orNull(flow));
 				return { id: target.id };
 			})
 	);
