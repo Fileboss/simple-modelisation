@@ -1,4 +1,4 @@
-import { Handle, NodeToolbar, Position, useStore, type NodeProps } from '@xyflow/react';
+import { Handle, NodeToolbar, Position, useNodesStore, type NodeProps } from '@xyflow/react';
 import type { ReactNode } from 'react';
 import { useCanvas } from '../canvas/canvas-context';
 import { inheritedProvider } from './inherited-provider';
@@ -80,7 +80,7 @@ function SoftwareNode({ id, data, selected }: NodeProps) {
 		provider &&
 		`${strings.provider.title}: ${provider.label}` +
 			(!component.provider && inherited ? ` (${strings.provider.from(inherited.zone)})` : '');
-	const selectedCount = useStore((state) => {
+	const selectedCount = useNodesStore((state) => {
 		let count = 0;
 		for (const node of state.nodeLookup.values()) if (node.selected) count++;
 		return count;

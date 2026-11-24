@@ -2,22 +2,21 @@ import { pasteable } from '@simple-modelisation/model/project.ts';
 import { twinPositions, type TwinPosition } from '@simple-modelisation/model/mcd-drawing.ts';
 import { NotePanel } from './NoteNode';
 import {
-	applyEdgeChanges,
-	applyNodeChanges,
 	Background,
 	ConnectionMode,
 	PanOnScrollMode,
 	ControlButton,
 	Controls,
+	NodeChangeset,
 	ReactFlow,
 	ReactFlowProvider,
+	useOptionsStore,
 	useReactFlow,
-	useStore,
+	useViewportStore,
 	type Edge,
-	type EdgeChange,
+	type EdgeChangeset,
 	type EdgeTypes,
 	type Node,
-	type NodeChange,
 	type NodeTypes,
 	ViewportPortal
 } from '@xyflow/react';
@@ -462,14 +461,14 @@ function Canvas({ project, diagram, kind }: Props) {
 
 	const { snapChanges } = snapping;
 	const onNodesChange = useCallback(
-		(changes: NodeChange[]) => {
-			const snapped = snapChanges(changes);
-			setNodes((current) => applyNodeChanges(snapped, current));
+		(changes: NodeChangeset) => {
+			const snapped = new NodeChangeset(snapChanges(changes.toArray()));
+			setNodes((current) => snapped.applyTo(current));
 		},
 		[setNodes, snapChanges]
 	);
 	const onEdgesChange = useCallback(
-		(changes: EdgeChange[]) => setEdges((current) => applyEdgeChanges(changes, current)),
+		(changes: EdgeChangeset) => setEdges((current) => changes.applyTo(current)),
 		[setEdges]
 	);
 
@@ -954,6 +953,10 @@ function Canvas({ project, diagram, kind }: Props) {
 						zoomOnPinch
 						fitView={frameOnOpen}
 						fitViewOptions={{ maxZoom: 1 }}
+						// As the rest of the app, whatever the system's color mode.
+						forceColorMode="light"
+						// A selected edge stays under the boxes.
+						elevateEdgesOnSelect={false}
 						proOptions={{ hideAttribution: true }}
 					>
 						<Background gap={16} />
@@ -1125,8 +1128,8 @@ function SideToggle({ side, open, onToggle, selected }: SideToggleProps) {
  * screen).
  */
 function ZoomVariable() {
-	const zoom = useStore((s) => s.transform[2]);
-	const domNode = useStore((s) => s.domNode);
+	const zoom = useViewportStore((s) => s.transform[2]);
+	const domNode = useOptionsStore((s) => s.domNode);
 	useEffect(() => {
 		domNode?.style.setProperty('--zoom', String(zoom));
 	}, [domNode, zoom]);
