@@ -32,6 +32,7 @@ tags: [backlog]
 
 ## Done
 
+- [mcd-show-types](docs/specs/mcd-show-types/): a switch showing the PostgreSQL types in the boxes of an MCD, in grey italics, also over MCP
 - json-blob-types: JSON and Blob Data types for the Attributes of an MCD, JSONB and BYTEA in PostgreSQL, also over MCP
 - [connection-anchors](docs/specs/connection-anchors/): the ends of a Connection moved between 12 Anchors per Component, or to another Component, in the app, the images and over MCP
 - [connection-labels](docs/specs/connection-labels/): Connection labels moved along their line and wrapped, in the app, the images and over MCP

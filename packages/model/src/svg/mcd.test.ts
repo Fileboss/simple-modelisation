@@ -55,6 +55,42 @@ describe('mcdSvg in Merise', () => {
 		expect(svg).toMatch(/>grade<\/text>/);
 	});
 
+	it('shows the PostgreSQL types when asked to, in grey italics beside the names', () => {
+		const { project, d } = mcd();
+		const takes = project.nodes(d).find((n) => n.type === 'association')!;
+		const [grade] = takes.attributes as { id: string }[];
+		project.setAttributeType(d, takes.id, grade.id, { kind: 'decimal', precision: 4, scale: 1 });
+		const nodes = project.nodes(d);
+		const edges = project.edges(d);
+		expect(draw(nodes, edges)).not.toContain('SERIAL');
+		const options = { names: ENGLISH_NAMES, types: true };
+		const svg = mcdSvg(nodes, edges, { ...options, notation: 'merise' });
+		// Only the Identifier's name is underlined.
+		expect(svg).toMatch(/text-decoration="underline"[^>]*>id<\/text>/);
+		expect(svg).toMatch(
+			/font-style="italic" fill="#555"[^>]*text-anchor="end"[^>]*>SERIAL<\/text>/
+		);
+		expect(svg).toMatch(
+			/<tspan>grade<\/tspan><tspan [^>]*font-style="italic" fill="#555">NUMERIC\(4,1\)<\/tspan>/
+		);
+		expect(mcdSvg(nodes, edges, { ...options, notation: 'uml' })).toBe(
+			mcdSvg(nodes, edges, { names: ENGLISH_NAMES, notation: 'uml' })
+		);
+	});
+
+	it('never narrows typed lines: their box has room for them, and a guess would distort them', () => {
+		const { nodes, edges } = mcd();
+		const svg = mcdSvg(nodes, edges, {
+			notation: 'merise',
+			types: true,
+			names: ENGLISH_NAMES,
+			// As narrow as a browser may measure a short line.
+			measured: () => ({ width: 120, height: 72 })
+		});
+		expect(svg).toContain('>email</text>');
+		expect(svg).not.toMatch(/textLength[^>]*>(email|grade|TEXT|<tspan)/);
+	});
+
 	it('writes each Leg’s Cardinality, R in bold for a relative one', () => {
 		const project = new ProjectDocument();
 		const d = project.addDiagram('mcd');

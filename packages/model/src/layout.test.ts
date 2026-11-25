@@ -52,6 +52,50 @@ describe('arrange', () => {
 	});
 });
 
+describe('estimatedSize of an MCD box', () => {
+	const box = (type: 'entity' | 'association') => ({
+		id: 'n',
+		type,
+		x: 0,
+		y: 0,
+		name: 'N',
+		attributes: [
+			{
+				id: 'a',
+				name: 'a rather long name',
+				identifier: false,
+				type: { kind: 'decimal', precision: 10, scale: 2 },
+				optional: false
+			}
+		]
+	});
+
+	it('counts the types only when the image draws them', () => {
+		for (const type of ['entity', 'association'] as const) {
+			const plain = estimatedSize(box(type), 'merise');
+			const typed = estimatedSize(box(type), 'merise-typed');
+			// NUMERIC(10,2) and the gap before it; the lines are as many.
+			expect(typed.width - plain.width).toBeGreaterThan(12 + 70);
+			expect(typed.height).toBe(plain.height);
+		}
+	});
+
+	it('leaves room for a name in capitals', () => {
+		const node = box('association');
+		const sized = (name: string) =>
+			estimatedSize({ ...node, attributes: [{ ...node.attributes[0], name }] }, 'merise-typed');
+		expect(sized('EMPLOYEE_NUMBER').width - sized('employee_number').width).toBeGreaterThan(25);
+	});
+
+	it('reserves the room of the types for Tidy up, shown or not', () => {
+		for (const type of ['entity', 'association'] as const) {
+			expect(estimatedSize(box(type)).width).toBeGreaterThanOrEqual(
+				estimatedSize(box(type), 'merise-typed').width
+			);
+		}
+	});
+});
+
 describe('layoutDiagram', () => {
 	it('lays a System design flow out from left to right, without overlap', async () => {
 		const project = new ProjectDocument();

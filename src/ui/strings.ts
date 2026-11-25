@@ -245,6 +245,7 @@ export const strings = {
 		palette: 'MCD',
 		notation: 'Notation',
 		notations: { merise: 'Merise', uml: 'UML' },
+		showTypes: 'PostgreSQL types',
 		tidyDirection: 'Tidy up',
 		tidyDirections: { horizontal: 'Horizontal', vertical: 'Vertical' },
 		entity: 'Entity',

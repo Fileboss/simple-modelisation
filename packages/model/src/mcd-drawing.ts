@@ -1,6 +1,7 @@
-import type { DataType, DataTypeKind } from './data-types.ts';
+import { dataType, type DataType, type DataTypeKind } from './data-types.ts';
 import { borderPoint, center, drawnRoute, routedPath, type Box } from './geometry.ts';
 import type { Size } from './layout.ts';
+import { postgresType } from './sql/postgres.ts';
 import type {
 	Attribute,
 	Cardinality,
@@ -43,6 +44,20 @@ export function umlAttribute(attribute: Attribute, kinds: Record<DataTypeKind, s
 	const flags = `${attribute.identifier ? ' {id}' : ''}${attribute.optional ? ' [0..1]' : ''}`;
 	return `${attribute.name} : ${dataTypeLabel(attribute.type, kinds)}${flags}`;
 }
+
+/** The PostgreSQL type Merise shows beside an Attribute when types are shown. */
+export const shownType = (attribute: Pick<Attribute, 'type'>) =>
+	postgresType(attribute.type ?? dataType('text'));
+
+/** Between a name and its type, at least. */
+export const TYPE_GAP = 12;
+
+/** Roughly how wide a shown type is, 12px italic: mostly capitals, wider than names. */
+export const typeWidth = (type: string) =>
+	[...type].reduce(
+		(width, char) => width + (/[A-Z]/.test(char) ? 8.2 : /\d/.test(char) ? 6.7 : 3.7),
+		0
+	);
 
 /** UML's words for an Inheritance's constraint, beside the generalisation's triangle. */
 export const UML_CONSTRAINTS: Record<Exclude<InheritanceConstraint, 'none'>, string> = {

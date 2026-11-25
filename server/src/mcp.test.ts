@@ -749,6 +749,9 @@ describe('MCP endpoint', () => {
 		const [uml] = await images({ project: id, diagram: 'Data', notation: 'uml' });
 		expect(uml).not.toContain('fill="#fdd77d"');
 		expect(uml).toContain('>email : Text(120)</text>');
+		expect(merise).not.toContain('VARCHAR');
+		const [typed] = await images({ project: id, diagram: 'Data', types: true });
+		expect(typed).toContain('>VARCHAR(120)</text>');
 		const both = await images({ project: id, notation: 'uml' });
 		expect(both).toHaveLength(2);
 		expect(both.some((svg) => svg.includes('>API</text>'))).toBe(true);

@@ -1,5 +1,5 @@
 {
-  "item": "json-blob-types",
+  "item": "mcd-show-types",
   "phase": "commit",
-  "quick": true
+  "quick": false
 }

@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useCanvas } from '../canvas/canvas-context';
 import { EditableText } from '../canvas/EditableText';
+import { shownType } from '@simple-modelisation/model/mcd-drawing.ts';
 import type {
 	AssociationNode as AssociationData,
 	Attribute,
@@ -9,6 +10,7 @@ import type {
 import {
 	umlAttribute,
 	useNotation,
+	useTypesShown,
 	type AssociationClassSide,
 	type NaryAssociation
 } from './notation';
@@ -142,15 +144,25 @@ type AttributeListProps = { nodeId: string; attributes: Attribute[]; isUml: bool
 
 function AttributeList({ nodeId, attributes, isUml }: AttributeListProps) {
 	const { project, diagramId } = useCanvas();
+	const typed = useTypesShown(diagramId) && !isUml;
 	return (
 		<div className="attributes">
 			{attributes.map((attribute) => (
 				<EditableText
 					key={attribute.id}
-					className={!isUml && attribute.identifier ? 'attribute identifier' : 'attribute'}
+					className={`attribute ${!isUml && attribute.identifier ? 'identifier' : ''} ${typed ? 'typed' : ''}`}
 					value={attribute.name}
-					// In UML the line also shows the type; double-click still edits the name.
-					display={isUml ? umlAttribute(attribute) : undefined}
+					// A line that also shows the type still edits the name on a double-click.
+					display={
+						isUml ? (
+							umlAttribute(attribute)
+						) : typed ? (
+							<>
+								<span className="attribute-name">{attribute.name}</span>{' '}
+								<span className="attribute-type">{shownType(attribute)}</span>
+							</>
+						) : undefined
+					}
 					onChange={(name) => project.renameAttribute(diagramId, nodeId, attribute.id, name)}
 				/>
 			))}

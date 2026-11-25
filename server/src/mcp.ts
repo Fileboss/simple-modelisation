@@ -216,6 +216,12 @@ export function createMcpHandler(options: Options) {
 					.describe(
 						"How MCDs are drawn: Merise (Looping's style, the default) or UML class diagram; ignored for System design diagrams."
 					),
+				types: z
+					.boolean()
+					.optional()
+					.describe(
+						"Show each Attribute's PostgreSQL type beside it in Merise (default false); ignored in UML, which always writes the Data types, and on System design diagrams."
+					),
 				legend: z
 					.boolean()
 					.optional()
@@ -223,9 +229,9 @@ export function createMcpHandler(options: Options) {
 						'Draw a Legend under a System design diagram naming its Flows, Providers, Hostings and Runtimes (default true); MCDs have none.'
 					)
 			},
-			async ({ project, diagram, legend, notation }) => {
+			async ({ project, diagram, legend, notation, types }) => {
 				const { images, empty } = await access.read(project, (p) =>
-					exportDiagrams(p, diagram, { legend, notation })
+					exportDiagrams(p, diagram, { legend, notation, types })
 				);
 				const note = [
 					images.length
