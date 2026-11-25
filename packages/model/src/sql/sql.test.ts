@@ -600,6 +600,18 @@ describe('PostgreSQL script', () => {
 		);
 	});
 
+	it('writes JSON as JSONB and a Blob as BYTEA', () => {
+		const m = mcd();
+		m.entity('File', [
+			['metadata', { kind: 'json' }],
+			['content', { kind: 'blob' }]
+		]);
+		expect(mldText(m.mld())).toBe('file = (id SERIAL, metadata JSONB, content BYTEA);');
+		expect(postgresScript(m.mld(), 'MCD')).toContain(
+			'   metadata JSONB NOT NULL,\n   content BYTEA NOT NULL,\n'
+		);
+	});
+
 	it('adds the foreign keys of a reference cycle after the tables', () => {
 		const m = mcd();
 		const a = m.entity('A');

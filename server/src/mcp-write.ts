@@ -109,7 +109,7 @@ const cardinality = z
 const typeArgument = z
 	.string()
 	.describe(
-		'Data type: integer, bigint, decimal(p,s), text, text(n), boolean, date, datetime, uuid or serial (auto-increment). Default text.'
+		'Data type: integer, bigint, decimal(p,s), text, text(n), boolean, date, datetime, uuid, json (JSONB), blob (BYTEA) or serial (auto-increment). Default text.'
 	);
 const checkText = z
 	.string()
@@ -175,7 +175,11 @@ export function parseDataType(text: string): DataType {
 					? dataType('serial')
 					: kind === 'timestamp'
 						? dataType('datetime')
-						: { kind };
+						: kind === 'jsonb'
+							? dataType('json')
+							: kind === 'bytea' || kind === 'binary'
+								? dataType('blob')
+								: { kind };
 	if (!isDataType(type)) throw new ToolError(`Unknown Data type "${text}".`);
 	return type;
 }

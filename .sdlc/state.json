@@ -1,5 +1,5 @@
 {
-  "item": "connection-anchors",
+  "item": "json-blob-types",
   "phase": "commit",
-  "quick": false
+  "quick": true
 }

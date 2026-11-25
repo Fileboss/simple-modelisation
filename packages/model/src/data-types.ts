@@ -12,6 +12,8 @@ export type DataType =
 	| { kind: 'date' }
 	| { kind: 'datetime' }
 	| { kind: 'uuid' }
+	| { kind: 'json' }
+	| { kind: 'blob' }
 	| { kind: 'serial' };
 
 export type DataTypeKind = DataType['kind'];
@@ -26,6 +28,8 @@ export const DATA_TYPE_KINDS: readonly DataTypeKind[] = [
 	'date',
 	'datetime',
 	'uuid',
+	'json',
+	'blob',
 	'serial'
 ];
 
