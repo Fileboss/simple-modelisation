@@ -21,6 +21,10 @@ export function postgresType(type: DataType): string {
 			return 'TIMESTAMP';
 		case 'uuid':
 			return 'UUID';
+		case 'json':
+			return 'JSONB';
+		case 'blob':
+			return 'BYTEA';
 		case 'serial':
 			return 'SERIAL';
 	}

@@ -123,7 +123,7 @@ A named property of an Entity or an Association.
 _Avoid_: Field, column
 
 **Data type**:
-The conceptual type of an Attribute (Integer, Text, Date, Auto-increment…), independent of any database; each SQL target translates it.
+The conceptual type of an Attribute (Integer, Text, Date, JSON, Blob, Auto-increment…), independent of any database; each SQL target translates it.
 _Avoid_: Column type, SQL type
 
 **Identifier**:

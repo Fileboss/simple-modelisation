@@ -1140,6 +1140,9 @@ describe('MCP helpers', () => {
 		expect(parseDataType('auto-increment')).toEqual({ kind: 'serial' });
 		expect(parseDataType('varchar')).toEqual({ kind: 'varchar', length: 255 });
 		expect(parseDataType('numeric(8)')).toEqual({ kind: 'decimal', precision: 8, scale: 0 });
+		for (const text of ['json', 'JSONB']) expect(parseDataType(text)).toEqual({ kind: 'json' });
+		for (const text of ['blob', 'bytea', 'Binary'])
+			expect(parseDataType(text)).toEqual({ kind: 'blob' });
 		expect(() => parseDataType('money')).toThrow('Unknown Data type "money".');
 	});
 

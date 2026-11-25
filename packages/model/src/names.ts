@@ -70,6 +70,8 @@ export const ENGLISH_NAMES: {
 		date: 'Date',
 		datetime: 'Date time',
 		uuid: 'UUID',
+		json: 'JSON',
+		blob: 'Blob',
 		serial: 'Auto-increment'
 	},
 	titles: { flow: 'Flow', hosting: 'Hosting', provider: 'Provider', runtime: 'Runtime' }

@@ -640,6 +640,8 @@ const TYPE_CHARS: Record<DataTypeKind, number> = {
 	date: 4,
 	datetime: 9,
 	uuid: 4,
+	json: 4,
+	blob: 4,
 	serial: 14
 };
 
