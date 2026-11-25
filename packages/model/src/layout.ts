@@ -2,7 +2,7 @@ import { withoutAreas } from './areas.ts';
 import { isPerson } from './component-types.ts';
 import type { ElkNode } from 'elkjs/lib/elk-api.js';
 import type { DataTypeKind } from './data-types.ts';
-import type { Notation } from './mcd-drawing.ts';
+import { shownType, TYPE_GAP, typeWidth, type Notation } from './mcd-drawing.ts';
 import type {
 	Attribute,
 	DiagramEdge,
@@ -629,6 +629,10 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 // Rough text widths of the canvas fonts, per character.
 const CHAR = { title: 9, line: 7.2 };
 
+/** A name with a type after it: too little room would run one into the other, so capitals count wider. */
+const typedNameWidth = (name: string) =>
+	[...name].reduce((width, char) => width + (/\p{Lu}/u.test(char) ? 9.4 : CHAR.line), 0);
+
 /** Characters of a Data type as UML lines print it (`Auto-increment`, `Text(120)`…). */
 const TYPE_CHARS: Record<DataTypeKind, number> = {
 	integer: 7,
@@ -648,10 +652,10 @@ const TYPE_CHARS: Record<DataTypeKind, number> = {
 /**
  * A node's drawn size guessed from its content, where the canvas cannot
  * measure it (the server) or measures another Notation than the shared
- * positions need: the larger of its Merise and UML drawings, or the one of
- * `notation` when an image draws that one.
+ * positions need: the largest of its Merise (types shown) and UML drawings, or
+ * the one of `drawing` when an image draws that one.
  */
-export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
+export function estimatedSize(node: DiagramNode, drawing?: Notation | 'merise-typed'): Size {
 	const name = String(node.name ?? '');
 	const attributes = (node.attributes as Attribute[] | undefined) ?? [];
 	if (node.type === 'zone' || node.type === 'area')
@@ -668,14 +672,20 @@ export function estimatedSize(node: DiagramNode, notation?: Notation): Size {
 		const subtitle = node.skin || node.runtime || node.diskKind ? 20 : 0;
 		return { width: Math.max(150, name.length * 8 + 80 + subtitle), height: 64 };
 	}
-	const merise = Math.max(...attributes.map((a) => a.name.length * CHAR.line));
+	const merise = Math.max(
+		...attributes.map((a) =>
+			drawing === 'merise'
+				? a.name.length * CHAR.line
+				: typedNameWidth(a.name) + TYPE_GAP + typeWidth(shownType(a))
+		)
+	);
 	const uml = Math.max(
 		...attributes.map((a) => {
 			const flags = (a.identifier ? 5 : 0) + (a.optional ? 7 : 0);
 			return (a.name.length + 3 + TYPE_CHARS[a.type?.kind ?? 'text'] + flags) * CHAR.line;
 		})
 	);
-	const widest = notation === 'merise' ? merise : notation === 'uml' ? uml : Math.max(merise, uml);
+	const widest = drawing === 'uml' ? uml : drawing ? merise : Math.max(merise, uml);
 	const lines = attributes.length > 0 ? widest : 0;
 	if (node.type === 'association') {
 		return {

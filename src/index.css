@@ -772,6 +772,34 @@ select {
 	font-weight: 600;
 }
 
+/* With its PostgreSQL type: in an Entity on the right, in an Association after the name. */
+span.attribute.typed {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	white-space: nowrap;
+}
+
+.association span.attribute.typed {
+	justify-content: center;
+}
+
+span.attribute.typed.identifier {
+	text-decoration: none;
+}
+
+.typed.identifier .attribute-name {
+	text-decoration: underline;
+}
+
+.attribute-type {
+	color: #555;
+	font-size: 12px;
+	font-weight: 400;
+	font-style: italic;
+}
+
 .entity.selected,
 .association.selected {
 	outline: 2px solid var(--accent);

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 type Props = {
 	value: string;
@@ -6,8 +6,8 @@ type Props = {
 	className?: string;
 	/** Whether an empty value is saved (an Area's label) or ignored (a name). */
 	allowBlank?: boolean;
-	/** What shows when not editing, if not the value itself (a UML Attribute line). */
-	display?: string;
+	/** What shows when not editing, if not the value itself (an Attribute with its type). */
+	display?: ReactNode;
 	/** Controls the editing state from outside (e.g. a Rename button); otherwise double-click starts it. */
 	isEditing?: boolean;
 	onEditingChange?: (isEditing: boolean) => void;

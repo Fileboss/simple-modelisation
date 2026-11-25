@@ -5,7 +5,9 @@ import {
 	cifLinks,
 	generalizations,
 	legLine,
+	shownType,
 	twinPositions,
+	TYPE_GAP,
 	umlAttribute,
 	umlLayout,
 	umlMultiplicity,
@@ -26,6 +28,8 @@ import { areasInOrder, withoutAreas } from '../areas.ts';
 
 export type McdSvgOptions = {
 	notation: Notation;
+	/** Merise: each Attribute's PostgreSQL type beside it. UML always writes the Data types. */
+	types?: boolean;
 	/** The names the image prints: the app passes its UI strings, the server the English ones. */
 	names: SvgNames;
 	/** Each box's size as the canvas measured it; without one, the model's estimate for the Notation. */
@@ -39,6 +43,7 @@ const ENTITY_HEADER = '#fdd77d';
 const ENTITY_BODY = '#ffff99';
 const ASSOCIATION = '#22e5f0';
 const SHADOW = 4;
+const TYPE = '#555';
 // The canvas's text: names 15px bold over 2px padding, Attributes 13px, 1.3 line height.
 const HEADER = 24.5;
 const LINE_HEIGHT = 16.9;
@@ -53,18 +58,20 @@ const LINE_CHAR = 7;
 export function mcdSvg(
 	allNodes: DiagramNode[],
 	edges: DiagramEdge[],
-	{ notation, names, measured = () => undefined, margin = 32 }: McdSvgOptions
+	{ notation, types = false, names, measured = () => undefined, margin = 32 }: McdSvgOptions
 ): string {
 	// Areas behind everything, at their own size in either Notation.
 	const areas = areasInOrder(allNodes);
 	const nodes = withoutAreas(allNodes);
 	const estimate =
-		notation === 'uml' ? umlEstimate(edges) : (node: DiagramNode) => estimatedSize(node, 'merise');
+		notation === 'uml'
+			? umlEstimate(edges)
+			: (node: DiagramNode) => estimatedSize(node, types ? 'merise-typed' : 'merise');
 	const sizeOf = (node: DiagramNode) => measured(node) ?? estimate(node);
 	const { parts, extent, defs } =
 		notation === 'uml'
 			? umlDrawing(nodes, edges, names, sizeOf)
-			: meriseDrawing(nodes, edges, sizeOf);
+			: meriseDrawing(nodes, edges, sizeOf, types);
 	const frame = bounds([...extent, ...areas]);
 	const x = frame.x - margin;
 	const y = frame.y - margin;
@@ -99,7 +106,8 @@ const legBoxes = (through: Point[], label: Point, text: string): Box[] => [
 function meriseDrawing(
 	nodes: DiagramNode[],
 	edges: DiagramEdge[],
-	sizeOf: (node: DiagramNode) => Size
+	sizeOf: (node: DiagramNode) => Size,
+	types: boolean
 ): Drawing {
 	const boxes = new Map(nodes.map((n) => [n.id, nodeBox(n, sizeOf)]));
 	// The boxes' shadow reaches past them.
@@ -156,8 +164,8 @@ function meriseDrawing(
 	for (const node of nodes) {
 		const box = boxes.get(node.id)!;
 		if (node.type === 'note') shapes.push(noteShape(node, box));
-		else if (node.type === 'entity') shapes.push(entityShape(node, box));
-		else if (node.type === 'association') shapes.push(associationShape(node, box));
+		else if (node.type === 'entity') shapes.push(entityShape(node, box, types));
+		else if (node.type === 'association') shapes.push(associationShape(node, box, types));
 		else if (node.type === 'cif') shapes.push(cifShape(box));
 		else if (node.type === 'inheritance')
 			shapes.push(inheritanceShape(node as InheritanceNode, box));
@@ -176,18 +184,48 @@ function straightLine(from: Box, to: Box, extra = ''): string {
 const arrowMarker = (id: string, size: number, hollow: boolean) =>
 	`<marker id="${id}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="${size}" markerHeight="${size}"${hollow ? ' markerUnits="userSpaceOnUse"' : ''} orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="${hollow ? '#fff' : LINE}"${hollow ? ` stroke="${LINE}"` : ''}/></marker>`;
 
-/** Attribute lines from `top`, `left` aligned or centered on `x`; an Identifier underlined. */
-function attributeLines(
-	attributes: Attribute[],
-	x: number,
-	top: number,
-	room: number,
-	anchor: 'start' | 'middle'
-): string[] {
+const identifierStyle = (attribute: Attribute) =>
+	attribute.identifier ? ' font-weight="600" text-decoration="underline"' : '';
+
+/** A type beside its name, smaller, in grey italics. */
+const TYPE_STYLE = `font-size="12" font-style="italic" fill="${TYPE}"`;
+
+/**
+ * An Entity's Attribute lines from `top`: names on the left, an Identifier's
+ * underlined, types on the right. Typed lines are never narrowed: the box,
+ * measured or estimated, was sized with their types.
+ */
+function entityLines(attributes: Attribute[], box: Box, top: number, types: boolean): string[] {
+	const x = box.x + 7;
+	const room = box.width - 14;
 	return attributes.map((attribute, i) => {
-		const name = attribute.name;
-		const identifier = attribute.identifier ? ' font-weight="600" text-decoration="underline"' : '';
-		return `<text x="${x}" y="${top + LINE_HEIGHT * (i + 0.5)}" font-size="13" fill="#000" dy="0.35em" text-anchor="${anchor}"${identifier}${fit(name, LINE_CHAR, room)}>${escape(name)}</text>`;
+		const { name } = attribute;
+		const y = top + LINE_HEIGHT * (i + 0.5);
+		return [
+			`<text x="${x}" y="${y}" font-size="13" fill="#000" dy="0.35em" text-anchor="start"${identifierStyle(attribute)}${types ? '' : fit(name, LINE_CHAR, room)}>${escape(name)}</text>`,
+			types
+				? `<text x="${x + room}" y="${y}" ${TYPE_STYLE} dy="0.35em" text-anchor="end">${escape(shownType(attribute))}</text>`
+				: ''
+		].join('');
+	});
+}
+
+/** An Association's Attribute lines from `top`, centered, each type after its name. */
+function associationLines(
+	attributes: Attribute[],
+	box: Box,
+	top: number,
+	types: boolean
+): string[] {
+	const x = box.x + box.width / 2;
+	const room = box.width - 36;
+	return attributes.map((attribute, i) => {
+		const { name } = attribute;
+		const start = `<text x="${x}" y="${top + LINE_HEIGHT * (i + 0.5)}" font-size="13" fill="#000" dy="0.35em" text-anchor="middle"`;
+		const style = identifierStyle(attribute);
+		return types
+			? `${start}><tspan${style}>${escape(name)}</tspan><tspan dx="${TYPE_GAP}" ${TYPE_STYLE}>${escape(shownType(attribute))}</tspan></text>`
+			: `${start}${style}${fit(name, LINE_CHAR, room)}>${escape(name)}</text>`;
 	});
 }
 
@@ -200,19 +238,19 @@ const shadow = (box: Box, rx = 0) =>
 	`<rect x="${box.x + SHADOW}" y="${box.y + SHADOW}" width="${box.width}" height="${box.height}" rx="${rx}" fill="#000" fill-opacity="0.25"/>`;
 
 /** An Entity in Looping's style: orange header with its name, yellow body, Identifier underlined. */
-function entityShape(entity: DiagramNode, box: Box): string {
+function entityShape(entity: DiagramNode, box: Box, types: boolean): string {
 	const attributes = (entity.attributes as Attribute[] | undefined) ?? [];
 	return [
 		shadow(box),
 		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${box.height - 1}" fill="${ENTITY_BODY}" stroke="${LINE}"/>`,
 		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${HEADER}" fill="${ENTITY_HEADER}" stroke="${LINE}"/>`,
 		nameText(String(entity.name ?? ''), box, box.y + 1 + (HEADER - 1) / 2),
-		...attributeLines(attributes, box.x + 7, box.y + HEADER + 3, box.width - 14, 'start')
+		...entityLines(attributes, box, box.y + HEADER + 3, types)
 	].join('');
 }
 
 /** An Association in Looping's style: a cyan rounded box, its name over its Attributes. */
-function associationShape(association: DiagramNode, box: Box): string {
+function associationShape(association: DiagramNode, box: Box, types: boolean): string {
 	const attributes = (association.attributes as Attribute[] | undefined) ?? [];
 	const rx = Math.min(26, box.height / 2);
 	const divider = box.y + 1 + HEADER - 1;
@@ -221,7 +259,7 @@ function associationShape(association: DiagramNode, box: Box): string {
 		`<rect x="${box.x + 0.5}" y="${box.y + 0.5}" width="${box.width - 1}" height="${box.height - 1}" rx="${rx}" fill="${ASSOCIATION}" stroke="${LINE}"/>`,
 		`<path d="M ${box.x + 0.5},${divider} L ${box.x + box.width - 0.5},${divider}" stroke="${LINE}"/>`,
 		nameText(String(association.name ?? ''), box, box.y + 1 + (HEADER - 1) / 2),
-		...attributeLines(attributes, box.x + box.width / 2, divider + 3, box.width - 36, 'middle')
+		...associationLines(attributes, box, divider + 3, types)
 	].join('');
 }
 

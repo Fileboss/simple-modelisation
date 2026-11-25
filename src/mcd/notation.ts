@@ -1,54 +1,26 @@
 import type { Edge, Node } from '@xyflow/react';
-import { useSyncExternalStore } from 'react';
 import type { DataType } from '@simple-modelisation/model/data-types.ts';
 import * as drawing from '@simple-modelisation/model/mcd-drawing.ts';
 import type { Notation } from '@simple-modelisation/model/mcd-drawing.ts';
 import type { Attribute, Cardinality } from '@simple-modelisation/model/project.ts';
 import { diagramEdges, diagramNodes } from '../canvas/layout';
+import { diagramPreference } from '../ui/diagram-preference';
 import { strings } from '../ui/strings';
 
 export type { Notation };
 export { umlMultiplicity } from '@simple-modelisation/model/mcd-drawing.ts';
 
-// A per-browser preference per MCD, never stored in the Project.
-const storageKey = (diagramId: string) => `simple-modelisation:notation:${diagramId}`;
-const listeners = new Set<() => void>();
-// When storage is blocked, the choice lasts until the page reloads.
-const unsaved = new Map<string, Notation>();
+const notationChoice = diagramPreference<Notation>('notation', ['merise', 'uml']);
+export const getNotation = notationChoice.get;
+export const setNotation = notationChoice.set;
+export const useNotation = notationChoice.use;
 
-export function getNotation(diagramId: string): Notation {
-	const kept = unsaved.get(diagramId);
-	if (kept) return kept;
-	try {
-		return localStorage.getItem(storageKey(diagramId)) === 'uml' ? 'uml' : 'merise';
-	} catch {
-		return 'merise';
-	}
-}
-
-export function setNotation(diagramId: string, notation: Notation): void {
-	try {
-		localStorage.setItem(storageKey(diagramId), notation);
-		unsaved.delete(diagramId);
-	} catch {
-		unsaved.set(diagramId, notation);
-	}
-	for (const listener of listeners) listener();
-}
-
-// One subscription for every component; other tabs report their changes through 'storage'.
-function subscribe(onChange: () => void): () => void {
-	listeners.add(onChange);
-	window.addEventListener('storage', onChange);
-	return () => {
-		listeners.delete(onChange);
-		window.removeEventListener('storage', onChange);
-	};
-}
-
-export function useNotation(diagramId: string): Notation {
-	return useSyncExternalStore(subscribe, () => getNotation(diagramId));
-}
+// Whether Merise shows each Attribute's PostgreSQL type.
+const typesChoice = diagramPreference('types', ['hidden', 'shown']);
+export const getTypesShown = (diagramId: string) => typesChoice.get(diagramId) === 'shown';
+export const setTypesShown = (diagramId: string, shown: boolean) =>
+	typesChoice.set(diagramId, shown ? 'shown' : 'hidden');
+export const useTypesShown = (diagramId: string) => typesChoice.use(diagramId) === 'shown';
 
 export const dataTypeLabel = (type: DataType) =>
 	drawing.dataTypeLabel(type, strings.dataTypes.kinds);

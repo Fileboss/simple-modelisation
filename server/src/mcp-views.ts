@@ -222,12 +222,16 @@ function only<T extends DiagramNode | DiagramEdge>(
 /**
  * Each Diagram drawn as SVG: the one named, else every Diagram of the Project;
  * those with nothing in them come back in `empty`. Legends on System design
- * diagrams, MCDs in the given Notation.
+ * diagrams, MCDs in the given Notation, with their types when asked for.
  */
 export function exportDiagrams(
 	project: ProjectDocument,
 	reference?: string,
-	{ legend = true, notation = 'merise' }: { legend?: boolean; notation?: Notation } = {}
+	{
+		legend = true,
+		notation = 'merise',
+		types = false
+	}: { legend?: boolean; notation?: Notation; types?: boolean } = {}
 ) {
 	const diagrams = reference ? [pickDiagram(project, reference)] : project.diagrams();
 	const drawn = diagrams
@@ -241,7 +245,7 @@ export function exportDiagrams(
 				name: d.name,
 				svg:
 					d.kind === 'mcd'
-						? mcdSvg(nodes, edges, { notation, names: ENGLISH_NAMES })
+						? mcdSvg(nodes, edges, { notation, types, names: ENGLISH_NAMES })
 						: systemSvg(nodes, edges, { names: ENGLISH_NAMES, legend })
 			};
 		}),
