@@ -1342,3 +1342,268 @@ describe('Duplicate a Diagram', () => {
 		expect(project.nodes(d).length).toBeGreaterThan(0);
 	});
 });
+
+describe('Move a Diagram', () => {
+	function setup(count = 4) {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const ids = [...'ABCDEFGH'].slice(0, count).map((name) => project.addDiagram('mcd', name));
+		const names = () =>
+			project
+				.diagrams()
+				.map((d) => d.name)
+				.join('');
+		return { project, ids, names };
+	}
+
+	it('goes anywhere, and nowhere else moves', () => {
+		for (let from = 0; from < 4; from++) {
+			for (let to = 0; to < 4; to++) {
+				const { project, ids, names } = setup();
+				project.moveDiagram(ids[from], to);
+				const expected = [...'ABCD'];
+				expected.splice(to, 0, ...expected.splice(from, 1));
+				expect(names()).toBe(expected.join(''));
+			}
+		}
+	});
+
+	it('is clamped, one undo step, kept by a file, and leaves new Diagrams last', () => {
+		const { project, ids, names } = setup();
+		project.moveDiagram(ids[0], 99);
+		expect(names()).toBe('BCDA');
+		project.renameDiagram(ids[0], 'Z');
+		project.undo();
+		expect(names()).toBe('BCDA');
+		project.undo();
+		expect(names()).toBe('ABCD');
+		project.moveDiagram(ids[3], -5);
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(
+			ProjectDocument.fromFile(file)
+				.diagrams()
+				.map((d) => d.name)
+				.join('')
+		).toBe('DABC');
+		project.addDiagram('system', 'N');
+		expect(names()).toBe('DABCN');
+		project.duplicateDiagram(ids[3], 'd');
+		expect(names()).toBe('DdABCN');
+		expect(() => project.moveDiagram('gone', 0)).toThrow('Unknown diagram');
+	});
+
+	it('writes nothing when it does not move', () => {
+		const { project, ids } = setup();
+		let updates = 0;
+		project.subscribe(() => updates++);
+		project.moveDiagram(ids[1], 1);
+		expect(updates).toBe(0);
+	});
+
+	it('finds room whatever the dates, however often', () => {
+		const { project, ids, names } = setup(3);
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			{ set(key: string, value: unknown): void }
+		>;
+		for (const id of ids) stored.get(id)!.set('createdAt', 5);
+		const start = names();
+		const last = project.diagrams()[2].id;
+		project.moveDiagram(last, 0);
+		expect(names()).toBe(start[2] + start[0] + start[1]);
+		// Between the same two, over and over.
+		for (let i = 0; i < 200; i++) {
+			const [a, b, c] = project.diagrams().map((d) => d.name);
+			project.moveDiagram(project.diagrams()[2].id, 1);
+			expect(names()).toBe(a + c + b);
+		}
+		for (const bad of ['bad', 1e17, -1e300, Infinity]) {
+			for (const id of ids) stored.get(id)!.set('createdAt', bad);
+			const before = names();
+			project.moveDiagram(project.diagrams()[0].id, 2);
+			expect(names()).toBe(before[1] + before[2] + before[0]);
+			project.moveDiagram(project.diagrams()[2].id, 0);
+			expect(names()).toBe(before);
+		}
+	});
+
+	it('two peers moving at once end with one order', () => {
+		const { project, ids } = setup();
+		const other = new ProjectDocument();
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		project.moveDiagram(ids[0], 3);
+		other.moveDiagram(ids[3], 0);
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(other.doc));
+		const order = (p: ProjectDocument) => p.diagrams().map((d) => d.name);
+		expect(order(project)).toEqual(order(other));
+		expect([...order(project)].sort()).toEqual([...'ABCD']);
+	});
+});
+
+describe('A Connection label put along its line', () => {
+	function setup() {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const d = project.addDiagram('system');
+		const [a, b] = ['A', 'B'].map((n) => project.addComponent(d, 'service', n, 0, 0));
+		const id = project.addConnection(d, a, b)!;
+		const position = () => project.edges(d)[0].labelPosition;
+		return { project, d, id, position };
+	}
+
+	it('is set within the line, cleared, and undone in one step', () => {
+		const { project, d, id, position } = setup();
+		project.setLabelPosition(d, id, 0.33333);
+		expect(position()).toBe(0.333);
+		project.setLabelPosition(d, id, 7);
+		expect(position()).toBe(1);
+		project.setLabelPosition(d, id, -7);
+		expect(position()).toBe(0);
+		project.setLabelPosition(d, id, NaN);
+		expect(position()).toBe(0);
+		project.setLabelPosition(d, id, null);
+		expect(project.edges(d)[0]).not.toHaveProperty('labelPosition');
+		project.stopCapturing();
+		project.setLabelPosition(d, id, 0.5);
+		project.undo();
+		expect(project.edges(d)[0]).not.toHaveProperty('labelPosition');
+		expect(project.edges(d)).toHaveLength(1);
+	});
+
+	it('is kept by a move, a file and a paste', () => {
+		const { project, d, id } = setup();
+		project.setLabelPosition(d, id, 0.25);
+		project.moveNode(d, project.nodes(d)[1].id, 500, 300);
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).toFile()).toEqual(project.toFile());
+		const copy = project.duplicateDiagram(d);
+		expect(project.edges(copy)[0].labelPosition).toBe(0.25);
+	});
+
+	it('is left out when a file or a peer wrote something else', () => {
+		const { project, d, id, position } = setup();
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			Map<string, Map<string, { set(key: string, value: unknown): void }>>
+		>;
+		for (const bad of ['0.5', -0.1, 1.1, NaN, {}, null]) {
+			stored.get(d)!.get('edges')!.get(id)!.set('labelPosition', bad);
+			expect(position()).toBeUndefined();
+			const file = JSON.parse(JSON.stringify(project.toFile()));
+			file.diagrams[0].edges[0].labelPosition = bad;
+			const imported = ProjectDocument.fromFile(file);
+			expect(imported.edges(d)[0].labelPosition).toBeUndefined();
+		}
+	});
+});
+
+describe('The ends of a Connection', () => {
+	function setup() {
+		const project = new ProjectDocument();
+		project.rename('Shop');
+		const d = project.addDiagram('system');
+		const [a, b, c] = ['A', 'B', 'C'].map((n, i) =>
+			project.addComponent(d, 'service', n, i * 400, 0)
+		);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, 'GET');
+		project.setConnectionFlow(d, id, 'read');
+		project.setLabelPosition(d, id, 0.3);
+		const connection = () => project.edges(d)[0];
+		return { project, d, a, b, c, id, connection };
+	}
+
+	it('are attached to an Anchor, then automatic again, in one undo step each', () => {
+		const { project, d, a, id, connection } = setup();
+		project.stopCapturing();
+		expect(project.attachConnection(d, id, 'source', a, 'top-left')).toBe(true);
+		expect(connection()).toMatchObject({ source: a, sourceAnchor: 'top-left' });
+		expect(connection()).not.toHaveProperty('targetAnchor');
+		project.stopCapturing();
+		project.attachConnection(d, id, 'source', a, null);
+		expect(connection()).not.toHaveProperty('sourceAnchor');
+		project.undo();
+		expect(connection().sourceAnchor).toBe('top-left');
+		project.undo();
+		expect(connection()).not.toHaveProperty('sourceAnchor');
+	});
+
+	it('go to another Component, keeping the label, its place and the Flow, losing old bends', () => {
+		const { project, d, a, b, c, id, connection } = setup();
+		project.arrange(d, new Map(), new Map([[id, [{ x: 1, y: 2 }]]]));
+		expect(connection().points).toBeDefined();
+		expect(project.attachConnection(d, id, 'target', c, 'left')).toBe(true);
+		expect(connection()).toEqual({
+			id,
+			type: 'connection',
+			source: a,
+			target: c,
+			label: 'GET',
+			flow: 'read',
+			labelPosition: 0.3,
+			targetAnchor: 'left'
+		});
+		expect(project.attachEnds(d, id, { componentId: c }, { componentId: b })).toBe(true);
+		expect(connection()).toMatchObject({ source: c, target: b, targetAnchor: 'left' });
+		expect(project.attachEnds(d, id, { componentId: b }, { componentId: c, anchor: null })).toBe(
+			true
+		);
+		expect(connection()).toMatchObject({ source: b, target: c });
+	});
+
+	it('refuse what makes no sense, writing nothing', () => {
+		const { project, d, a, b, c, id } = setup();
+		const note = project.addNote(d, 0, 0, 'x');
+		const zone = project.addZone(d, 0, 0);
+		const file = JSON.stringify(project.toFile());
+		let updates = 0;
+		project.subscribe(() => updates++);
+		expect(project.attachConnection(d, id, 'source', b, 'top')).toBe(false);
+		for (const bad of [note, zone, 'gone']) {
+			expect(project.attachConnection(d, id, 'target', bad, 'top')).toBe(false);
+		}
+		expect(project.attachConnection(d, id, 'target', c, 'middle' as never)).toBe(false);
+		expect(project.attachConnection(d, 'gone', 'target', c, 'top')).toBe(false);
+		expect(
+			project.attachEnds(d, id, { componentId: c, anchor: 'top' }, { componentId: 'gone' })
+		).toBe(false);
+		// Already there.
+		expect(project.attachConnection(d, id, 'source', a, null)).toBe(true);
+		expect(updates).toBe(0);
+		expect(JSON.stringify(project.toFile())).toBe(file);
+	});
+
+	it('moved by two peers onto one Component make a loop, which can be changed', () => {
+		const { project, d, a, c, id, connection } = setup();
+		const other = new ProjectDocument();
+		Y.applyUpdate(other.doc, Y.encodeStateAsUpdate(project.doc));
+		project.attachConnection(d, id, 'source', c, 'top');
+		other.attachConnection(d, id, 'target', c, 'left');
+		Y.applyUpdate(project.doc, Y.encodeStateAsUpdate(other.doc));
+		expect(connection()).toMatchObject({ source: c, target: c });
+		expect(project.attachConnection(d, id, 'target', c, 'bottom')).toBe(true);
+		expect(connection()).toMatchObject({ target: c, targetAnchor: 'bottom' });
+		expect(project.attachEnds(d, id, { componentId: a }, { componentId: a })).toBe(false);
+		expect(project.attachConnection(d, id, 'source', a, null)).toBe(true);
+		expect(connection()).toMatchObject({ source: a, target: c });
+	});
+
+	it('are kept by a file and a paste; what a file or a peer should not have written is left out', () => {
+		const { project, d, a, id, connection } = setup();
+		project.attachConnection(d, id, 'source', a, 'bottom-right');
+		const file = JSON.parse(JSON.stringify(project.toFile()));
+		expect(ProjectDocument.fromFile(file).toFile()).toEqual(project.toFile());
+		expect(project.edges(project.duplicateDiagram(d))[0].sourceAnchor).toBe('bottom-right');
+		const stored = project.doc.getMap('diagrams') as never as Map<
+			string,
+			Map<string, Map<string, { set(key: string, value: unknown): void }>>
+		>;
+		for (const bad of ['middle', 'constructor', 3, {}, null]) {
+			stored.get(d)!.get('edges')!.get(id)!.set('sourceAnchor', bad);
+			expect(connection()).not.toHaveProperty('sourceAnchor');
+			file.diagrams[0].edges[0].sourceAnchor = bad;
+			expect(ProjectDocument.fromFile(file).edges(d)[0]).not.toHaveProperty('sourceAnchor');
+		}
+	});
+});

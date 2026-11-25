@@ -1,3 +1,4 @@
+import { isAnchor, type Anchor, type Anchors } from './anchors.ts';
 import {
 	checkProblem,
 	cleanCheck,
@@ -136,7 +137,17 @@ export type ConnectionEdge = DiagramEdge &
 		label: string;
 		/** Absent when unspecified. */
 		flow?: Flow;
+		/** How far along its line its label was put, from 0 to 1; absent: placed automatically. */
+		labelPosition?: number;
+		/** Where its ends are attached; absent: automatic. */
+		sourceAnchor?: Anchor;
+		targetAnchor?: Anchor;
 	};
+
+/** The Anchors of a Connection, as routes take them. */
+export const anchorsOf = (
+	connection: Pick<ConnectionEdge, 'sourceAnchor' | 'targetAnchor'>
+): Anchors => ({ source: connection.sourceAnchor, target: connection.targetAnchor });
 
 /** A named area grouping the Components drawn inside it (a region, a VPC, a subnet). */
 export type ZoneNode = DiagramNode & {
@@ -371,7 +382,10 @@ export class ProjectDocument {
 
 	// Diagrams
 
-	/** Oldest first, the order of the tabs. */
+	/**
+	 * In the order of the tabs: by `createdAt`, the time a Diagram was added until its
+	 * tab is moved, then a value between its neighbours'.
+	 */
 	diagrams(): Diagram[] {
 		return [...this.diagramMap.entries()]
 			.filter(([key, d]) => isReadableDiagram(key, d))
@@ -382,10 +396,10 @@ export class ProjectDocument {
 				return {
 					id: d.get('id') as string,
 					kind,
-					// A peer may write anything: a name that is not text, or a time that is not a
-					// number, reads as the default.
+					// A peer may write anything: a name that is not text, or what is not a time,
+					// reads as the default.
 					name: typeof name === 'string' ? name : DEFAULT_DIAGRAM_NAMES[kind],
-					createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) ? createdAt : 0,
+					createdAt: isTime(createdAt) ? createdAt : 0,
 					// Any other value, from a newer version, reads as horizontal.
 					...(kind === 'mcd' && d.get('tidyDirection') === 'vertical'
 						? { tidyDirection: 'vertical' as const }
@@ -464,18 +478,7 @@ export class ProjectDocument {
 				name?.trim() || copyName(original.name, new Set(diagrams.map((d) => d.name)))
 			);
 			const entry = this.requireDiagram(copy);
-			if (following.length > 0) {
-				// Tabs are in the order of creation: between the two, or, with no room left
-				// there, just after the original, moving those that follow as little as needed.
-				const middle = original.createdAt + (following[0].createdAt - original.createdAt) / 2;
-				const fits = middle > original.createdAt && middle < following[0].createdAt;
-				let last = fits ? middle : original.createdAt + 1;
-				entry.set('createdAt', last);
-				for (const d of following) {
-					if (d.createdAt > last) break;
-					this.requireDiagram(d.id).set('createdAt', ++last);
-				}
-			}
+			if (following.length > 0) this.placeDiagram(copy, original, following);
 			if (original.tidyDirection) entry.set('tidyDirection', original.tidyDirection);
 			// As stored: a paste checks and completes them.
 			const stored = (entries: Entries) => [...entries.values()].map((e) => e.toJSON());
@@ -491,6 +494,19 @@ export class ProjectDocument {
 		});
 		this.undoManager.stopCapturing();
 		return copy;
+	}
+
+	/** Moves a Diagram's tab to `index` in their order (from 0), clamped; one undo step. */
+	moveDiagram(id: string, index: number): void {
+		const diagrams = this.diagrams();
+		const from = diagrams.findIndex((d) => d.id === id);
+		if (from === -1) throw new Error(`Unknown diagram ${id}`);
+		const to = Math.min(diagrams.length - 1, Math.max(0, Math.round(index)));
+		if (to === from) return;
+		const others = diagrams.filter((d) => d.id !== id);
+		this.undoManager.stopCapturing();
+		this.doc.transact(() => this.placeDiagram(id, others[to - 1], others.slice(to)));
+		this.undoManager.stopCapturing();
 	}
 
 	renameDiagram(id: string, name: string): void {
@@ -912,6 +928,82 @@ export class ProjectDocument {
 		}
 		if (flow === null) connection.delete('flow');
 		else if (FLOWS.includes(flow)) connection.set('flow', flow);
+	}
+
+	/**
+	 * Attaches an end of a Connection to a Component, its own or another, at an
+	 * Anchor (null: automatic). False when it cannot be: not onto the Component at
+	 * the other end, nor onto what is no Component.
+	 */
+	attachConnection(
+		diagramId: string,
+		connectionId: string,
+		end: 'source' | 'target',
+		componentId: string,
+		anchor: Anchor | null
+	): boolean {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		const other = end === 'source' ? 'target' : 'source';
+		const kept = { componentId: String(connection?.get(other)) };
+		const moved = { componentId, anchor };
+		return end === 'source'
+			? this.attachEnds(diagramId, connectionId, moved, kept)
+			: this.attachEnds(diagramId, connectionId, kept, moved);
+	}
+
+	/**
+	 * Attaches both ends of a Connection at once, so that they can be swapped. An
+	 * end without an `anchor` keeps its own. False, and nothing done, when an end is
+	 * no Component, or both would become the same.
+	 */
+	attachEnds(
+		diagramId: string,
+		connectionId: string,
+		source: { componentId: string; anchor?: Anchor | null },
+		target: { componentId: string; anchor?: Anchor | null }
+	): boolean {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		if (connection?.get('type') !== 'connection') return false;
+		// One already from a Component to itself (a file, two peers at once) can be changed.
+		const isLoop = source.componentId === target.componentId;
+		const wasLoop = connection.get('source') === connection.get('target');
+		if (isLoop && !(wasLoop && connection.get('source') === source.componentId)) return false;
+		const nodes = this.nodeMap(diagramId);
+		const changes: [string, string | null][] = [];
+		for (const [key, end] of [
+			['source', source],
+			['target', target]
+		] as const) {
+			const { componentId, anchor } = end;
+			if (nodes.get(componentId)?.get('type') !== 'component') return false;
+			if (connection.get(key) !== componentId) changes.push([key, componentId]);
+			if (anchor === undefined) continue;
+			if (anchor !== null && !isAnchor(anchor)) return false;
+			if ((connection.get(`${key}Anchor`) ?? null) !== anchor) {
+				changes.push([`${key}Anchor`, anchor]);
+			}
+		}
+		if (changes.length === 0) return true;
+		this.doc.transact(() => {
+			for (const [key, value] of changes) {
+				if (value === null) connection.delete(key);
+				else connection.set(key, value);
+			}
+			// A Tidy up's bends led elsewhere.
+			connection.delete('points');
+		});
+		return true;
+	}
+
+	/** Puts a Connection's label along its line (0 to 1), or back to the automatic placing with null. */
+	setLabelPosition(diagramId: string, connectionId: string, position: number | null): void {
+		const connection = this.edgeMap(diagramId).get(connectionId);
+		if (connection?.get('type') !== 'connection') return;
+		if (position === null) connection.delete('labelPosition');
+		else if (isNumber(position)) {
+			const value = Math.round(Math.min(1, Math.max(0, position)) * 1000) / 1000;
+			if (connection.get('labelPosition') !== value) connection.set('labelPosition', value);
+		}
 	}
 
 	// MCDs
@@ -1516,6 +1608,25 @@ export class ProjectDocument {
 		this.edgeMap(diagramId).set(edge.id, toFields(edge));
 	}
 
+	/**
+	 * Dates a Diagram between `previous` (none: first) and those that follow: tabs
+	 * are in that order. With no room left there, just after `previous`, moving
+	 * those that follow as little as needed.
+	 */
+	private placeDiagram(id: string, previous: Diagram | undefined, following: Diagram[]): void {
+		const next = following[0]?.createdAt;
+		const after = previous ? previous.createdAt + 1 : next! - 1;
+		const middle = previous && next !== undefined ? (previous.createdAt + next) / 2 : after;
+		const fits =
+			(!previous || middle > previous.createdAt) && (next === undefined || middle < next);
+		let last = fits ? middle : after;
+		this.requireDiagram(id).set('createdAt', last);
+		for (const d of following) {
+			if (d.createdAt > last) break;
+			this.requireDiagram(d.id).set('createdAt', ++last);
+		}
+	}
+
 	private setBox(
 		diagramId: string,
 		nodeId: string,
@@ -1744,10 +1855,26 @@ function withCompleteAttributes<T extends Record<string, unknown>>(node: T): Dia
 	return read as DiagramNode;
 }
 
+const OPTIONAL_EDGE_FIELDS = [
+	'flow',
+	'relative',
+	'fkName',
+	'labelPosition',
+	'sourceAnchor',
+	'targetAnchor'
+];
+
 /** An edge as the app reads it: a Flow this version does not know (a newer file or peer) reads as unspecified. */
 function readEdge(edge: Record<string, unknown>): DiagramEdge {
-	if (!('flow' in edge) && !('relative' in edge) && !('fkName' in edge)) return edge as DiagramEdge;
+	if (!OPTIONAL_EDGE_FIELDS.some((key) => key in edge)) {
+		return edge as DiagramEdge;
+	}
 	const read = { ...edge };
+	const at = read.labelPosition;
+	if (read.type !== 'connection' || !isNumber(at) || at < 0 || at > 1) delete read.labelPosition;
+	for (const key of ['sourceAnchor', 'targetAnchor']) {
+		if (read.type !== 'connection' || !isAnchor(read[key])) delete read[key];
+	}
 	if ((read.type !== 'leg' && read.type !== 'isa') || !isForeignKeyName(read.fkName)) {
 		delete read.fkName;
 	}
@@ -1840,7 +1967,16 @@ const NODE_FIELDS: Record<string, readonly string[]> = {
 	inheritance: ['x', 'y', 'parent', 'constraint', 'translation']
 };
 const EDGE_FIELDS: Record<string, readonly string[]> = {
-	connection: ['source', 'target', 'label', 'flow', 'points'],
+	connection: [
+		'source',
+		'target',
+		'label',
+		'flow',
+		'labelPosition',
+		'sourceAnchor',
+		'targetAnchor',
+		'points'
+	],
 	leg: ['source', 'target', 'cardinality', 'relative', 'fkName', 'points'],
 	isa: ['source', 'target', 'fkName', 'points']
 };
@@ -1895,6 +2031,10 @@ function parseFile(data: unknown): ProjectFile {
 	}
 	return file as ProjectFile;
 }
+
+/** A time as `Date` has them: whole numbers around it stay apart, so there is room to order. */
+const isTime = (value: unknown): value is number =>
+	typeof value === 'number' && Math.abs(value) <= 8.64e15;
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 

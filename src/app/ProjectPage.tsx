@@ -22,6 +22,7 @@ import { Avatars } from '../presence/Avatars';
 import { reportPresence, usePresence } from '../presence/presence-context';
 import { PresenceProvider } from '../presence/PresenceProvider';
 import { useProjectDocument, useProjectVersion, useSync } from './project-hooks';
+import { DiagramKindBadge, DiagramTabs } from './DiagramTabs';
 import { forgetProject, makeLocalCopy } from './project-storage';
 import { useProjects, useRegistry } from './registry-context';
 
@@ -250,10 +251,6 @@ function DiagramPicker({ project }: { project: ProjectDocument }) {
 	);
 }
 
-function DiagramKindBadge({ kind }: { kind: DiagramKind }) {
-	return <span className={`tab-kind tab-kind-${kind}`}>{kind === 'mcd' ? 'MCD' : 'SD'}</span>;
-}
-
 function DiagramLabel({ diagram }: { diagram: Diagram }) {
 	return (
 		<span className="tab-name">
@@ -269,7 +266,13 @@ function useOpenDiagram(project: ProjectDocument) {
 	const diagrams = project.diagrams();
 	const named = (key: string) => diagrams.find((d) => d.id === searchParams.get(key));
 	// A copy undone or deleted gives way to what it was made from.
-	const open = named('d') ?? named('from') ?? diagrams[0];
+	const asked = named('d') ?? named('from');
+	const open = asked ?? diagrams[0];
+	// The first one, opened because none was asked for, stays open when tabs move.
+	const unpinned = asked ? undefined : open?.id;
+	useEffect(() => {
+		if (unpinned) setSearchParams({ d: unpinned }, { replace: true });
+	}, [unpinned, setSearchParams]);
 	const select = (id: string) => setSearchParams({ d: id }, { replace: true });
 	const add = (kind: DiagramKind) => {
 		project.stopCapturing();
@@ -470,21 +473,14 @@ function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: b
 				</p>
 			)}
 			{tabs && (
-				<nav className="tabs">
-					{diagrams.map((d) => (
-						<DiagramTab
-							key={d.id}
-							diagram={d}
-							isOpen={d.id === open?.id}
-							onSelect={() => select(d.id)}
-							onRename={(name) => project.renameDiagram(d.id, name)}
-							onDuplicate={() => duplicate(d.id)}
-							onDelete={() => project.deleteDiagram(d.id)}
-						/>
-					))}
-					<button onClick={() => add('system')}>{strings.project.addSystem}</button>
-					<button onClick={() => add('mcd')}>{strings.project.addMcd}</button>
-				</nav>
+				<DiagramTabs
+					project={project}
+					diagrams={diagrams}
+					openId={open?.id}
+					onSelect={select}
+					onDuplicate={duplicate}
+					onAdd={add}
+				/>
 			)}
 			<main className="canvas">
 				{open ? (
@@ -494,46 +490,6 @@ function ProjectWorkspace({ project, tabs }: { project: ProjectDocument; tabs: b
 				)}
 			</main>
 		</>
-	);
-}
-
-type TabProps = {
-	diagram: Diagram;
-	isOpen: boolean;
-	onSelect: () => void;
-	onRename: (name: string) => void;
-	onDuplicate: () => void;
-	onDelete: () => void;
-};
-
-function DiagramTab({ diagram, isOpen, onSelect, onRename, onDuplicate, onDelete }: TabProps) {
-	return (
-		<div className={`tab ${isOpen ? 'tab-open' : ''}`}>
-			<div className="tab-name" role="button" tabIndex={0} onClick={onSelect}>
-				<DiagramKindBadge kind={diagram.kind} />
-				<EditableText value={diagram.name} onChange={onRename} />
-			</div>
-			{isOpen && (
-				<>
-					<button
-						className="tab-action"
-						title={strings.project.duplicateDiagram}
-						aria-label={strings.project.duplicateDiagram}
-						onClick={onDuplicate}
-					>
-						⧉
-					</button>
-					<button
-						className="tab-action"
-						title={strings.project.deleteDiagram}
-						aria-label={strings.project.deleteDiagram}
-						onClick={onDelete}
-					>
-						×
-					</button>
-				</>
-			)}
-		</div>
 	);
 }
 

@@ -9,8 +9,6 @@ tags: [backlog]
 
 ## To do
 
-- Make the ghcr package public once the v0.1.0 image is published
-
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
@@ -34,6 +32,9 @@ tags: [backlog]
 
 ## Done
 
+- [connection-anchors](docs/specs/connection-anchors/): the ends of a Connection moved between 12 Anchors per Component, or to another Component, in the app, the images and over MCP
+- [connection-labels](docs/specs/connection-labels/): Connection labels moved along their line and wrapped, in the app, the images and over MCP
+- reorder-tabs: the Diagrams' tabs dragged into another order
 - [react-flow-13](docs/specs/react-flow-13/): React Flow 12 to 13, the canvas looking and behaving as before
 - palette-help: the explanations of the palettes and the properties hidden behind an i button
 - [mcd-areas](docs/specs/mcd-areas/): free colored Areas with a label behind an MCD, in the app, the exports and over MCP

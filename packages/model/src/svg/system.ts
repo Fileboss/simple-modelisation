@@ -1,5 +1,12 @@
 import { connectionRoute, routedPath, type Box, type Point } from '../geometry.ts';
-import { pillText, placeLabels, roughWidth, type MeasureText } from '../label-placement.ts';
+import {
+	LABEL_LINE_HEIGHT,
+	pillSize,
+	pillText,
+	placeLabels,
+	roughWidth,
+	type MeasureText
+} from '../label-placement.ts';
 import { estimatedSize, type Size } from '../layout.ts';
 import { bounds, escape, fit, FONT, noteShape, own, TEXT } from './shapes.ts';
 import { FALLBACK_COMPONENT_TYPE, isPerson } from '../component-types.ts';
@@ -13,15 +20,17 @@ import {
 	type SkinLook
 } from '../looks.ts';
 import { skinFits } from '../skins.ts';
-import type {
-	ComponentType,
-	DiagramEdge,
-	DiagramNode,
-	DiskKind,
-	Flow,
-	Hosting,
-	Provider,
-	Runtime
+import {
+	anchorsOf,
+	type ComponentType,
+	type ConnectionEdge,
+	type DiagramEdge,
+	type DiagramNode,
+	type DiskKind,
+	type Flow,
+	type Hosting,
+	type Provider,
+	type Runtime
 } from '../project.ts';
 import type { ENGLISH_NAMES } from '../names.ts';
 import { effectiveProviders, nodeBox, zoneParents } from '../zones.ts';
@@ -106,7 +115,9 @@ export function systemSvg(
 			source: e.source,
 			target: e.target,
 			label: pills.get(e.id)!.text,
-			points: e.points as Point[] | undefined
+			points: e.points as Point[] | undefined,
+			anchors: anchorsOf(e as ConnectionEdge),
+			labelPosition: e.labelPosition as number | undefined
 		})),
 		measure
 	);
@@ -122,7 +133,12 @@ export function systemSvg(
 		const source = solid.get(edge.source);
 		const target = solid.get(edge.target);
 		if (!source || !target) continue;
-		const route = connectionRoute(source, target, edge.points as Point[] | undefined);
+		const route = connectionRoute(
+			source,
+			target,
+			edge.points as Point[] | undefined,
+			anchorsOf(edge as ConnectionEdge)
+		);
 		// A route may run outside the boxes (around them): the frame holds it too.
 		for (const p of route) extent.push({ x: p.x - 6, y: p.y - 6, width: 12, height: 12 });
 		const { flow, text } = pills.get(edge.id)!;
@@ -134,17 +150,24 @@ export function systemSvg(
 		);
 		const at = labels.get(edge.id);
 		if (at && text) {
-			const width = measure(text) + 14;
-			extent.push({ x: at.x - width / 2, y: at.y - 9, width, height: 18 });
-			// The Flow's name in its color, then the rest of the pill text.
-			const name = flow ? names.flows[flow] : '';
-			const content = flow
-				? `<tspan fill="${color}">${escape(name)}</tspan>${escape(text.slice(name.length))}`
-				: escape(text);
+			const { lines, width, height } = pillSize(text, measure);
+			const box = { x: at.x - width / 2, y: at.y - height / 2, width, height };
+			extent.push(box);
 			pillShapes.push(
-				`<rect x="${at.x - width / 2}" y="${at.y - 9}" width="${width}" height="18" rx="4" fill="#fff" stroke="${BORDER}"/>`,
-				`<text x="${at.x}" y="${at.y}" font-size="11.25" fill="${TEXT}" text-anchor="middle" dy="0.35em">${content}</text>`
+				`<rect x="${box.x}" y="${box.y}" width="${width}" height="${height}" rx="4" fill="#fff" stroke="${BORDER}"/>`
 			);
+			// The Flow's name in its color, then the rest of the pill text, each line centred.
+			const name = flow ? names.flows[flow] : '';
+			lines.forEach((line, i) => {
+				const y = at.y + (i - (lines.length - 1) / 2) * LABEL_LINE_HEIGHT;
+				const content =
+					i === 0 && flow
+						? `<tspan fill="${color}">${escape(name)}</tspan>${escape(line.slice(name.length))}`
+						: escape(line);
+				pillShapes.push(
+					`<text x="${at.x}" y="${y}" font-size="11.25" fill="${TEXT}" text-anchor="middle" dy="0.35em">${content}</text>`
+				);
+			});
 		}
 	}
 	// Notes over the lines, the pills over everything, as on the canvas.

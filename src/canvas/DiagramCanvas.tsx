@@ -574,7 +574,10 @@ function Canvas({ project, diagram, kind }: Props) {
 			const element = target instanceof Element ? target : null;
 			if (!flow || element?.closest('input, textarea, button, .react-flow__controls')) return;
 			const node = element?.closest('.react-flow__node');
-			const edge = node ? null : element?.closest('.react-flow__edge');
+			// A Connection's label and the grips at its ends are part of it, drawn apart.
+			const edge = node
+				? null
+				: element?.closest('.react-flow__edge, .edge-label, .connection-end');
 			const id = (node ?? edge)?.getAttribute('data-id');
 			if (id) {
 				setNodes((current) => current.map((n) => ({ ...n, selected: node ? n.id === id : false })));

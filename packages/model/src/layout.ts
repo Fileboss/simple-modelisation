@@ -17,10 +17,12 @@ import {
 	CIF_SIZE,
 	INHERITANCE_SIZE,
 	NOTE_WIDTHS,
-	ZONE_PADDING
+	ZONE_PADDING,
+	anchorsOf,
+	type ConnectionEdge
 } from './project.ts';
-import { drawnRoute, labelPoint, type Side } from './geometry.ts';
-import { pillText, roughWidth } from './label-placement.ts';
+import { connectionRoute, labelPoint, pointAlong, type Side } from './geometry.ts';
+import { clearPosition, pillSize, pillText } from './label-placement.ts';
 import { ENGLISH_NAMES } from './names.ts';
 import { overlaps, zoneParents } from './zones.ts';
 
@@ -48,8 +50,8 @@ type Link = {
 	returns?: string[];
 	/** Ranks only: an Inheritance's lines are drawn straight, the one to its parent not stored. */
 	unrouted?: boolean;
-	/** The width of the Connection's pills, which need room along the link. */
-	pillWidth?: number;
+	/** The size of the Connection's pills, which need room along the link. */
+	pill?: Size;
 };
 
 // An MCD packs tighter: each Association is a layer of its own between its Entities,
@@ -62,14 +64,16 @@ const GAPS: Record<DiagramKind, { node: number; layer: number }> = {
 /** Elements without any link go on a grid under the rest, this many per row. */
 const LOOSE_PER_ROW = 5;
 
-/** A Connection's pill width, 0 without one, at the rough width of its English text. */
-function pillWidthOf(edge: DiagramEdge): number {
-	const text = pillOf(edge);
-	return text ? roughWidth(text) + 14 : 0;
+/** A Connection's pill size, none without one, at the rough width of its English text. */
+function pillOf(edge: DiagramEdge): Size | undefined {
+	const text = pillTextOf(edge);
+	if (!text) return undefined;
+	const { width, height } = pillSize(text);
+	return { width, height };
 }
 
 /** A Connection's pill text, in English: the layout must not depend on the UI language. */
-function pillOf(edge: DiagramEdge): string {
+function pillTextOf(edge: DiagramEdge): string {
 	const flows: Record<string, string> = ENGLISH_NAMES.flows;
 	const flow = Object.hasOwn(flows, String(edge.flow)) ? flows[String(edge.flow)] : undefined;
 	return pillText(String(edge.label ?? ''), flow);
@@ -228,12 +232,11 @@ export async function layoutDiagram(
 				)
 			: nodes.filter((n) => !isLoose(n)).map((n) => ({ id: n.id, ...sizeOf(n) })),
 		edges: links.map((link, index) => {
-			const width = link.pillWidth ?? 0;
 			return {
 				id: String(index),
 				sources: [link.from],
 				targets: [link.to],
-				...(width && { labels: [{ text: 'pill', width, height: 18 }] })
+				...(link.pill && { labels: [{ text: 'pill', ...link.pill }] })
 			};
 		})
 	};
@@ -261,6 +264,11 @@ export async function layoutDiagram(
 	place(result.children ?? []);
 
 	const routes = new Map<string, Point[]>();
+	const attached = new Set(
+		edges
+			.filter((e) => e.sourceAnchor !== undefined || e.targetAnchor !== undefined)
+			.map((e) => e.id)
+	);
 	for (const edge of result.edges ?? []) {
 		const link = links[Number(edge.id)];
 		const section = edge.sections?.[0];
@@ -276,9 +284,12 @@ export async function layoutDiagram(
 				];
 		const rounded = bends.map((p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
 		const route = link.reversed ? rounded.reverse() : rounded;
-		routes.set(link.edge, route);
+		// One attached to an Anchor is drawn from it, without bends.
+		if (!attached.has(link.edge)) routes.set(link.edge, route);
 		// A Connection back the other way follows the same line: together, a two-way arrow.
-		for (const back of link.returns ?? []) routes.set(back, [...route].reverse());
+		for (const back of link.returns ?? []) {
+			if (!attached.has(back)) routes.set(back, [...route].reverse());
+		}
 	}
 
 	const loose = nodes.filter(isLoose);
@@ -389,8 +400,10 @@ function placeNotes(
 	// puts it first: a Note must not hide a line or its label.
 	for (const edge of allEdges) {
 		const bends = routes.get(edge.id);
-		if (!bends || !positions.has(edge.source) || !positions.has(edge.target)) continue;
-		const route = drawnRoute(boxOf(edge.source), bends, boxOf(edge.target));
+		const anchors = anchorsOf(edge as ConnectionEdge);
+		if (!bends && !anchors.source && !anchors.target) continue;
+		if (!positions.has(edge.source) || !positions.has(edge.target)) continue;
+		const route = connectionRoute(boxOf(edge.source), boxOf(edge.target), bends, anchors);
 		route.slice(1).forEach((b, i) => {
 			const a = route[i];
 			obstacles.set(`${edge.id}:${i}`, {
@@ -400,14 +413,20 @@ function placeNotes(
 				height: Math.abs(b.y - a.y) + 12
 			});
 		});
-		const width = edge.type === 'connection' ? pillWidthOf(edge) : 0;
-		if (width) {
-			const middle = labelPoint(route);
+		const pill = edge.type === 'connection' ? pillOf(edge) : undefined;
+		if (pill) {
+			const position = edge.labelPosition as number | undefined;
+			const at =
+				position === undefined
+					? labelPoint(route)
+					: pointAlong(
+							route,
+							clearPosition(route, position, pill, [boxOf(edge.source), boxOf(edge.target)])
+						);
 			obstacles.set(`${edge.id}:pill`, {
-				x: middle.x - width / 2,
-				y: middle.y - 9,
-				width,
-				height: 18
+				x: at.x - pill.width / 2,
+				y: at.y - pill.height / 2,
+				...pill
 			});
 		}
 	}
@@ -584,10 +603,10 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 		// A Connection back towards where flows start (a push to a Client, a mail to a Person)
 		// ranks the other way.
 		const back = level(edge.target) > level(edge.source);
-		const pillWidth = pillWidthOf(edge);
+		const pill = pillOf(edge);
 		const link: Link = back
-			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true, pillWidth }
-			: { from: edge.source, to: edge.target, edge: edge.id, pillWidth };
+			? { from: edge.target, to: edge.source, edge: edge.id, reversed: true, pill }
+			: { from: edge.source, to: edge.target, edge: edge.id, pill };
 		links.push(link);
 		connectionLinks.set(`${edge.source}|${edge.target}`, link);
 	}
@@ -596,8 +615,13 @@ function linksOf(nodes: DiagramNode[], edges: DiagramEdge[]): Link[] {
 		if (!forth) continue;
 		(forth.returns ??= []).push(edge.id);
 		// One route, two pills: room for both, side by side.
-		const back = pillWidthOf(edge);
-		if (back) forth.pillWidth = (forth.pillWidth ? forth.pillWidth + 8 : 0) + back;
+		const back = pillOf(edge);
+		if (back) {
+			forth.pill = {
+				width: (forth.pill ? forth.pill.width + 8 : 0) + back.width,
+				height: Math.max(forth.pill?.height ?? 0, back.height)
+			};
+		}
 	}
 	return links;
 }
@@ -679,7 +703,18 @@ export function layoutFingerprint(
 			.sort(byId)
 			.map((n) => [n.id, n.x, n.y, estimatedSize(n)]),
 		// A Connection's label and Flow make its pill, which needs room along its link.
-		[...edges].sort(byId).map((e) => [e.id, e.source, e.target, e.label ?? null, e.flow ?? null])
+		[...edges]
+			.sort(byId)
+			.map((e) => [
+				e.id,
+				e.source,
+				e.target,
+				e.label ?? null,
+				e.flow ?? null,
+				e.labelPosition ?? null,
+				e.sourceAnchor ?? null,
+				e.targetAnchor ?? null
+			])
 	]);
 }
 

@@ -276,3 +276,62 @@ describe('systemSvg', () => {
 		});
 	});
 });
+
+describe('Connection labels', () => {
+	function drawn(label: string, position: number | null, flow: 'read' | null = null) {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 600, 0);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, label);
+		project.setConnectionFlow(d, id, flow);
+		project.setLabelPosition(d, id, position);
+		return systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES, legend: false });
+	}
+
+	it('are drawn where they were put, the rest as before', () => {
+		const at = (svg: string) => Number(/<text x="([\d.]+)"[^>]*>GET</.exec(svg)![1]);
+		const [near, middle, far] = [0.2, null, 0.8].map((p) => at(drawn('GET', p)));
+		expect(near).toBeLessThan(middle);
+		expect(far).toBeGreaterThan(middle);
+	});
+
+	it('are wrapped in lines centred on their place, the Flow in its color on the first', () => {
+		const svg = drawn('fetches the whole catalog <every> morning', 0.5, 'read');
+		const lines = [
+			...svg.matchAll(/<text x="([\d.]+)" y="([\d.]+)" font-size="11.25"[^>]*>(.*?)<\/text>/g)
+		]
+			.map(([, x, y, text]) => ({ x: Number(x), y: Number(y), text }))
+			.filter((l) => /Read|whole|every|morning|catalog/.test(l.text));
+		expect(lines.length).toBeGreaterThan(1);
+		expect(new Set(lines.map((l) => l.x)).size).toBe(1);
+		for (let i = 1; i < lines.length; i++) expect(lines[i].y - lines[i - 1].y).toBe(15);
+		expect(lines[0].text).toMatch(/^<tspan fill="#[0-9a-f]+">Read<\/tspan> ·/);
+		expect(svg).toContain('&lt;every&gt;');
+	});
+});
+
+describe('Connection Anchors', () => {
+	it('are where the line starts and ends, its label on it', () => {
+		const project = new ProjectDocument();
+		const d = project.addDiagram('system');
+		const a = project.addComponent(d, 'service', 'A', 0, 0);
+		const b = project.addComponent(d, 'service', 'B', 600, 0);
+		const id = project.addConnection(d, a, b)!;
+		project.setEdgeLabel(d, id, 'GET');
+		const draw = () =>
+			systemSvg(project.nodes(d), project.edges(d), { names: ENGLISH_NAMES, legend: false });
+		const path = (svg: string) => /<path d="([^"]+)" fill="none" stroke="#475569"/.exec(svg)![1];
+		const automatic = path(draw());
+		project.attachConnection(d, id, 'source', a, 'bottom-left');
+		project.attachConnection(d, id, 'target', b, 'bottom');
+		const svg = draw();
+		expect(path(svg)).not.toBe(automatic);
+		expect(path(svg)).toMatch(/^M 37.5,64 /);
+		expect(path(svg)).toMatch(/L 675,64$/);
+		// Under both boxes: the frame holds it.
+		const y = Number(/<text x="[\d.]+" y="([\d.]+)"[^>]*>GET</.exec(svg)![1]);
+		expect(y).toBeGreaterThan(64);
+	});
+});

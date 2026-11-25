@@ -1,3 +1,4 @@
+import { ANCHORS } from '@simple-modelisation/model/anchors.ts';
 import { areasInOrder, withoutAreas } from '@simple-modelisation/model/areas.ts';
 import { isPerson, type ComponentType } from '@simple-modelisation/model/component-types.ts';
 import { dataType, isDataType, type DataType } from '@simple-modelisation/model/data-types.ts';
@@ -78,6 +79,18 @@ const flowArgument = z
 	.enum(FLOWS)
 	.describe(
 		'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write.'
+	);
+const labelPosition = z
+	.number()
+	.min(0)
+	.max(1)
+	.describe(
+		'How far along the drawn line its label is, from 0 (the start) to 1 (the arrow); null or left out of a new one: placed automatically, clear of boxes and other labels.'
+	);
+const anchorArgument = z
+	.enum(ANCHORS)
+	.describe(
+		'Where on the Component the end is attached: a side, or its first or last quarter (top-left: the top side, towards the left). The line is drawn from there around its two Components. Null or left out of a new one: automatic, the sides they face.'
 	);
 const runtimeArgument = z
 	.enum(RUNTIMES)
@@ -628,9 +641,12 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 			from: z.string().describe('Component id or exact name.'),
 			to: z.string().describe('Component id or exact name.'),
 			label: z.string().max(200).optional(),
-			flow: flowArgument.optional()
+			flow: flowArgument.optional(),
+			label_position: labelPosition.optional(),
+			from_anchor: anchorArgument.optional(),
+			to_anchor: anchorArgument.optional()
 		},
-		({ project, diagram, from, to, label, flow }) =>
+		({ project, diagram, from, to, label, flow, label_position: position, ...anchors }) =>
 			access.write(project, (p) => {
 				const d = pickDiagram(p, diagram, 'system');
 				const components = nodesOf(p, d.id, 'component');
@@ -640,13 +656,17 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				if (!id) throw new ToolError('A Component cannot connect to itself.');
 				if (label) p.setEdgeLabel(d.id, id, label);
 				if (flow) p.setConnectionFlow(d.id, id, flow);
+				if (position !== undefined) p.setLabelPosition(d.id, id, position);
+				const { from_anchor: fromAnchor, to_anchor: toAnchor } = anchors;
+				if (fromAnchor) p.attachConnection(d.id, id, 'source', source.id, fromAnchor);
+				if (toAnchor) p.attachConnection(d.id, id, 'target', target.id, toAnchor);
 				return { id };
 			})
 	);
 
 	tool(
 		'set_connection',
-		'Changes a Connection in place: its label ("" clears it) and its Flow ("none" clears it).',
+		'Changes a Connection in place: its label ("" clears it), its Flow ("none" clears it), where its label is, and what its ends are attached to: from or to moves an end to another Component, at an automatic place unless its anchor is given.',
 		{
 			project: projectArgument,
 			diagram: diagramArgument,
@@ -657,11 +677,32 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 				.optional()
 				.describe(
 					'What the data does, seen from the Component the arrow starts at (who initiates): read (it comes back), write (it goes to the target), read-write; none clears it.'
-				)
+				),
+			label_position: labelPosition.nullable().optional(),
+			from: z.string().optional().describe('Component id or exact name it starts at.'),
+			to: z.string().optional().describe('Component id or exact name it reaches.'),
+			from_anchor: anchorArgument.nullable().optional(),
+			to_anchor: anchorArgument.nullable().optional()
 		},
-		({ project, diagram, connection, label, flow }) =>
+		({
+			project,
+			diagram,
+			connection,
+			label,
+			flow,
+			label_position: position,
+			from,
+			to,
+			...anchors
+		}) =>
 			access.write(project, (p) => {
-				if (label === undefined && !flow) throw new ToolError('Give a label or a flow.');
+				const { from_anchor: fromAnchor, to_anchor: toAnchor } = anchors;
+				const given = [label, flow, position, from, to, fromAnchor, toAnchor];
+				if (given.every((v) => v === undefined)) {
+					throw new ToolError(
+						'Give a label, a flow, a label_position, from, to, from_anchor or to_anchor.'
+					);
+				}
 				const d = pickDiagram(p, diagram, 'system');
 				const nodes = nodesOf(p, d.id);
 				const nameOf = (id: string) => String(nodes.find((n) => n.id === id)?.name ?? id);
@@ -674,8 +715,29 @@ export function registerWriteTools(tool: RegisterTool, access: ProjectAccess) {
 						.join(', ');
 					throw new ToolError(`No connection "${connection}". Known: ${known || 'none'}.`);
 				}
+				// Checked before anything is written: where both ends will be.
+				const components = nodes.filter((n) => n.type === 'component');
+				const ends = {
+					source: from === undefined ? target.source : pick(components, from, 'component').id,
+					target: to === undefined ? target.target : pick(components, to, 'component').id
+				};
+				const moves = {
+					source: ends.source !== target.source,
+					target: ends.target !== target.target
+				};
+				if ((moves.source || moves.target) && ends.source === ends.target) {
+					throw new ToolError('A Component cannot connect to itself.');
+				}
+				// On another Component, an end is automatic unless its anchor is given.
+				p.attachEnds(
+					d.id,
+					target.id,
+					{ componentId: ends.source, anchor: moves.source ? (fromAnchor ?? null) : fromAnchor },
+					{ componentId: ends.target, anchor: moves.target ? (toAnchor ?? null) : toAnchor }
+				);
 				if (label !== undefined) p.setEdgeLabel(d.id, target.id, label);
 				if (flow) p.setConnectionFlow(d.id, target.id, orNull(flow));
+				if (position !== undefined) p.setLabelPosition(d.id, target.id, position);
 				return { id: target.id };
 			})
 	);

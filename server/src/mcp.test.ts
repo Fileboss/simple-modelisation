@@ -153,7 +153,9 @@ describe('MCP endpoint', () => {
 			`No connection "nope". Known: ${connections[0].id} (platform → material), ${kdp} (platform → KDP).`
 		);
 		const empty = await call(client, 'set_connection', { ...at, connection: kdp });
-		expect(empty.error).toBe('Give a label or a flow.');
+		expect(empty.error).toBe(
+			'Give a label, a flow, a label_position, from, to, from_anchor or to_anchor.'
+		);
 	});
 
 	it('reads a Shared Project from its Share link', async () => {
@@ -2040,5 +2042,131 @@ describe('MCP Areas', () => {
 			...box,
 			label: 'A'
 		});
+	});
+});
+
+describe('MCP label_position', () => {
+	it('puts a label along its Connection, reads it back and gives it back to the automatic placing', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		for (const name of ['A', 'B']) {
+			await call(client, 'add_component', { ...at, type: 'service', name });
+		}
+		const { id: connection } = await call(client, 'connect_components', {
+			...at,
+			from: 'A',
+			to: 'B',
+			label: 'GET',
+			label_position: 0.2
+		});
+		const position = async () =>
+			(await call(client, 'get_diagram', at)).connections[0].label_position;
+		expect(await position()).toBe(0.2);
+		await call(client, 'set_connection', { ...at, connection, label_position: 0.75 });
+		expect(await position()).toBe(0.75);
+		await call(client, 'set_connection', { ...at, connection, label: 'POST' });
+		expect(await position()).toBe(0.75);
+		await call(client, 'set_connection', { ...at, connection, label_position: null });
+		expect(await position()).toBeNull();
+		for (const bad of [-0.1, 1.5, 'middle']) {
+			const result = (await client
+				.callTool({
+					name: 'set_connection',
+					arguments: { ...at, connection, label_position: bad }
+				})
+				.catch(() => ({ isError: true }))) as { isError?: boolean };
+			expect(result.isError).toBe(true);
+		}
+		expect(await position()).toBeNull();
+	});
+});
+
+describe('MCP Anchors', () => {
+	it('attaches the ends of a Connection, moves and swaps them, and refuses what makes no sense', async () => {
+		const { client, id } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		for (const name of ['A', 'B', 'C']) {
+			await call(client, 'add_component', { ...at, type: 'service', name });
+		}
+		await call(client, 'add_zone', { ...at, name: 'VPC' });
+		const { id: connection } = await call(client, 'connect_components', {
+			...at,
+			from: 'A',
+			to: 'B',
+			label: 'GET',
+			from_anchor: 'top-left'
+		});
+		const read = async () => (await call(client, 'get_diagram', at)).connections[0];
+		const set = (args: object) => call(client, 'set_connection', { ...at, connection, ...args });
+		expect(await read()).toMatchObject({ from_anchor: 'top-left', to_anchor: null });
+		await set({ to_anchor: 'bottom' });
+		expect(await read()).toMatchObject({ from_anchor: 'top-left', to_anchor: 'bottom' });
+		// To another Component: automatic there, unless said.
+		await set({ to: 'C' });
+		expect(await read()).toMatchObject({ from: 'A', to: 'C', label: 'GET', to_anchor: null });
+		await set({ to: 'B', to_anchor: 'right-top' });
+		expect(await read()).toMatchObject({ to: 'B', to_anchor: 'right-top' });
+		await set({ from_anchor: null });
+		expect(await read()).toMatchObject({ from_anchor: null, to_anchor: 'right-top' });
+		await set({ from: 'B', to: 'A', from_anchor: 'left' });
+		expect(await read()).toMatchObject({
+			from: 'B',
+			to: 'A',
+			from_anchor: 'left',
+			to_anchor: null
+		});
+
+		// The end it is already attached to keeps its Anchor.
+		await set({ from: 'B', to: 'C' });
+		expect(await read()).toMatchObject({
+			from: 'B',
+			to: 'C',
+			from_anchor: 'left',
+			to_anchor: null
+		});
+		await set({ to: 'A' });
+
+		const before = await read();
+		expect((await set({ to: 'B', label: 'X' })).error).toBe(
+			'A Component cannot connect to itself.'
+		);
+		expect((await set({ to: 'VPC', label: 'X' })).error).toMatch(/^No component "VPC"/);
+		expect((await set({ to: 'Nope', label: 'X' })).error).toMatch(/^No component "Nope"/);
+		const bad = (await client
+			.callTool({ name: 'set_connection', arguments: { ...at, connection, to_anchor: 'middle' } })
+			.catch(() => ({ isError: true }))) as { isError?: boolean };
+		expect(bad.isError).toBe(true);
+		expect(await read()).toEqual(before);
+	});
+});
+
+describe('MCP and a Connection from a Component to itself', () => {
+	it('changes what it can, and takes it elsewhere', async () => {
+		const { client, id, browser } = await setup();
+		const at = { project: id, diagram: 'Architecture' };
+		for (const name of ['A', 'B']) {
+			await call(client, 'add_component', { ...at, type: 'service', name });
+		}
+		const { id: connection } = await call(client, 'connect_components', {
+			...at,
+			from: 'A',
+			to: 'B'
+		});
+		const d = browser.diagrams()[0].id;
+		await vi.waitFor(() => expect(browser.edges(d)).toHaveLength(1));
+		// As two peers moving both ends at once would leave it.
+		const stored = browser.doc.getMap('diagrams') as never as Map<
+			string,
+			Map<string, Map<string, { set(key: string, value: unknown): void }>>
+		>;
+		stored.get(d)!.get('edges')!.get(connection)!.set('target', browser.edges(d)[0].source);
+		const read = async () => (await call(client, 'get_diagram', at)).connections[0];
+		await vi.waitFor(async () => expect(await read()).toMatchObject({ from: 'A', to: 'A' }));
+		const set = (args: object) => call(client, 'set_connection', { ...at, connection, ...args });
+		expect((await set({ label: 'again', from_anchor: 'top' })).error).toBeUndefined();
+		expect(await read()).toMatchObject({ label: 'again', from_anchor: 'top' });
+		expect((await set({ from: 'B', to: 'B' })).error).toBe('A Component cannot connect to itself.');
+		await set({ to: 'B' });
+		expect(await read()).toMatchObject({ from: 'A', to: 'B', from_anchor: 'top' });
 	});
 });

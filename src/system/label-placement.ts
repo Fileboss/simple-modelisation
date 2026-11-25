@@ -1,11 +1,13 @@
 import type { Edge } from '@xyflow/react';
 import {
+	pillSize,
 	pillText,
 	placeLabels,
 	roughWidth,
-	type MeasureText
+	type MeasureText,
+	type PillSize
 } from '@simple-modelisation/model/label-placement.ts';
-import type { ConnectionEdge } from '@simple-modelisation/model/project.ts';
+import { anchorsOf, type ConnectionEdge } from '@simple-modelisation/model/project.ts';
 import { strings } from '../ui/strings';
 import type { Box, Point } from '../canvas/geometry';
 import type { Layout } from '../canvas/layout';
@@ -13,6 +15,7 @@ import type { Layout } from '../canvas/layout';
 /** Set on a Connection by the drawing step: where its label is drawn. */
 export type PlacedLabel = { labelAt?: Point };
 
+const LABEL_FONT = '12px system-ui, "Segoe UI", Roboto, sans-serif';
 let context: CanvasRenderingContext2D | null | undefined;
 const widths = new Map<string, number>();
 
@@ -20,13 +23,33 @@ const widths = new Map<string, number>();
 export const measureInPage: MeasureText = (text) => {
 	const known = widths.get(text);
 	if (known !== undefined) return known;
-	context ??= document.createElement('canvas').getContext('2d');
-	if (!context) return roughWidth(text);
-	context.font = '12px system-ui, "Segoe UI", Roboto, sans-serif';
-	const width = context.measureText(text).width;
+	const width = measureOnce(text);
+	if (widths.size >= KEPT) widths.clear();
 	widths.set(text, width);
 	return width;
 };
+
+// Wrapping measures many parts of a label: its result is kept rather than theirs.
+const sizes = new Map<string, PillSize>();
+/** How many of each are kept: far more than a Diagram shows. */
+const KEPT = 2000;
+
+const measureOnce: MeasureText = (text) => {
+	context ??= document.createElement('canvas').getContext('2d');
+	if (!context) return roughWidth(text);
+	context.font = LABEL_FONT;
+	return context.measureText(text).width;
+};
+
+/** A pill's lines and size in the page, worked out once per text. */
+export function pillInPage(text: string): PillSize {
+	const known = sizes.get(text);
+	if (known) return known;
+	const size = pillSize(text, measureOnce);
+	if (sizes.size >= KEPT) sizes.clear();
+	sizes.set(text, size);
+	return size;
+}
 
 /** A Connection's pill text, its Flow's name first, as drawn and measured. */
 export const connectionPill = (connection: Partial<ConnectionEdge> | undefined) =>
@@ -62,9 +85,12 @@ export const placeConnectionLabels: Layout = (nodes, edges) => {
 			source: e.source,
 			target: e.target,
 			label: connectionPill(e.data as Partial<ConnectionEdge> | undefined),
-			points: (e.data as { points?: Point[] } | undefined)?.points
+			points: (e.data as Partial<ConnectionEdge> | undefined)?.points,
+			anchors: anchorsOf((e.data ?? {}) as Partial<ConnectionEdge>),
+			labelPosition: (e.data as Partial<ConnectionEdge> | undefined)?.labelPosition
 		})),
-		measureInPage
+		measureInPage,
+		pillInPage
 	);
 	return {
 		nodes,
