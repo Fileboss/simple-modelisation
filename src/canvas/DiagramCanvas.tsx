@@ -66,6 +66,7 @@ import { rasterizeSvg } from './export-image';
 import { registerExporter } from './exporter';
 import type { Layout } from './layout';
 import type { Box } from './geometry';
+import { carryOver } from './carry-over';
 import type { Size } from '@simple-modelisation/model/layout.ts';
 import { useSnapGestures } from './use-snap-gestures';
 import { LongPress } from './long-press';
@@ -328,10 +329,19 @@ function Canvas({ project, diagram, kind }: Props) {
 	const framed = useRef(frameOnOpen);
 	const [edges, setEdges] = useState(toEdges);
 
+	// The nodes being dragged here, and those a dragged Zone carries, until the drop.
+	const inMotion = useRef<ReadonlySet<string>>(new Set());
+	// The node resized here, given by the snapping set up below.
+	const resizing = useRef<() => string | null>(() => null);
 	useEffect(() => {
 		const sync = () => {
-			setNodes((previous) => keepSelection(previous, toNodes()));
-			setEdges((previous) => keepSelection(previous, toEdges()));
+			setNodes((previous) =>
+				carryOver(previous, toNodes(), {
+					moving: inMotion.current,
+					resizing: resizing.current()
+				})
+			);
+			setEdges((previous) => carryOver(previous, toEdges()));
 		};
 		sync();
 		return project.subscribe(sync);
@@ -394,11 +404,16 @@ function Canvas({ project, diagram, kind }: Props) {
 		[project, diagram.id]
 	);
 	const snapping = useSnapGestures(edges, onResized);
+	useEffect(() => {
+		resizing.current = snapping.resizing;
+	}, [snapping.resizing]);
 
 	// Dragging a Zone takes along what it holds when the drag starts.
 	const carried = useRef<{ zones: Map<string, Point>; content: Map<string, Point> } | null>(null);
 	const onNodeDragStart = (dragged: Node[]) => {
 		project.stopCapturing();
+		const moving = new Set(dragged.map((n) => n.id));
+		inMotion.current = moving;
 		const zones = dragged.filter((n) => n.type === 'zone');
 		if (zones.length === 0) {
 			snapping.beginDrag(dragged.map((n) => n.id));
@@ -407,7 +422,6 @@ function Canvas({ project, diagram, kind }: Props) {
 		// At the model's sizes, as Tidy up and agents see it.
 		const all = new Map(project.nodes(diagram.id).map((n) => [n.id, n]));
 		const parents = zoneParents([...all.values()], estimatedSize);
-		const moving = new Set(dragged.map((n) => n.id));
 		const content = new Map<string, Point>();
 		for (const zone of zones) {
 			for (const id of zoneContent(parents, zone.id)) {
@@ -419,6 +433,7 @@ function Canvas({ project, diagram, kind }: Props) {
 			zones: new Map(zones.map((z) => [z.id, z.data as DiagramNode])),
 			content
 		};
+		inMotion.current = new Set([...moving, ...content.keys()]);
 		snapping.beginDrag(
 			dragged.map((n) => n.id),
 			content.keys()
@@ -456,6 +471,8 @@ function Canvas({ project, diagram, kind }: Props) {
 			for (const [id, from] of carry.content) moves.push({ id, x: from.x + dx, y: from.y + dy });
 		}
 		snapping.endDrag();
+		// Saved, the document draws them again.
+		inMotion.current = new Set();
 		project.moveNodes(diagram.id, moves);
 	};
 
@@ -1159,24 +1176,3 @@ function menuActionsOn(on: 'node' | 'edge' | 'pane', smallScreen: boolean): Menu
 }
 
 const centreOf = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-
-/**
- * Carries over what React Flow knows of the previous elements: the selection,
- * and a node's measured size, so drawing steps that need sizes (label
- * placement) do not lose them for a frame after every document change.
- */
-function keepSelection<T extends { id: string; selected?: boolean; measured?: unknown }>(
-	previous: T[],
-	next: T[]
-): T[] {
-	const before = new Map(previous.map((e) => [e.id, e]));
-	return next.map((e) => {
-		const old = before.get(e.id);
-		if (!old?.selected && !old?.measured) return e;
-		return {
-			...e,
-			...(old.selected && { selected: true }),
-			...(old.measured ? { measured: old.measured } : {})
-		};
-	});
-}
