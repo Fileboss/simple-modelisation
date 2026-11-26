@@ -6,6 +6,24 @@ date: 2026-11-20
 
 # Changelog
 
+## v0.5.0 — 2026-11-25
+
+Connections arranged by hand, tabs in any order, and PostgreSQL types on MCDs.
+
+### Added
+
+- Reorder the Diagrams' tabs by drag and drop (a long press by touch, Alt+Shift+Left/Right on the keyboard)
+- System design: a Connection's label is dragged along its line, or given back to the automatic placing; in the images and over MCP (`label_position`)
+- System design: the ends of a Connection are moved between 12 Anchors per Component, or to another Component; in the images and over MCP (`from_anchor`, `to_anchor`, and `from`, `to` on `set_connection`)
+- MCDs: JSON and Blob Data types, JSONB and BYTEA in PostgreSQL, also over MCP
+- MCDs: a switch shows the PostgreSQL types in the boxes, in Merise, per browser; in the images and over MCP (`types` on `export_diagram`)
+
+### Changed
+
+- Connection labels wider than 160px wrap, eight lines at most
+- Tidy up keeps the Anchors of Connections, and leaves room for the types of an MCD, shown or not
+- Projects using the JSON or Blob types need this version; an older one draws Connections without their Anchors and label places
+
 ## v0.4.0 — 2026-11-24
 
 SQL constraints and Areas on MCDs, duplicated Diagrams, and fewer, clearer MCP tools.
