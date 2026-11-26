@@ -25,6 +25,8 @@ import { useProjectDocument, useProjectVersion, useSync } from './project-hooks'
 import { DiagramKindBadge, DiagramTabs } from './DiagramTabs';
 import { forgetProject, makeLocalCopy } from './project-storage';
 import { useProjects, useRegistry } from './registry-context';
+import { listing } from './listing';
+import { announceReplaced, subscribeReplaced } from '../storage/tab-channel';
 
 const KINDS: Record<DiagramKind, CanvasKind> = {
 	system: systemKind,
@@ -34,6 +36,10 @@ const KINDS: Record<DiagramKind, CanvasKind> = {
 export function ProjectPage() {
 	const { projectId = '' } = useParams();
 	const summary = useProjects().find((p) => p.id === projectId);
+	// A Project leaving the list while shown was deleted in another tab.
+	const [seen, setSeen] = useState<string | null>(null);
+	const shown = listing(seen, projectId, summary !== undefined);
+	if (shown.seen !== seen) setSeen(shown.seen);
 	const project = useProjectDocument(summary ? projectId : null);
 	const { status, awareness } = useSync(projectId, project, summary?.shared ?? false);
 	const registry = useRegistry();
@@ -51,13 +57,25 @@ export function ProjectPage() {
 	}, [projectId, registry]);
 	const openCopy = (copyId: string) => {
 		retired.current = projectId;
+		// Before the Shared Project leaves the list: the other tabs showing it follow.
+		announceReplaced(projectId, copyId);
 		void navigate(`/p/${copyId}`, { replace: true });
 	};
+	// Stopping sharing in another tab: open its Local copy too.
+	useEffect(
+		() =>
+			subscribeReplaced(projectId, (copyId) => void navigate(`/p/${copyId}`, { replace: true })),
+		[projectId, navigate]
+	);
 
 	if (!summary) {
 		return (
 			<main className="status">
-				<p>{strings.project.notFound}</p>
+				<p>
+					{shown.listing === 'deleted'
+						? strings.project.deletedElsewhere
+						: strings.project.notFound}
+				</p>
 				<Link to="/">{strings.project.backHome}</Link>
 			</main>
 		);
