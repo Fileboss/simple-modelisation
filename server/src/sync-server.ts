@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Socket } from 'node:net';
 import * as Y from 'yjs';
 import { DocumentStore } from './document-store.ts';
+import { addressGroup } from './address-group.ts';
 import { createMcpHandler, MCP_PATH } from './mcp.ts';
 import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
 import { SECURITY_HEADERS, serveStatic } from './static-files.ts';
@@ -37,6 +38,10 @@ export type SyncServerOptions = {
 	maxMessagesPerWindow?: number;
 	/** Requests one address may make to the MCP endpoint per minute. */
 	maxMcpRequestsPerMinute?: number;
+	/** The stored documents' total size past which a new share is refused (stored ones keep working). */
+	maxStorageBytes?: number;
+	/** Deletes a stored document nobody has opened for this many days; never when unset (ADR 0011). */
+	expiryDays?: number;
 	log?: (message: string) => void;
 };
 
@@ -49,6 +54,7 @@ export const HEALTH_PATH = '/health';
 const MESSAGE_WINDOW_MS = 10_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 // The y-protocols sync steps that carry changes.
 const SYNC_STEP_2 = 1;
 const SYNC_UPDATE = 2;
@@ -70,6 +76,8 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		maxPresenceBytes = 64 * 1024,
 		trustProxy = false,
 		maxMessagesPerWindow = 1000,
+		maxStorageBytes = 1024 * 1024 * 1024,
+		expiryDays,
 		log = console.log
 	} = options;
 	if (storage === 'none' && mcpOn) throw new Error('The MCP endpoint needs storage: set MCP=off.');
@@ -142,7 +150,10 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		extensions: store
 			? [
 					new Database({
-						fetch: async ({ documentName }) => store.fetch(documentName),
+						fetch: async ({ documentName }) => {
+							store.touch(documentName);
+							return store.fetch(documentName);
+						},
 						store: async ({ documentName, state }) => {
 							store.store(documentName, state);
 							sizes.set(documentName, state.byteLength);
@@ -241,6 +252,16 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 				if (mine) opening.delete(documentName);
 				refuse('creation limit', ip, REFUSAL.refused);
 			}
+			// The disk is bounded too: past the cap, only the documents it holds go on. Shares in
+			// memory that are not stored yet count with their size.
+			let storedBytes = store.totalBytes();
+			for (const name of instance.documents.keys()) {
+				if (!store.has(name)) storedBytes += sizes.get(name) ?? 0;
+			}
+			if (storedBytes >= maxStorageBytes) {
+				if (mine) opening.delete(documentName);
+				refuse('storage limit', `${storedBytes} bytes stored`, REFUSAL.refused);
+			}
 			creationsPerIp.set(ip, [...recent, now]);
 			forgetOldCreations(now);
 		},
@@ -328,6 +349,8 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 		},
 
 		async afterUnloadDocument({ documentName }) {
+			// Open until now: its last open is when it leaves memory.
+			store?.touch(documentName);
 			sizes.delete(documentName);
 			measured.delete(documentName);
 			forgetLoader(documentName);
@@ -355,10 +378,34 @@ export async function startSyncServer(options: SyncServerOptions): Promise<SyncS
 	server.httpServer.keepAliveTimeout = 5_000;
 	await server.listen();
 	let stopping: Promise<void> | undefined;
+	const stopOnce = async () => {
+		clearInterval(sweeping);
+		await server.destroy();
+		store?.close();
+	};
+	// Documents nobody opened for expiryDays go, at start and every hour; never one in memory,
+	// loading or being opened. Those in memory are open now: noted each hour, in case the
+	// process ends without unloading them.
+	const sweep = () => {
+		if (!store || !expiryDays) return;
+		const { documents, loadingDocuments, unloadingDocuments } = server.hocuspocus;
+		for (const name of documents.keys()) store.touch(name);
+		const kept = new Set([
+			...documents.keys(),
+			...loadingDocuments.keys(),
+			...unloadingDocuments.keys(),
+			...opening.keys()
+		]);
+		for (const name of store.expire(Date.now() - expiryDays * DAY, kept)) log(`expired ${name}`);
+	};
+	sweep();
+	const sweeping = store && expiryDays ? setInterval(sweep, HOUR) : undefined;
+	sweeping?.unref();
+
 	return {
 		port: server.address.port,
 		// Stores pending documents, then closes; calling it again waits for the first call.
-		stop: () => (stopping ??= server.destroy().then(() => store?.close()))
+		stop: () => (stopping ??= stopOnce())
 	};
 }
 
@@ -380,7 +427,12 @@ function sameOrigin(request: IncomingMessage, trustProxy: boolean): boolean {
 	}
 }
 
+/** The client's address group (an IPv6 /64), which every per-address limit counts by. */
 function clientIp(request: IncomingMessage, trustProxy: boolean): string {
+	return addressGroup(clientAddress(request, trustProxy));
+}
+
+function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
 	if (trustProxy) {
 		// The proxy appends the address it saw: the last entry is the one it vouches for.
 		const forwarded = request.headers['x-forwarded-for'];

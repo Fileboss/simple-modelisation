@@ -18,15 +18,17 @@ make lint test
 
 One Docker image serves the app, the sync of Shared Projects and the MCP endpoint. A `vX.Y.Z` tag publishes it as `ghcr.io/fileboss/simple-modelisation:X.Y.Z`.
 
-| Setting                | Default                          | What it does                                                                                                                                                                                                                |
-| ---------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                 | `3000`                           | The port the app, `/sync` and `/mcp` answer on.                                                                                                                                                                             |
-| `STORAGE`              | `sqlite`                         | `sqlite` keeps Shared Projects in `DATA_DIR`; `none` makes the server a relay that stores nothing (below).                                                                                                                  |
-| `DATA_DIR`             | `/data`                          | Where the SQLite file lives (`sqlite` storage only): mount a volume there.                                                                                                                                                  |
-| `MCP`                  | `on` with storage, `off` without | The MCP endpoint on `/mcp`. It works on stored documents, so `STORAGE=none` with `MCP=on` refuses to start.                                                                                                                 |
-| `MAX_DOCUMENTS`        | `500`                            | Shared Projects held in memory at once; past it, a new share is refused and the app says the server is busy.                                                                                                                |
-| `MAX_DOCUMENTS_PER_IP` | `20`                             | Shared Projects one address may have open at once; a team behind one address shares it, so raise it for a private server.                                                                                                   |
-| `TRUST_PROXY`          | unset                            | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so the per-address limits see real addresses. Only when the proxy alone can reach the port: a client connecting directly would pick its own address. |
+| Setting                | Default                          | What it does                                                                                                                                                                                                                  |
+| ---------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                 | `3000`                           | The port the app, `/sync` and `/mcp` answer on.                                                                                                                                                                               |
+| `STORAGE`              | `sqlite`                         | `sqlite` keeps Shared Projects in `DATA_DIR`; `none` makes the server a relay that stores nothing (below).                                                                                                                    |
+| `DATA_DIR`             | `/data`                          | Where the SQLite file lives (`sqlite` storage only): mount a volume there.                                                                                                                                                    |
+| `MCP`                  | `on` with storage, `off` without | The MCP endpoint on `/mcp`. It works on stored documents, so `STORAGE=none` with `MCP=on` refuses to start.                                                                                                                   |
+| `MAX_DOCUMENTS`        | `500`                            | Shared Projects held in memory at once; past it, a new share is refused and the app says the server is busy.                                                                                                                  |
+| `MAX_DOCUMENTS_PER_IP` | `20`                             | Shared Projects one address may have open at once; a team behind one address shares it, so raise it for a private server.                                                                                                     |
+| `MAX_STORAGE_MB`       | `1024`                           | The stored Shared Projects' total size (`sqlite` storage); past it, a new share is refused for good. Projects already stored keep working and growing, each up to 5 MB.                                                       |
+| `EXPIRY_DAYS`          | unset                            | Deletes a stored Shared Project nobody has opened (a Participant or an agent) for that many days, checked at start and hourly; never when unset. Anyone who still has it in their browser shares it again on their next open. |
+| `TRUST_PROXY`          | unset                            | Set to `true` only behind a reverse proxy that sets `X-Forwarded-For`, so the per-address limits see real addresses. Only when the proxy alone can reach the port: a client connecting directly would pick its own address.   |
 
 The image runs as an unprivileged user, carries no package manager, and reports its health to Docker from `GET /health` (`200 ok`), which a proxy or an uptime check can use too.
 
@@ -45,7 +47,7 @@ The server keeps nothing on disk. A Shared Project lives in its memory only whil
 
 What people see: a Share link opens only while someone has the Project open; otherwise the page says so. Local Projects are unchanged. Nothing is lost while one Participant still has their copy, but nobody but the Participants holds one: exporting a Project as JSON is the only backup.
 
-Limits that bound a public server: 5 MB per document (a change that would pass it is refused), 64 KB per Presence message, 50 connections and `MAX_DOCUMENTS_PER_IP` open documents per address, 30 new shares per hour per address with storage, `MAX_DOCUMENTS` documents in memory.
+Limits that bound a public server: 5 MB per document (a change that would pass it is refused), 64 KB per Presence message, 50 connections and `MAX_DOCUMENTS_PER_IP` open documents per address, 30 new shares per hour per address with storage, `MAX_DOCUMENTS` documents in memory, `MAX_STORAGE_MB` stored. An IPv6 address counts by its /64.
 
 ## MCP
 
