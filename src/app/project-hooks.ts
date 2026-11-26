@@ -21,8 +21,9 @@ export function useProjectDocument(projectId: string | null): ProjectDocument | 
 			doc.adoptName(registry.get(projectId)?.name ?? '');
 			const stopTouching = touchOnLocalEdits(doc, () => registry.touch(projectId));
 			// The list shows a copy of the name; the document holds the real one.
+			// Gone from the list (deleted in another tab), it has nothing to rename.
 			const stopNaming = doc.subscribe(() => {
-				if (doc.name()) registry.rename(projectId, doc.name());
+				if (doc.name() && registry.get(projectId)) registry.rename(projectId, doc.name());
 			});
 			unsubscribe = () => {
 				stopTouching();

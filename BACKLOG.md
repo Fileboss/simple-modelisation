@@ -12,8 +12,8 @@ tags: [backlog]
 - Findings from the global review after pre-release-fixes (not yet verified):
   - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
-  - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
 
+- Tab sync cost with many tabs: each tab resends other tabs' edits to the server and stores them in IndexedDB again; the join handshake is quadratic; a touch racing a delete in another tab brings the Project back empty
 - Model cleanups: edges() without reading every node again, pasteable once per paste, one bounding-box helper
 - MCP bookkeeping: reads that store the document again, MCP loads outside the sync's document count, one shared size check for MCP writes and the sync
 - Numbered steps on Connections (1, 2, 3), to read a journey through the system
@@ -32,6 +32,7 @@ tags: [backlog]
 
 ## Done
 
+- [cross-tab-sync](docs/specs/cross-tab-sync/): browser tabs pass their edits to each other, for the Project list and open Projects
 - [mcd-show-types](docs/specs/mcd-show-types/): a switch showing the PostgreSQL types in the boxes of an MCD, in grey italics, also over MCP
 - json-blob-types: JSON and Blob Data types for the Attributes of an MCD, JSONB and BYTEA in PostgreSQL, also over MCP
 - [connection-anchors](docs/specs/connection-anchors/): the ends of a Connection moved between 12 Anchors per Component, or to another Component, in the app, the images and over MCP

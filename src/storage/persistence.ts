@@ -2,36 +2,39 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 import { ProjectDocument } from '@simple-modelisation/model/project.ts';
 import { ProjectRegistry } from '../document/registry';
+import { joinTabs } from './tab-channel';
 
 const PREFIX = 'simple-modelisation';
 const projectDbName = (id: string) => `${PREFIX}:project:${id}`;
 
-/** Loads the Project list from the browser and keeps it saved until `close`. */
-export async function openRegistry(): Promise<{ registry: ProjectRegistry; close: () => void }> {
+/**
+ * Loads a document from the browser, then keeps it saved and in step with the
+ * other tabs holding it until `close`.
+ */
+async function openStored(name: string): Promise<{ doc: Y.Doc; close: () => void }> {
 	const doc = new Y.Doc();
-	const persistence = new IndexeddbPersistence(`${PREFIX}:projects`, doc);
+	const persistence = new IndexeddbPersistence(name, doc);
 	await persistence.whenSynced;
+	const leaveTabs = joinTabs(name, doc);
 	return {
-		registry: new ProjectRegistry(doc),
+		doc,
 		close: () => {
+			leaveTabs();
 			void persistence.destroy();
 			doc.destroy();
 		}
 	};
 }
 
+/** Loads the Project list from the browser and keeps it saved until `close`. */
+export async function openRegistry(): Promise<{ registry: ProjectRegistry; close: () => void }> {
+	const { doc, close } = await openStored(`${PREFIX}:projects`);
+	return { registry: new ProjectRegistry(doc), close };
+}
+
 /** Loads a Project's document from the browser and keeps it saved until `close`. */
-export async function openProjectDoc(id: string): Promise<{ doc: Y.Doc; close: () => void }> {
-	const doc = new Y.Doc();
-	const persistence = new IndexeddbPersistence(projectDbName(id), doc);
-	await persistence.whenSynced;
-	return {
-		doc,
-		close: () => {
-			void persistence.destroy();
-			doc.destroy();
-		}
-	};
+export function openProjectDoc(id: string): Promise<{ doc: Y.Doc; close: () => void }> {
+	return openStored(projectDbName(id));
 }
 
 export async function deleteProjectDoc(id: string): Promise<void> {

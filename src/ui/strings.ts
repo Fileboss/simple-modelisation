@@ -23,6 +23,7 @@ export const strings = {
 	project: {
 		backHome: 'All projects',
 		notFound: 'This project does not exist, or it was deleted.',
+		deletedElsewhere: 'This project was deleted in another tab.',
 		noDiagrams: 'No diagrams yet. Add a System design diagram or an MCD.',
 		addSystem: '+ System design',
 		addMcd: '+ MCD',
