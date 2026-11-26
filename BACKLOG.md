@@ -10,7 +10,6 @@ tags: [backlog]
 ## To do
 
 - Findings from the global review after pre-release-fixes (not yet verified):
-  - Server storage can be filled: creation limit per exact IP (not per IPv6 /64), no global size or document cap, no expiry (`server/src/sync-server.ts`, `document-store.ts`)
   - A peer's edit makes a node or Zone being dragged jump back to its stored position (`src/canvas/DiagramCanvas.tsx` `keepSelection`)
   - Browser tabs are not coordinated: one Local project in two tabs diverges until reload; a project deleted in one tab comes back empty from another
 
@@ -32,6 +31,7 @@ tags: [backlog]
 
 ## Done
 
+- [storage-limits](docs/specs/storage-limits/): a server with storage cannot be filled: limits by IPv6 /64, a cap on the total, opt-in expiry
 - [mcd-show-types](docs/specs/mcd-show-types/): a switch showing the PostgreSQL types in the boxes of an MCD, in grey italics, also over MCP
 - json-blob-types: JSON and Blob Data types for the Attributes of an MCD, JSONB and BYTEA in PostgreSQL, also over MCP
 - [connection-anchors](docs/specs/connection-anchors/): the ends of a Connection moved between 12 Anchors per Component, or to another Component, in the app, the images and over MCP

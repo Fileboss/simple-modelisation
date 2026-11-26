@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { DocumentStore } from './document-store.ts';
 import { DOCUMENT_TOO_LARGE, REFUSAL, SYNC_PATH, type SyncIntent } from './protocol.ts';
 import {
 	HEALTH_PATH,
@@ -202,6 +203,63 @@ describe('sync server', () => {
 		}
 		expect(outcomes).toEqual(['synced', 'synced', 'refused']);
 		expect(logs.join()).toContain('creation limit');
+	});
+
+	it('counts the addresses of one IPv6 /64 as one, for new shares', async () => {
+		const { server, logs } = await start({ maxNewDocumentsPerIpPerHour: 2, trustProxy: true });
+		const share = async (from: string) =>
+			(await connect(server, crypto.randomUUID(), 'share', { from })).outcome;
+		expect(await share('2001:db8:0:1::1')).toBe('synced');
+		expect(await share('2001:db8:0:1::2')).toBe('synced');
+		expect(await share('2001:db8:0:1:ffff::3')).toBe('refused');
+		expect(logs.join()).toContain('creation limit: 2001:db8:0:1::/64');
+		// Another /64, and IPv4 addresses, have their own counts.
+		expect(await share('2001:db8:0:2::1')).toBe('synced');
+		expect(await share('203.0.113.7')).toBe('synced');
+		expect(await share('203.0.113.8')).toBe('synced');
+	});
+
+	it('refuses new shares past the storage cap, while stored Projects go on', async () => {
+		const dataDir = mkdtempSync(path.join(tmpdir(), 'sync-test-'));
+		cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }));
+		const stored = crypto.randomUUID();
+		const before = new Y.Doc();
+		before.getText('t').insert(0, 'stored');
+		const store = new DocumentStore(dataDir);
+		store.store(stored, Y.encodeStateAsUpdate(before));
+		const bytes = store.totalBytes();
+		store.close();
+
+		const { server, logs } = await start({ dataDir, maxStorageBytes: bytes });
+		const fresh = await connect(server, crypto.randomUUID(), 'share');
+		expect(fresh).toMatchObject({ outcome: 'refused', reason: REFUSAL.refused });
+		expect(logs.join()).toContain('storage limit');
+
+		const guest = await connect(server, stored, 'join');
+		expect(guest.outcome).toBe('synced');
+		await vi.waitFor(() => expect(text(guest.doc)).toBe('stored'));
+		guest.doc.getText('t').insert(0, 'still ');
+		await vi.waitFor(() => expect(guest.provider.unsyncedChanges).toBe(0));
+	});
+
+	it('deletes, at start, the Projects nobody opened for EXPIRY_DAYS, and counts a load as an open', async () => {
+		const dataDir = mkdtempSync(path.join(tmpdir(), 'sync-test-'));
+		cleanups.push(() => rmSync(dataDir, { recursive: true, force: true }));
+		const [old, recent] = [crypto.randomUUID(), crypto.randomUUID()];
+		const day = 24 * 60 * 60 * 1000;
+		const store = new DocumentStore(dataDir);
+		store.store(old, new Uint8Array([0, 0]), Date.now() - 3 * day);
+		store.store(recent, new Uint8Array([0, 0]), Date.now() - day / 2);
+		store.close();
+
+		const { server, logs } = await start({ dataDir, expiryDays: 1 });
+		expect(logs).toContain(`expired ${old}`);
+		expect((await connect(server, old, 'join')).outcome).toBe('refused');
+		const guest = await connect(server, recent, 'join');
+		expect(guest.outcome).toBe('synced');
+		const check = new DocumentStore(dataDir);
+		expect(check.lastOpened(recent)).toBeGreaterThan(Date.now() - 60_000);
+		check.close();
 	});
 
 	it('limits the connections of one address, whatever X-Forwarded-For claims', async () => {

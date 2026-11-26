@@ -12,6 +12,10 @@ const {
 	MAX_DOCUMENTS = '500',
 	// Documents one address may have open at once.
 	MAX_DOCUMENTS_PER_IP = '20',
+	// The stored documents' total size, in MB, past which a new share is refused.
+	MAX_STORAGE_MB = '1024',
+	// Days after which a stored document nobody opened is deleted; never when unset.
+	EXPIRY_DAYS,
 	STATIC_DIR,
 	// Set to true only behind a reverse proxy that sets X-Forwarded-For.
 	TRUST_PROXY
@@ -32,6 +36,9 @@ const positive = (name: string, value: string) => {
 };
 const maxDocuments = positive('MAX_DOCUMENTS', MAX_DOCUMENTS);
 const maxDocumentsPerIp = positive('MAX_DOCUMENTS_PER_IP', MAX_DOCUMENTS_PER_IP);
+// An empty value (`EXPIRY_DAYS=` in a compose file) is unset.
+const maxStorageBytes = positive('MAX_STORAGE_MB', MAX_STORAGE_MB || '1024') * 1024 * 1024;
+const expiryDays = EXPIRY_DAYS ? positive('EXPIRY_DAYS', EXPIRY_DAYS) : undefined;
 
 const server = await startSyncServer({
 	port: Number(PORT),
@@ -40,6 +47,8 @@ const server = await startSyncServer({
 	mcp: MCP === undefined ? undefined : MCP === 'on',
 	maxDocuments,
 	maxDocumentsPerIp,
+	maxStorageBytes,
+	expiryDays,
 	staticDir: STATIC_DIR,
 	trustProxy: TRUST_PROXY === 'true'
 });
