@@ -138,6 +138,8 @@ export function useSnapGestures(
 
 	/** Where a dragged node is drawn, snapped; undefined for a node not being dragged. */
 	const draggedAt = useCallback((id: string) => drag.current?.positions.get(id), []);
+	/** The node being resized here, until the end of the resize saves its box. */
+	const resizing = useCallback(() => resize.current?.id ?? null, []);
 
 	const endDrag = useCallback(() => {
 		setGuides([]);
@@ -258,5 +260,14 @@ export function useSnapGestures(
 		setGuides([]);
 	}, [setGuides]);
 
-	return { guides, beginDrag, draggedAt, endDrag, snapChanges, placeCentred, clearGuides };
+	return {
+		guides,
+		beginDrag,
+		draggedAt,
+		endDrag,
+		resizing,
+		snapChanges,
+		placeCentred,
+		clearGuides
+	};
 }
